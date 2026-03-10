@@ -1,8 +1,14 @@
 #!/usr/bin/env sh
 set -eu
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
 PY=python3
-ENTRY=agent.py
+ENTRY="$SCRIPT_DIR/agent.py"
+
+# Ensure sibling packages (e.g. prompts/) are importable regardless of cwd.
+export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 # Common defaults
 # choices=["gpt-41", "claude", "gpt-5", "gpt-4o", "gpt-o4mini", "Gemini"]

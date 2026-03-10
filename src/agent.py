@@ -4,6 +4,7 @@ import json
 import time
 import random
 import subprocess
+import shutil
 from typing import List, Dict, Any, Optional, Tuple, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,26 +80,23 @@ class TeachingVideoAgent:
         self.max_mllm_fix_bugs_tries = cfg.max_mllm_fix_bugs_tries
 
         """2. Path for output"""
+        self.project_root = Path(__file__).resolve().parent.parent
         self.folder = folder
         self.output_dir = get_output_dir(idx=idx, knowledge_point=self.learning_topic, base_dir=folder)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        self.assets_dir = Path(*self.output_dir.parts[: self.output_dir.parts.index("CASES")]) / "assets" / "icon"
-        self.assets_dir.mkdir(exist_ok=True)
+        self.assets_dir = self.project_root / "assets" / "icon"
+        self.assets_dir.mkdir(parents=True, exist_ok=True)
 
         """3. ScopeRefine & Anchor Visual"""
-        self.scope_refine_fixer = ScopeRefineFixer(api, self.max_code_token_length)
+        self.scope_refine_fixer = ScopeRefineFixer(self.API, self.max_code_token_length)
         self.extractor = GridPositionExtractor()
 
         """4. External Database"""
-        knowledge_ref_mapping_path = (
-            Path(*self.output_dir.parts[: self.output_dir.parts.index("CASES")]) / "json_files" / "long_video_ref_mapping.json"
-        )
+        knowledge_ref_mapping_path = self.project_root / "json_files" / "long_video_ref_mapping.json"
         with open(knowledge_ref_mapping_path) as f:
             self.KNOWLEDGE2PATH = json.load(f)
-        self.knowledge_ref_img_folder = (
-            Path(*self.output_dir.parts[: self.output_dir.parts.index("CASES")]) / "assets" / "reference"
-        )
+        self.knowledge_ref_img_folder = self.project_root / "assets" / "reference"
         self.GRID_IMG_PATH = self.knowledge_ref_img_folder / "GRID.png"
 
         """5. Data structure"""
@@ -683,10 +681,21 @@ class TeachingVideoAgent:
                 video_path = self.section_videos[section_id].replace(f"{self.output_dir}/", "")
                 f.write(f"file '{video_path}'\n")
 
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if not ffmpeg_bin:
+            try:
+                import imageio_ffmpeg
+
+                ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+                print(f"ℹ️ ffmpeg not found on PATH, using bundled binary: {ffmpeg_bin}")
+            except Exception as e:
+                print(f"❌ ffmpeg not found and bundled fallback unavailable: {e}")
+                return None
+
         # ffmpeg
         try:
             result = subprocess.run(
-                ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(video_list_file), "-c", "copy", str(output_path)],
+                [ffmpeg_bin, "-y", "-f", "concat", "-safe", "0", "-i", str(video_list_file), "-c", "copy", str(output_path)],
                 capture_output=True,
                 text=True,
             )
@@ -863,9 +872,10 @@ def build_and_parse_args():
 
 if __name__ == "__main__":
     args = build_and_parse_args()
+    project_root = Path(__file__).resolve().parent.parent
 
     api, folder_name = get_api_and_output(args.API)
-    folder = Path(__file__).resolve().parent / "CASES" / f"{args.folder_prefix}_{folder_name}"
+    folder = project_root / "CASES" / f"{args.folder_prefix}_{folder_name}"
 
     _CFG_PATH = pathlib.Path(__file__).with_name("api_config.json")
     with _CFG_PATH.open("r", encoding="utf-8") as _f:
@@ -882,7 +892,7 @@ if __name__ == "__main__":
         knowledge_points = [args.knowledge_point]
         args.parallel_group_num = 1
     elif args.knowledge_file:
-        with open(Path(__file__).resolve().parent / "json_files" / args.knowledge_file, "r", encoding="utf-8") as f:
+        with open(project_root / "json_files" / args.knowledge_file, "r", encoding="utf-8") as f:
             knowledge_points = json.load(f)
             if args.max_concepts is not None:
                 knowledge_points = knowledge_points[: args.max_concepts]
