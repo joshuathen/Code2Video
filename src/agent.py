@@ -15,21 +15,7 @@ from prompts import *
 from utils import *
 from scope_refine import *
 from external_assets import process_storyboard_with_assets
-
-
-@dataclass
-class Section:
-    id: str
-    title: str
-    lecture_lines: List[str]
-    animations: List[str]
-
-
-@dataclass
-class TeachingOutline:
-    topic: str
-    target_audience: str
-    sections: List[Dict[str, Any]]
+from type_utils import *
 
 
 @dataclass
