@@ -1,5 +1,5 @@
 from copy import deepcopy
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 import json
 import os
@@ -7,11 +7,13 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
+from threading import Lock
 import time
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from type_utils import *
-from gpt_request import request_gemini_video_img
+from gpt_request import request_gemini_token, request_gemini_video_img_token
 from scope_refine import ScopeRefineFixer, GridPositionExtractor
 from utils import extract_answer_from_response
 from utils import extract_json_from_markdown
@@ -184,6 +186,314 @@ API_KEY = _load_api_key()
 client = Client(api_key=API_KEY)
 
 
+def _empty_token_usage_bucket() -> Dict[str, int]:
+    return {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "call_count": 0,
+    }
+
+
+def _empty_token_usage_summary() -> Dict[str, object]:
+    return {
+        "totals": _empty_token_usage_bucket(),
+        "by_source": {},
+        "by_model": {},
+    }
+
+
+def _extract_token_usage(response: object = None, usage: Optional[Dict[str, int]] = None) -> Dict[str, int]:
+    bucket = _empty_token_usage_bucket()
+
+    if isinstance(usage, dict):
+        bucket["prompt_tokens"] = int(usage.get("prompt_tokens", 0) or 0)
+        bucket["completion_tokens"] = int(usage.get("completion_tokens", 0) or 0)
+        bucket["total_tokens"] = int(
+            usage.get(
+                "total_tokens",
+                bucket["prompt_tokens"] + bucket["completion_tokens"],
+            )
+            or 0
+        )
+        return bucket
+
+    usage_md = getattr(response, "usage_metadata", None)
+    if usage_md is not None:
+        bucket["prompt_tokens"] = int(getattr(usage_md, "prompt_token_count", 0) or 0)
+        bucket["completion_tokens"] = int(getattr(usage_md, "candidates_token_count", 0) or 0)
+        bucket["total_tokens"] = int(
+            getattr(
+                usage_md,
+                "total_token_count",
+                bucket["prompt_tokens"] + bucket["completion_tokens"],
+            )
+            or 0
+        )
+        return bucket
+
+    completion_usage = getattr(response, "usage", None)
+    if completion_usage is not None:
+        bucket["prompt_tokens"] = int(getattr(completion_usage, "prompt_tokens", 0) or 0)
+        bucket["completion_tokens"] = int(getattr(completion_usage, "completion_tokens", 0) or 0)
+        bucket["total_tokens"] = int(
+            getattr(
+                completion_usage,
+                "total_tokens",
+                bucket["prompt_tokens"] + bucket["completion_tokens"],
+            )
+            or 0
+        )
+
+    return bucket
+
+
+class MASTokenTracker:
+    def __init__(self, initial_summary: Optional[Dict[str, object]] = None):
+        self._lock = Lock()
+        self._summary = _empty_token_usage_summary()
+        if isinstance(initial_summary, dict):
+            self._merge_existing_summary(initial_summary)
+
+    def _add_bucket_values(self, target: Dict[str, int], source: Dict[str, Any]) -> None:
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens", "call_count"):
+            target[key] += int(source.get(key, 0) or 0)
+
+    def _merge_existing_summary(self, summary: Dict[str, object]) -> None:
+        totals = summary.get("totals")
+        if isinstance(totals, dict):
+            self._add_bucket_values(self._summary["totals"], totals)
+
+        for group_name in ("by_source", "by_model"):
+            raw_group = summary.get(group_name)
+            if not isinstance(raw_group, dict):
+                continue
+            for key, bucket in raw_group.items():
+                if not isinstance(bucket, dict):
+                    continue
+                group = self._summary[group_name]
+                entry = group.setdefault(key, _empty_token_usage_bucket())
+                self._add_bucket_values(entry, bucket)
+
+    def record(
+        self,
+        source: str,
+        response: object = None,
+        usage: Optional[Dict[str, int]] = None,
+        model: Optional[str] = None,
+    ) -> Dict[str, object]:
+        usage_bucket = _extract_token_usage(response=response, usage=usage)
+        usage_bucket["call_count"] = 1
+        model_name = model or getattr(response, "model", None) or "unknown"
+
+        with self._lock:
+            self._add_bucket_values(self._summary["totals"], usage_bucket)
+
+            by_source = self._summary["by_source"]
+            source_entry = by_source.setdefault(source, _empty_token_usage_bucket())
+            self._add_bucket_values(source_entry, usage_bucket)
+
+            by_model = self._summary["by_model"]
+            model_entry = by_model.setdefault(model_name, _empty_token_usage_bucket())
+            self._add_bucket_values(model_entry, usage_bucket)
+
+            return self._snapshot_unlocked()
+
+    def _snapshot_unlocked(self) -> Dict[str, object]:
+        return {
+            "totals": dict(self._summary["totals"]),
+            "by_source": {name: dict(bucket) for name, bucket in self._summary["by_source"].items()},
+            "by_model": {name: dict(bucket) for name, bucket in self._summary["by_model"].items()},
+        }
+
+    def snapshot(self) -> Dict[str, object]:
+        with self._lock:
+            return self._snapshot_unlocked()
+
+    def merge_summary(self, summary: Dict[str, object]) -> Dict[str, object]:
+        if not isinstance(summary, dict):
+            return self.snapshot()
+        with self._lock:
+            self._merge_existing_summary(summary)
+            return self._snapshot_unlocked()
+
+
+def _format_token_usage_summary(summary: Dict[str, object]) -> str:
+    totals = summary.get("totals", {})
+    lines = [
+        (
+            "[TokenUsage] prompt={prompt_tokens} completion={completion_tokens} "
+            "total={total_tokens} calls={call_count}"
+        ).format(
+            prompt_tokens=totals.get("prompt_tokens", 0),
+            completion_tokens=totals.get("completion_tokens", 0),
+            total_tokens=totals.get("total_tokens", 0),
+            call_count=totals.get("call_count", 0),
+        )
+    ]
+
+    by_source = summary.get("by_source", {})
+    if isinstance(by_source, dict) and by_source:
+        lines.append("[TokenUsage] Top sources:")
+        ranked = sorted(
+            by_source.items(),
+            key=lambda item: item[1].get("total_tokens", 0),
+            reverse=True,
+        )
+        for source_name, bucket in ranked[:8]:
+            lines.append(
+                (
+                    "  - {source}: total={total_tokens} prompt={prompt_tokens} "
+                    "completion={completion_tokens} calls={call_count}"
+                ).format(source=source_name, **bucket)
+            )
+
+    return "\n".join(lines)
+
+
+def _total_tokens_from_summary(summary: Dict[str, object]) -> int:
+    totals = summary.get("totals", {})
+    if not isinstance(totals, dict):
+        return 0
+    return int(totals.get("total_tokens", 0) or 0)
+
+
+def _json_safe(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe(val) for key, val in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return _json_safe(model_dump())
+        except Exception:
+            pass
+
+    to_json_dict = getattr(value, "to_json_dict", None)
+    if callable(to_json_dict):
+        try:
+            return _json_safe(to_json_dict())
+        except Exception:
+            pass
+
+    raw_dict = getattr(value, "__dict__", None)
+    if isinstance(raw_dict, dict) and raw_dict:
+        return {str(key): _json_safe(val) for key, val in raw_dict.items() if not str(key).startswith("_")}
+
+    return str(value)
+
+
+def _response_tool_trace(response: object) -> Dict[str, object]:
+    function_calls: List[Dict[str, object]] = []
+    function_responses: List[Dict[str, object]] = []
+    text_parts: List[str] = []
+
+    candidates = getattr(response, "candidates", None) or []
+    for candidate_index, candidate in enumerate(candidates):
+        content = getattr(candidate, "content", None)
+        parts = getattr(content, "parts", None) or []
+        for part_index, part in enumerate(parts):
+            text_value = getattr(part, "text", None)
+            if text_value:
+                text_parts.append(str(text_value))
+
+            function_call = getattr(part, "function_call", None)
+            if function_call is not None:
+                function_calls.append(
+                    {
+                        "candidate_index": candidate_index,
+                        "part_index": part_index,
+                        "name": getattr(function_call, "name", None),
+                        "args": _json_safe(getattr(function_call, "args", None)),
+                        "id": getattr(function_call, "id", None),
+                    }
+                )
+
+            function_response = getattr(part, "function_response", None)
+            if function_response is not None:
+                response_payload = getattr(function_response, "response", None)
+                function_responses.append(
+                    {
+                        "candidate_index": candidate_index,
+                        "part_index": part_index,
+                        "name": getattr(function_response, "name", None),
+                        "id": getattr(function_response, "id", None),
+                        "response": _json_safe(response_payload if response_payload is not None else function_response),
+                    }
+                )
+
+    return {
+        "function_calls": function_calls,
+        "function_responses": function_responses,
+        "text_parts": text_parts,
+    }
+
+
+class MASAgentCallLogger:
+    def __init__(self, output_path: Path):
+        self.output_path = output_path
+        self._lock = Lock()
+
+    def _append(self, event: Dict[str, object]) -> None:
+        payload = dict(event)
+        payload.setdefault("timestamp", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        with self._lock:
+            with self.output_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    def record_response(self, agent_name: str, model: str, response: object) -> None:
+        trace = _response_tool_trace(response)
+        self._append(
+            {
+                "event_type": "agent_response",
+                "agent": agent_name,
+                "model": model,
+                "usage": _extract_token_usage(response=response),
+                "function_calls": trace["function_calls"],
+                "function_responses": trace["function_responses"],
+                "text_parts": trace["text_parts"],
+            }
+        )
+
+    def record_error(
+        self,
+        agent_name: str,
+        model: str,
+        error: Exception,
+        *,
+        stage: str,
+        attempt: int,
+        max_retries: int,
+        retrying: bool,
+    ) -> None:
+        self._append(
+            {
+                "event_type": "agent_error",
+                "agent": agent_name,
+                "model": model,
+                "stage": stage,
+                "attempt": attempt,
+                "max_retries": max_retries,
+                "retrying": retrying,
+                "error_type": error.__class__.__name__,
+                "message": str(error),
+            }
+        )
+
+
+def _final_video_output_path(video_state: "VideoMASState") -> Optional[Path]:
+    if not video_state.run_output_dir:
+        return None
+    safe_name = topic_to_safe_name(video_state.topic) or "final_video"
+    return Path(video_state.run_output_dir) / f"{safe_name}.mp4"
+
+
 def _default_teaching_scene_base_class() -> str:
     return """
 class TeachingScene(Scene):
@@ -276,6 +586,7 @@ class VideoMASState:
     render_error: List[str] = field(default_factory=list)
     video_review: List[Optional[Dict[str, object]]] = field(default_factory=list)
     run_output_dir: str = ""
+    token_usage: Dict[str, object] = field(default_factory=_empty_token_usage_summary)
 
     def __post_init__(self) -> None:
         self.topic = self.outline.topic
@@ -309,6 +620,8 @@ class VideoMASState:
         self.render_status = _normalise_len(self.render_status, None)
         self.render_error = _normalise_len(self.render_error, "")
         self.video_review = _normalise_len(self.video_review, None)
+        if not isinstance(self.token_usage, dict):
+            self.token_usage = _empty_token_usage_summary()
 
     def unresolved_issues(self) -> List[Issue]:
         return [x for x in self.issues if not x.resolved]
@@ -562,47 +875,36 @@ def _scope_refine_request_with_client(
     request_client: Client,
     prompt: str,
     max_tokens: int = 8000,
+    token_tracker: Optional[MASTokenTracker] = None,
+    usage_source: str = "scope_refine",
 ):
     """
-    Client-bound adapter variant for parallel section runners.
+    ScopeRefine request adapter aligned with agent.py's Gemini wrapper.
+
+    The `request_client` parameter is kept for compatibility with older call
+    sites, but the actual request path intentionally mirrors agent.py by
+    going through `request_gemini_token(...)`.
     """
-    generate_config = None
-    if DEBUG_FIX_THINKING_BUDGET is not None or DEBUG_FIX_INCLUDE_THOUGHTS is not None:
-        thinking_kwargs: Dict[str, object] = {}
-        if DEBUG_FIX_THINKING_BUDGET is not None:
-            thinking_kwargs["thinking_budget"] = DEBUG_FIX_THINKING_BUDGET
-        if DEBUG_FIX_INCLUDE_THOUGHTS is not None:
-            thinking_kwargs["include_thoughts"] = DEBUG_FIX_INCLUDE_THOUGHTS
-        generate_config = types.GenerateContentConfig(thinking_config=types.ThinkingConfig(**thinking_kwargs))
+    del request_client
+    response, usage = request_gemini_token(prompt, max_tokens=max_tokens)
+    if token_tracker is not None:
+        token_tracker.record(
+            source=usage_source,
+            usage=usage,
+            response=response,
+        )
 
-    request_kwargs = {
-        "model": DEBUG_FIX_MODEL,
-        "contents": [prompt],
-    }
-    if generate_config is not None:
-        request_kwargs["config"] = generate_config
-
-    response = request_client.models.generate_content(**request_kwargs)
-    content = _extract_text_from_gemini_response(response)
-    fake_completion = _FakeCompletion(content)
-
-    usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-    usage_md = getattr(response, "usage_metadata", None)
-    if usage_md is not None:
-        usage["prompt_tokens"] = getattr(usage_md, "prompt_token_count", 0) or 0
-        usage["completion_tokens"] = getattr(usage_md, "candidates_token_count", 0) or 0
-        usage["total_tokens"] = getattr(usage_md, "total_token_count", 0) or 0
-
-    return fake_completion, usage
+    return response, usage
 
 
 class CoderRuntime:
     """
-    Minimal coder runtime:
-    1) persist current section code to disk
-    2) run Manim
-    3) apply ScopeRefine smart fixes on failure
-    4) return fixed code + render metadata
+    Post-codegen runtime for MAS sections.
+
+    The scheduler in MAS decides *which* sections should be debugged.
+    Once a section reaches this runtime, the repair loop intentionally
+    mirrors the classic `agent.py` `debug_and_fix_code(...)` workflow as
+    closely as possible so ScopeRefine behavior stays aligned.
     """
 
     def __init__(
@@ -613,7 +915,8 @@ class CoderRuntime:
     ):
         self.runtime_dir = runtime_dir
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
-        self.scope_refine_fixer = ScopeRefineFixer(request_fn, max_code_token_length)
+        self.request_fn = request_fn
+        self.max_code_token_length = max_code_token_length
 
     def _scene_name(self, section_id: str) -> str:
         return _scene_name_from_section_id(section_id)
@@ -642,24 +945,23 @@ class CoderRuntime:
         max_fix_attempts: int = 3,
         section_title: str = "",
         lecture_lines: Optional[List[str]] = None,
+        topic: str = "",
     ) -> Dict[str, object]:
         if not code or not code.strip():
             return {"success": False, "status": "skipped", "reason": "No code available for section"}
 
         scene_name = self._scene_name(section_id)
         code_file = self.runtime_dir / f"{section_id}.py"
-        current_code = normalize_code_to_code2video(
-            code=code,
-            section_id=section_id,
-            section_title=section_title,
-            lecture_lines=lecture_lines or [],
-        )
-        current_code = self._normalize_scene_class_name(current_code, scene_name)
+        current_code = code
         code_file.write_text(current_code, encoding="utf-8")
 
         last_error = ""
-        for fix_attempt in range(1, max_fix_attempts + 1):
-            print(f"[CoderRuntime] Debugging {section_id} ({fix_attempt}/{max_fix_attempts})")
+        topic_prefix = f"{topic} " if topic else ""
+        for fix_attempt in range(max_fix_attempts):
+            print(
+                f"🔧 {topic_prefix}Debugging {section_id} (attempt {fix_attempt + 1}/{max_fix_attempts})",
+                flush=True,
+            )
             try:
                 result = subprocess.run(
                     ["manim", "-ql", code_file.name, scene_name],
@@ -668,49 +970,38 @@ class CoderRuntime:
                     cwd=self.runtime_dir,
                     timeout=180,
                 )
+
+                if result.returncode == 0:
+                    video_patterns = [
+                        self.runtime_dir / "media" / "videos" / f"{code_file.name.replace('.py', '')}" / "480p15" / f"{scene_name}.mp4",
+                        self.runtime_dir / "media" / "videos" / "480p15" / f"{scene_name}.mp4",
+                    ]
+                    for video_path in video_patterns:
+                        if video_path.exists():
+                            print(f"✅ {topic_prefix}{section_id} finished", flush=True)
+                            return {
+                                "success": True,
+                                "status": "ok",
+                                "attempts": fix_attempt + 1,
+                                "code": current_code,
+                                "video_path": str(video_path),
+                            }
+
+                last_error = (result.stderr or "").strip()
+                scope_refine_fixer = ScopeRefineFixer(self.request_fn, self.max_code_token_length)
+                fixed_code = scope_refine_fixer.fix_code_smart(section_id, current_code, result.stderr, self.runtime_dir)
+
+                if fixed_code:
+                    current_code = fixed_code
+                    code_file.write_text(fixed_code, encoding="utf-8")
+                else:
+                    break
             except subprocess.TimeoutExpired:
-                return {
-                    "success": False,
-                    "status": "failed",
-                    "attempts": fix_attempt,
-                    "error": "Manim execution timed out",
-                }
-            except Exception as e:
-                return {
-                    "success": False,
-                    "status": "failed",
-                    "attempts": fix_attempt,
-                    "error": str(e),
-                }
-
-            if result.returncode == 0:
-                video_path = self._find_video_path(section_id, scene_name)
-                return {
-                    "success": True,
-                    "status": "ok",
-                    "attempts": fix_attempt,
-                    "code": current_code,
-                    "video_path": str(video_path) if video_path else None,
-                }
-
-            last_error = (result.stderr or result.stdout or "Unknown runtime error").strip()
-            fixed_code = self.scope_refine_fixer.fix_code_smart(
-                section_id=section_id,
-                code=current_code,
-                error_msg=last_error,
-                output_dir=self.runtime_dir,
-            )
-            if not fixed_code:
+                print(f"❌ {topic_prefix}{section_id} timed out", flush=True)
                 break
-
-            current_code = normalize_code_to_code2video(
-                code=fixed_code,
-                section_id=section_id,
-                section_title=section_title,
-                lecture_lines=lecture_lines or [],
-            )
-            current_code = self._normalize_scene_class_name(current_code, scene_name)
-            code_file.write_text(current_code, encoding="utf-8")
+            except Exception as e:
+                print(f"❌ {topic_prefix}{section_id} failed with exception: {e}", flush=True)
+                break
 
         return {
             "success": False,
@@ -719,6 +1010,68 @@ class CoderRuntime:
             "code": current_code,
             "error": last_error,
         }
+
+
+def _run_coder_runtime_worker(
+    *,
+    runtime_dir: str,
+    topic: str,
+    section_id: str,
+    code: str,
+    max_fix_attempts: int,
+    max_code_token_length: int,
+    section_title: str,
+    lecture_lines: List[str],
+) -> Tuple[str, Dict[str, object], Dict[str, object]]:
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(line_buffering=True, write_through=True)
+            except Exception:
+                pass
+
+    local_token_tracker = MASTokenTracker()
+    runtime_path = Path(runtime_dir)
+    normalized_code = normalize_code_to_code2video(
+        code=code,
+        section_id=section_id,
+        section_title=section_title,
+        lecture_lines=lecture_lines,
+    )
+
+    runtime = CoderRuntime(
+        runtime_dir=runtime_path,
+        request_fn=lambda prompt, max_tokens=8000, section_id=section_id: _scope_refine_request_with_client(
+            client,
+            prompt,
+            max_tokens=max_tokens,
+            token_tracker=local_token_tracker,
+            usage_source=f"scope_refine:{section_id}",
+        ),
+        max_code_token_length=max_code_token_length,
+    )
+
+    try:
+        result = runtime.debug_and_fix(
+            section_id=section_id,
+            code=normalized_code,
+            max_fix_attempts=max_fix_attempts,
+            section_title=section_title,
+            lecture_lines=lecture_lines,
+            topic=topic,
+        )
+    except Exception as e:
+        result = {
+            "success": False,
+            "status": "failed",
+            "attempts": max_fix_attempts,
+            "code": normalized_code,
+            "error": str(e),
+        }
+
+    return section_id, result, local_token_tracker.snapshot()
 
 
 class MASAgent:
@@ -730,6 +1083,7 @@ class MASAgent:
         model: str,
         client: Client,
         tools: Optional[List[Callable]] = None,
+        token_tracker: Optional[MASTokenTracker] = None,
     ):
         self.name = name
         self.role = role
@@ -737,6 +1091,8 @@ class MASAgent:
         self.model = model
         self.client = client
         self.tools = tools or []
+        self.token_tracker = token_tracker
+        self.call_logger: Optional[MASAgentCallLogger] = None
         self.original_model = model
         self.team_agents: List["MASAgent"] = []
 
@@ -759,10 +1115,33 @@ class MASAgent:
                     contents=parts,
                     config=types.GenerateContentConfig(tools=tools),
                 )
+                if self.token_tracker is not None:
+                    self.token_tracker.record(
+                        source=f"agent:{self.name}",
+                        response=response,
+                        model=self.model,
+                    )
+                if self.call_logger is not None:
+                    self.call_logger.record_response(
+                        agent_name=self.name,
+                        model=self.model,
+                        response=response,
+                    )
                 break  # success
             except (ClientError, ServerError) as e:
                 msg = str(e)
                 attempts += 1
+                retrying = attempts < (max_retries + 1)
+                if self.call_logger is not None:
+                    self.call_logger.record_error(
+                        agent_name=self.name,
+                        model=self.model,
+                        error=e,
+                        stage="client_error",
+                        attempt=attempts,
+                        max_retries=max_retries,
+                        retrying=retrying,
+                    )
 
                 if attempts >= max_retries + 1:
                     raise
@@ -778,6 +1157,17 @@ class MASAgent:
                     raise 
             except KeyError as e:
                 attempts += 1
+                retrying = attempts <= max_retries
+                if self.call_logger is not None:
+                    self.call_logger.record_error(
+                        agent_name=self.name,
+                        model=self.model,
+                        error=e,
+                        stage="tool_keyerror",
+                        attempt=attempts,
+                        max_retries=max_retries,
+                        retrying=retrying,
+                    )
 
                 if attempts > max_retries:
                     raise
@@ -800,9 +1190,30 @@ class MASAgent:
                 )
 
                 if not is_retryable_transport:
+                    if self.call_logger is not None:
+                        self.call_logger.record_error(
+                            agent_name=self.name,
+                            model=self.model,
+                            error=e,
+                            stage="unexpected_error",
+                            attempt=attempts + 1,
+                            max_retries=max_retries,
+                            retrying=False,
+                        )
                     raise
 
                 attempts += 1
+                retrying = attempts <= max_retries
+                if self.call_logger is not None:
+                    self.call_logger.record_error(
+                        agent_name=self.name,
+                        model=self.model,
+                        error=e,
+                        stage="transport_error",
+                        attempt=attempts,
+                        max_retries=max_retries,
+                        retrying=retrying,
+                    )
                 if attempts > max_retries:
                     raise
 
@@ -841,6 +1252,8 @@ def generate_outline_with_code2video_stage1(
     max_regenerate_tries: int = OUTLINE_MAX_REGENERATE_TRIES,
     model: str = OUTLINE_MODEL,
     request_client: Optional[Client] = None,
+    token_tracker: Optional[MASTokenTracker] = None,
+    usage_source: str = "stage1:outline",
 ) -> TeachingOutline:
     """
     Generate an outline using the original Code2Video Stage-1 prompt style.
@@ -858,6 +1271,12 @@ def generate_outline_with_code2video_stage1(
                 model=model,
                 contents=[prompt],
             )
+            if token_tracker is not None:
+                token_tracker.record(
+                    source=usage_source,
+                    response=response,
+                    model=model,
+                )
             content = _extract_text_from_gemini_response(response)
             if not content:
                 content = str(response)
@@ -979,6 +1398,7 @@ class VideoTeamBaseAgent(MASAgent):
         client: Client,
         managed_sections: Optional[List[str]] = None,
         tools: Optional[List[Callable]] = None,
+        token_tracker: Optional[MASTokenTracker] = None,
     ):
         super().__init__(
             name=name,
@@ -987,6 +1407,7 @@ class VideoTeamBaseAgent(MASAgent):
             model=model,
             client=client,
             tools=tools,
+            token_tracker=token_tracker,
         )
         self.video_state = video_state
         self.managed_sections = managed_sections or self.video_state.section_ids()
@@ -1154,7 +1575,6 @@ class VideoTeamBaseAgent(MASAgent):
 
         agent_lines = "\n".join(f"- {agent.name}: {agent.role}" for agent in self.team_agents)
         my_active_issues = self._issues_for_me(active_only=True)
-        global_active_issues = self.video_state.active_issues()
 
         if self.name == SCRIPT_WRITER:
             edit_instruction = (
@@ -1210,15 +1630,14 @@ Section snapshots for your scope:
 Active issues assigned to you:
 {my_active_issues}
 
-All active issues (video-wide):
-{global_active_issues}
-
 Instructions:
 1. Resolve your assigned active issues first.
 2. Mark each attempted issue with update_issue(issue_id, under_review=True, resolution_note=...).
 3. Keep changes section-specific and avoid editing sections outside your assignment.
 4. {edit_instruction}
-5. If blocked, add targeted cross-agent issues via add_issue(section_id, toAgent, description).
+5. You do NOT see the global issue list; only your assigned issues are visible.
+6. If blocked, add targeted cross-agent issues via add_issue(section_id, toAgent, description).
+7. Any issue you create for another agent must be self-contained: include the concrete problem, relevant local context, and the action you want that agent to take.
 
 Guidelines:
 {self.guidelines}
@@ -1242,6 +1661,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
         client: Client,
         managed_sections: Optional[List[str]] = None,
         tools: Optional[List[Callable]] = None,
+        token_tracker: Optional[MASTokenTracker] = None,
     ):
         super().__init__(
             name=name,
@@ -1252,6 +1672,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
             client=client,
             managed_sections=managed_sections,
             tools=tools,
+            token_tracker=token_tracker,
         )
         self.extractor = GridPositionExtractor()
         self.grid_img_path = Path(__file__).resolve().parent.parent / "assets" / "reference" / "GRID.png"
@@ -1422,11 +1843,17 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
             position_table=position_table,
         )
 
-        response = request_gemini_video_img(
+        response, usage = request_gemini_video_img_token(
             prompt=prompt,
             video_path=video_path,
             image_path=str(self.grid_img_path),
         )
+        if self.token_tracker is not None:
+            self.token_tracker.record(
+                source=f"video_review:{section_id}",
+                response=response,
+                usage=usage,
+            )
         raw = extract_answer_from_response(response)
         parsed: Dict[str, object]
         try:
@@ -1482,9 +1909,12 @@ Instructions:
    - update_issue(issue_id, under_review=False, resolution_note=..., isActive=True/False).
 2. Automatic video review has already run for sections with rendered videos, and corresponding coder issues may already be created.
 3. Call review_rendered_video(section_id) only when you need an additional re-check (for example after major changes in code/render).
-4. Add only high-impact new issues with add_issue(section_id, toAgent, description).
-5. Route coding issues to the correct dedicated coder (Coder1/Coder2/... based on coder assignments).
-6. Deactivate duplicates/out-of-scope issues with update_issue(..., isActive=False).
+4. Workers do NOT see the global issue list; they only see issues assigned to them.
+5. Therefore every issue you create must be self-contained. Include the concrete problem, the relevant section context, any dependency or upstream reason, and the exact action expected from that recipient. Do not assume they can infer missing context from other issues.
+6. If an existing worker-facing issue is too vague to stand alone, create a new richer replacement issue and deactivate the stale or redundant one.
+7. Add only high-impact new issues with add_issue(section_id, toAgent, description).
+8. Route coding issues to the correct dedicated coder (Coder1/Coder2/... based on coder assignments).
+9. Deactivate duplicates/out-of-scope issues with update_issue(..., isActive=False).
 
 Guidelines:
 {self.guidelines}
@@ -1504,16 +1934,21 @@ class MASVideoRunner:
         logs_dir: Path,
         cfg: MASRunConfig,
         client_override: Optional[Client] = None,
+        token_tracker: Optional[MASTokenTracker] = None,
     ):
         self.video_state = video_state
         self.logs_dir = logs_dir
         self.cfg = cfg
         self.client = client_override or client
+        self.token_tracker = token_tracker or MASTokenTracker(initial_summary=video_state.token_usage)
 
         self.case_dir = self.logs_dir
         self.state_logs_dir = self.case_dir / "mas_state"
         self.case_dir.mkdir(parents=True, exist_ok=True)
         self.state_logs_dir.mkdir(parents=True, exist_ok=True)
+        self.call_logger = MASAgentCallLogger(self.case_dir / "agent_function_calls.jsonl")
+
+        self._sync_token_usage()
 
         self._sync_case_documents()
         self._sync_section_code_files()
@@ -1522,8 +1957,12 @@ class MASVideoRunner:
         for section_id in self.video_state.section_ids():
             self.coder_runtimes[section_id] = CoderRuntime(
                 runtime_dir=self.case_dir,
-                request_fn=lambda prompt, max_tokens=8000: _scope_refine_request_with_client(
-                    self.client, prompt, max_tokens=max_tokens
+                request_fn=lambda prompt, max_tokens=8000, section_id=section_id: _scope_refine_request_with_client(
+                    self.client,
+                    prompt,
+                    max_tokens=max_tokens,
+                    token_tracker=self.token_tracker,
+                    usage_source=f"scope_refine:{section_id}",
                 ),
                 max_code_token_length=self.cfg.max_code_token_length,
             )
@@ -1537,6 +1976,7 @@ class MASVideoRunner:
             client=self.client,
             managed_sections=self.video_state.section_ids(),
             tools=[],
+            token_tracker=self.token_tracker,
         )
         self.script_writer_agent.tools.append(self.script_writer_agent.replace_lecture_lines)
 
@@ -1549,6 +1989,7 @@ class MASVideoRunner:
             client=self.client,
             managed_sections=self.video_state.section_ids(),
             tools=[],
+            token_tracker=self.token_tracker,
         )
         self.animation_planner_agent.tools.append(self.animation_planner_agent.replace_animations)
 
@@ -1564,6 +2005,7 @@ class MASVideoRunner:
                 client=self.client,
                 managed_sections=[section_id],
                 tools=[],
+                token_tracker=self.token_tracker,
             )
             coder_agent.tools.append(coder_agent.replace_code)
             self.coder_agents.append(coder_agent)
@@ -1583,10 +2025,18 @@ class MASVideoRunner:
             client=self.client,
             managed_sections=self.video_state.section_ids(),
             tools=[],
+            token_tracker=self.token_tracker,
         )
 
         for agent in self.team_agents + [self.orchestrator_agent]:
             agent.set_team_agents(self.team_agents)
+            agent.call_logger = self.call_logger
+
+    def _sync_token_usage(self) -> None:
+        self.video_state.token_usage = self.token_tracker.snapshot()
+        token_usage_path = self.case_dir / "token_usage_summary.json"
+        with token_usage_path.open("w", encoding="utf-8") as f:
+            json.dump(self.video_state.token_usage, f, ensure_ascii=False, indent=2)
 
     def _storyboard_payload(self) -> Dict[str, object]:
         return {
@@ -1694,12 +2144,13 @@ class MASVideoRunner:
                 selected[agent.name] = agent
         return list(selected.values())
 
-    def _run_workers_parallel(self) -> None:
+    def _run_workers_parallel(self) -> List[str]:
         next_agents = self._select_next_agents()
         if not next_agents:
             print("[VideoMAS] No active issues mapped to workers; skipping worker execution for this turn.")
-            return
+            return []
 
+        completed_agent_names: List[str] = []
         print(f"[VideoMAS] Running workers: {[agent.name for agent in next_agents]}")
         with ThreadPoolExecutor(max_workers=len(next_agents)) as executor:
             futures = {executor.submit(agent.run, max_retries=self.cfg.max_retries): agent for agent in next_agents}
@@ -1707,31 +2158,15 @@ class MASVideoRunner:
                 agent = futures[future]
                 try:
                     future.result()
+                    completed_agent_names.append(agent.name)
                     print(f"[VideoMAS][{agent.name}] completed")
                 except Exception as e:
                     print(f"[VideoMAS][{agent.name}] failed: {e}")
+        return completed_agent_names
 
-    def _run_coder_runtime_for_section(
-        self,
-        section_id: str,
-        max_fix_attempts: int,
-    ) -> Tuple[str, Dict[str, object]]:
-        runtime = self.coder_runtimes[section_id]
+    def _apply_coder_runtime_result(self, section_id: str, result: Dict[str, object]) -> None:
         section_idx = self.video_state.section_index(section_id)
         section = self.video_state.storyboard[section_idx]
-        self.video_state.code[section_idx] = normalize_code_to_code2video(
-            code=self.video_state.code[section_idx],
-            section_id=section_id,
-            section_title=section.title,
-            lecture_lines=section.lecture_lines,
-        )
-        result = runtime.debug_and_fix(
-            section_id=section_id,
-            code=self.video_state.code[section_idx],
-            max_fix_attempts=max_fix_attempts,
-            section_title=section.title,
-            lecture_lines=section.lecture_lines,
-        )
         self.video_state.code[section_idx] = normalize_code_to_code2video(
             code=result.get("code", self.video_state.code[section_idx]),
             section_id=section_id,
@@ -1745,28 +2180,118 @@ class MASVideoRunner:
         else:
             self.video_state.rendered_video_path[section_idx] = None
             self.video_state.video_review[section_idx] = None
+
+    def _run_coder_runtime_for_section(
+        self,
+        section_id: str,
+        max_fix_attempts: int,
+        phase_label: str,
+    ) -> Tuple[str, Dict[str, object]]:
+        runtime = self.coder_runtimes[section_id]
+        section_idx = self.video_state.section_index(section_id)
+        section = self.video_state.storyboard[section_idx]
+        current_code = self.video_state.code[section_idx] or ""
+        if not current_code.strip():
+            return section_id, {
+                "success": False,
+                "status": "skipped",
+                "error": "No code available for section",
+            }
+
+        print(f"[{section_id}][CoderRuntime][{phase_label}] Debugging updated code.")
+        self.video_state.code[section_idx] = normalize_code_to_code2video(
+            code=current_code,
+            section_id=section_id,
+            section_title=section.title,
+            lecture_lines=section.lecture_lines,
+        )
+        result = runtime.debug_and_fix(
+            section_id=section_id,
+            code=self.video_state.code[section_idx],
+            max_fix_attempts=max_fix_attempts,
+            section_title=section.title,
+            lecture_lines=section.lecture_lines,
+        )
+        self._apply_coder_runtime_result(section_id, result)
         return section_id, result
 
-    def _run_coder_runtimes_parallel(self, max_fix_attempts: int, phase_label: str) -> None:
-        runnable_sections = [
-            section_id
-            for section_id in self.video_state.section_ids()
-            if bool((self.video_state.code[self.video_state.section_index(section_id)] or "").strip())
-        ]
+    def _sections_with_updated_code(
+        self,
+        prior_code_by_section: Dict[str, str],
+        completed_agent_names: List[str],
+    ) -> List[str]:
+        completed_names = set(completed_agent_names)
+        updated_sections: List[str] = []
+
+        for section_id, coder_name in self.video_state.coder_assignments.items():
+            if coder_name not in completed_names:
+                continue
+
+            section_idx = self.video_state.section_index(section_id)
+            previous_code = prior_code_by_section.get(section_id, "") or ""
+            current_code = self.video_state.code[section_idx] or ""
+            if current_code.strip() and current_code != previous_code:
+                updated_sections.append(section_id)
+
+        return updated_sections
+
+    def _run_coder_runtimes_parallel(
+        self,
+        max_fix_attempts: int,
+        phase_label: str,
+        sections_to_run: Optional[List[str]] = None,
+    ) -> None:
+        if sections_to_run is None:
+            runnable_sections = [
+                section_id
+                for section_id in self.video_state.section_ids()
+                if bool((self.video_state.code[self.video_state.section_index(section_id)] or "").strip())
+            ]
+        else:
+            runnable_sections = list(sections_to_run)
+
         if not runnable_sections:
-            print("[VideoMAS] No section has code yet; skipping coder runtime execution.")
+            print(f"[VideoMAS] No sections require coder runtime execution for {phase_label}.")
             return
 
         max_workers = min(max(1, len(runnable_sections)), max(1, self.cfg.section_parallel_workers))
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        tasks = []
+        for section_id in runnable_sections:
+            section_idx = self.video_state.section_index(section_id)
+            section = self.video_state.storyboard[section_idx]
+            current_code = self.video_state.code[section_idx] or ""
+            if not current_code.strip():
+                continue
+
+            print(f"[{section_id}][CoderRuntime][{phase_label}] Debugging updated code.")
+            tasks.append(
+                {
+                    "runtime_dir": str(self.case_dir),
+                    "topic": self.video_state.topic,
+                    "section_id": section_id,
+                    "code": current_code,
+                    "max_fix_attempts": max_fix_attempts,
+                    "max_code_token_length": self.cfg.max_code_token_length,
+                    "section_title": section.title,
+                    "lecture_lines": list(section.lecture_lines),
+                }
+            )
+
+        if not tasks:
+            print(f"[VideoMAS] No sections require coder runtime execution for {phase_label}.")
+            return
+
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(self._run_coder_runtime_for_section, section_id, max_fix_attempts): section_id
-                for section_id in runnable_sections
+                executor.submit(_run_coder_runtime_worker, **task): task["section_id"]
+                for task in tasks
             }
             for future in as_completed(futures):
                 section_id = futures[future]
                 try:
-                    future.result()
+                    _, result, token_usage_summary = future.result()
+                    self.token_tracker.merge_summary(token_usage_summary)
+                    self._apply_coder_runtime_result(section_id, result)
                 except Exception as e:
                     print(f"[{section_id}][CoderRuntime][{phase_label}] failed: {e}")
 
@@ -1775,16 +2300,23 @@ class MASVideoRunner:
             turn_idx = self.video_state.turns_run + 1
             print(f"[VideoMAS] === Turn {turn_idx} ===")
 
+            prior_code_by_section = {
+                section_id: self.video_state.code[self.video_state.section_index(section_id)] or ""
+                for section_id in self.video_state.section_ids()
+            }
             self._activate_ready_coder_issues()
-            self._run_workers_parallel()
+            completed_agent_names = self._run_workers_parallel()
             self._activate_ready_coder_issues()
+            sections_to_debug = self._sections_with_updated_code(prior_code_by_section, completed_agent_names)
             self._run_coder_runtimes_parallel(
                 max_fix_attempts=self.cfg.coder_fix_attempts,
                 phase_label=f"turn_{turn_idx:02d}",
+                sections_to_run=sections_to_debug,
             )
 
             self._sync_case_documents()
             self._sync_section_code_files()
+            self._sync_token_usage()
             _save_video_state_json(self.video_state, self.state_logs_dir, f"turn_{turn_idx:02d}_video_state.json")
 
             self.video_state.turns_run += 1
@@ -1793,6 +2325,7 @@ class MASVideoRunner:
 
             self.orchestrator_agent.run(max_retries=self.cfg.max_retries)
             self._sync_case_documents()
+            self._sync_token_usage()
             _save_video_state_json(
                 self.video_state,
                 self.state_logs_dir,
@@ -1806,9 +2339,11 @@ class MASVideoRunner:
         )
         self._sync_case_documents()
         self._sync_section_code_files()
+        self._sync_token_usage()
         _save_video_state_json(self.video_state, self.state_logs_dir, "final_render_pass_video_state.json")
         self._finalize_case_outputs()
 
+        self._sync_token_usage()
         _save_video_state_json(self.video_state, self.state_logs_dir, "final_video_state.json")
         return self.video_state
 
@@ -1818,6 +2353,7 @@ def run_mas_for_video_state(
     logs_root: Optional[Path] = None,
     cfg: Optional[MASRunConfig] = None,
     client_override: Optional[Client] = None,
+    token_tracker: Optional[MASTokenTracker] = None,
 ) -> VideoMASState:
     """
     Primary centralized runner: all team agents read/write one VideoMASState object.
@@ -1851,22 +2387,28 @@ def run_mas_for_video_state(
 
     case_dir.mkdir(parents=True, exist_ok=True)
     video_state.run_output_dir = str(case_dir)
+    if token_tracker is not None:
+        video_state.token_usage = token_tracker.snapshot()
 
     runner = MASVideoRunner(
         video_state=video_state,
         logs_dir=case_dir,
         cfg=cfg,
         client_override=client_override,
+        token_tracker=token_tracker,
     )
     return runner.run()
 
 
 if __name__ == "__main__":
+    start_time = time.time()
+    token_tracker = MASTokenTracker()
     generated_outline = generate_outline_with_code2video_stage1(
         knowledge_point=TOPIC,
         duration_minutes=OUTLINE_DURATION_MINUTES,
         max_regenerate_tries=OUTLINE_MAX_REGENERATE_TRIES,
         model=OUTLINE_MODEL,
+        token_tracker=token_tracker,
     )
 
     video_state = build_video_state_from_outline(generated_outline)
@@ -1883,8 +2425,29 @@ if __name__ == "__main__":
         video_state=video_state,
         logs_root=logs_root,
         cfg=cfg,
+        token_tracker=token_tracker,
     )
+
+    duration_minutes = (time.time() - start_time) / 60
+    total_tokens = _total_tokens_from_summary(final_video_state.token_usage)
+    final_video_path = _final_video_output_path(final_video_state)
+    was_successful = bool(final_video_path and final_video_path.exists())
 
     print(f"Generated outline topic: {generated_outline.topic}")
     print(f"Finished MAS run for {len(final_video_state.section_ids())} sections.")
     print(f"Run outputs written to: {final_video_state.run_output_dir}")
+    status_icon = "✅" if was_successful else "❌"
+    print(
+        f"{status_icon} Knowledge topic '{generated_outline.topic}' processed. "
+        f"Cost Time: {duration_minutes:.2f} minutes, Tokens used: {total_tokens}"
+    )
+    if was_successful:
+        print("\n" + "=" * 50)
+        print("   Total knowledge points: 1")
+        print("   Successfully processed: 1 (100.0%)")
+        print(f"   Average duration [min]: {duration_minutes:.2f} minutes/knowledge point")
+        print(f"   Average token consumption: {total_tokens:,.0f} tokens/knowledge point")
+        print("=" * 50)
+    else:
+        print("\nAll knowledge points failed, cannot calculate average.")
+    print(_format_token_usage_summary(final_video_state.token_usage))

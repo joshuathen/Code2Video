@@ -41,6 +41,23 @@ class RunConfig:
     max_mllm_fix_bugs_tries: int = 3
 
 
+def _empty_token_usage_bucket() -> Dict[str, int]:
+    return {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "call_count": 0,
+    }
+
+
+def _empty_token_usage_summary() -> Dict[str, object]:
+    return {
+        "totals": _empty_token_usage_bucket(),
+        "by_source": {},
+        "by_model": {},
+    }
+
+
 class TeachingVideoAgent:
     def __init__(
         self,
@@ -48,6 +65,7 @@ class TeachingVideoAgent:
         knowledge_point,
         folder="CASES",
         cfg: Optional[RunConfig] = None,
+        persist_token_usage_summary: bool = True,
     ):
         """1. Global parameter"""
         self.learning_topic = knowledge_point
@@ -70,12 +88,14 @@ class TeachingVideoAgent:
         self.folder = folder
         self.output_dir = get_output_dir(idx=idx, knowledge_point=self.learning_topic, base_dir=folder)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.persist_token_usage_summary = persist_token_usage_summary
+        self.token_usage_summary_path = self.output_dir / "token_usage_summary.json"
 
         self.assets_dir = self.project_root / "assets" / "icon"
         self.assets_dir.mkdir(parents=True, exist_ok=True)
 
         """3. ScopeRefine & Anchor Visual"""
-        self.scope_refine_fixer = ScopeRefineFixer(self.API, self.max_code_token_length)
+        self.scope_refine_fixer = ScopeRefineFixer(self._request_raw_api_and_track_tokens, self.max_code_token_length)
         self.extractor = GridPositionExtractor()
 
         """4. External Database"""
@@ -94,30 +114,116 @@ class TeachingVideoAgent:
         self.video_feedbacks = {}
 
         """6. For Efficiency"""
-        self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self.token_usage_summary = _empty_token_usage_summary()
+        self.token_usage = self.token_usage_summary["totals"]
+        self._sync_token_usage_summary()
 
-    def _request_api_and_track_tokens(self, prompt, max_tokens=10000):
-        """packages API requests and automatically accumulates token usage"""
+    def _merge_bucket_values(self, target: Dict[str, int], source: Dict[str, Any]):
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens", "call_count"):
+            target[key] += int(source.get(key, 0) or 0)
+
+    def _detect_model_name(self, response=None, model: Optional[str] = None) -> str:
+        if model:
+            return model
+        response_model = getattr(response, "model", None)
+        if response_model:
+            return str(response_model)
+        return "unknown"
+
+    def _copy_token_usage_summary(self) -> Dict[str, object]:
+        return {
+            "totals": dict(self.token_usage_summary["totals"]),
+            "by_source": {name: dict(bucket) for name, bucket in self.token_usage_summary["by_source"].items()},
+            "by_model": {name: dict(bucket) for name, bucket in self.token_usage_summary["by_model"].items()},
+        }
+
+    def _sync_token_usage_summary(self):
+        if not self.persist_token_usage_summary:
+            return
+        with open(self.token_usage_summary_path, "w", encoding="utf-8") as f:
+            json.dump(self.token_usage_summary, f, ensure_ascii=False, indent=2)
+
+    def _record_token_usage(self, usage, source: str = "unknown", response=None, model: Optional[str] = None):
+        usage_bucket = _empty_token_usage_bucket()
+        if isinstance(usage, dict):
+            usage_bucket["prompt_tokens"] = int(usage.get("prompt_tokens", 0) or 0)
+            usage_bucket["completion_tokens"] = int(usage.get("completion_tokens", 0) or 0)
+            usage_bucket["total_tokens"] = int(
+                usage.get(
+                    "total_tokens",
+                    usage_bucket["prompt_tokens"] + usage_bucket["completion_tokens"],
+                )
+                or 0
+            )
+        usage_bucket["call_count"] = 1
+
+        self._merge_bucket_values(self.token_usage_summary["totals"], usage_bucket)
+
+        by_source = self.token_usage_summary["by_source"]
+        source_entry = by_source.setdefault(source, _empty_token_usage_bucket())
+        self._merge_bucket_values(source_entry, usage_bucket)
+
+        by_model = self.token_usage_summary["by_model"]
+        model_name = self._detect_model_name(response=response, model=model)
+        model_entry = by_model.setdefault(model_name, _empty_token_usage_bucket())
+        self._merge_bucket_values(model_entry, usage_bucket)
+        self._sync_token_usage_summary()
+
+    def _merge_token_usage(self, usage_summary):
+        if not isinstance(usage_summary, dict):
+            return
+        totals = usage_summary.get("totals")
+        if isinstance(totals, dict):
+            self._merge_bucket_values(self.token_usage_summary["totals"], totals)
+
+        for group_name in ("by_source", "by_model"):
+            group = usage_summary.get(group_name)
+            if not isinstance(group, dict):
+                continue
+            target_group = self.token_usage_summary[group_name]
+            for key, bucket in group.items():
+                if not isinstance(bucket, dict):
+                    continue
+                target_entry = target_group.setdefault(key, _empty_token_usage_bucket())
+                self._merge_bucket_values(target_entry, bucket)
+        self._sync_token_usage_summary()
+
+    def _request_raw_api_and_track_tokens(self, prompt, max_tokens=10000, source: str = "text", model: Optional[str] = None):
+        """Return the original (response, usage) tuple while accumulating token usage."""
         response, usage = self.API(prompt, max_tokens=max_tokens)
-        if usage:
-            self.token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
-            self.token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
-            self.token_usage["total_tokens"] += usage.get("total_tokens", 0)
+        self._record_token_usage(usage, source=source, response=response, model=model)
+        return response, usage
+
+    def _request_api_and_track_tokens(self, prompt, max_tokens=10000, source: str = "text", model: Optional[str] = None):
+        """packages API requests and automatically accumulates token usage"""
+        response, usage = self._request_raw_api_and_track_tokens(
+            prompt,
+            max_tokens=max_tokens,
+            source=source,
+            model=model,
+        )
         return response
 
-    def _request_video_api_and_track_tokens(self, prompt, video_path):
+    def _request_video_api_and_track_tokens(self, prompt, video_path, source: str = "video_review", model: Optional[str] = None):
         """Wraps video API requests and accumulates token usage automatically"""
-        response, usage = request_gemini_video_img(prompt=prompt, video_path=video_path, image_path=self.GRID_IMG_PATH)
+        response, usage = request_gemini_video_img_token(
+            prompt=prompt,
+            video_path=video_path,
+            image_path=self.GRID_IMG_PATH,
+        )
 
-        if usage:
-            self.token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
-            self.token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
-            self.token_usage["total_tokens"] += usage.get("total_tokens", 0)
+        self._record_token_usage(usage, source=source, response=response, model=model)
         return response
 
     def get_serializable_state(self):
         """返回可以序列化保存的Agent状态"""
-        return {"idx": self.idx, "knowledge_point": self.learning_topic, "folder": self.folder, "cfg": self.cfg}
+        return {
+            "idx": self.idx,
+            "knowledge_point": self.learning_topic,
+            "folder": self.folder,
+            "cfg": self.cfg,
+            "persist_token_usage_summary": False,
+        }
 
     def generate_outline(self) -> TeachingOutline:
         outline_file = self.output_dir / "outline.json"
@@ -139,7 +245,7 @@ class TeachingVideoAgent:
 
             for attempt in range(1, self.max_regenerate_tries + 1):
                 api_func = self._request_api_and_track_tokens if refer_img_path else self._request_api_and_track_tokens
-                response = api_func(prompt1, max_tokens=self.max_code_token_length)
+                response = api_func(prompt1, max_tokens=self.max_code_token_length, source="outline")
                 if response is None:
                     print(f"⚠️ Attempt {attempt} failed, retrying...")
                     if attempt == self.max_regenerate_tries:
@@ -206,7 +312,7 @@ class TeachingVideoAgent:
 
             for attempt in range(1, self.max_regenerate_tries + 1):
                 api_func = self._request_api_and_track_tokens
-                response = api_func(prompt2, max_tokens=self.max_code_token_length)
+                response = api_func(prompt2, max_tokens=self.max_code_token_length, source="storyboard")
                 if response is None:
                     print(f"⚠️ Outline format invalid on attempt {attempt}, retrying...")
                     if attempt == self.max_regenerate_tries:
@@ -262,7 +368,11 @@ class TeachingVideoAgent:
         try:
             enhanced_storyboard = process_storyboard_with_assets(
                 storyboard=storyboard_data,
-                api_function=self.API,
+                api_function=lambda prompt, max_tokens=10000: self._request_raw_api_and_track_tokens(
+                    prompt,
+                    max_tokens=max_tokens,
+                    source="assets",
+                ),
                 assets_dir=str(self.assets_dir),
                 iconfinder_api_key=self.iconfinder_api_key,
             )
@@ -311,7 +421,12 @@ class TeachingVideoAgent:
         else:
             code_gen_prompt = get_prompt3_code(regenerate_note=regenerate_note, section=section, base_class=base_class)
 
-        response = self._request_api_and_track_tokens(code_gen_prompt, max_tokens=self.max_code_token_length)
+        source = f"feedback_codegen:{section.id}" if feedback_improvements else f"codegen:{section.id}"
+        response = self._request_api_and_track_tokens(
+            code_gen_prompt,
+            max_tokens=self.max_code_token_length,
+            source=source,
+        )
         if response is None:
             print(f"❌ Failed to generate code for {section.id} via API call.")
             return ""
@@ -365,7 +480,15 @@ class TeachingVideoAgent:
                             return True
 
                 current_code = self.section_codes[section_id]
-                fixed_code = self.scope_refine_fixer.fix_code_smart(section_id, current_code, result.stderr, self.output_dir)
+                scope_refine_fixer = ScopeRefineFixer(
+                    lambda prompt, max_tokens=10000, section_id=section_id: self._request_raw_api_and_track_tokens(
+                        prompt,
+                        max_tokens=max_tokens,
+                        source=f"scope_refine:{section_id}",
+                    ),
+                    self.max_code_token_length,
+                )
+                fixed_code = scope_refine_fixer.fix_code_smart(section_id, current_code, result.stderr, self.output_dir)
 
                 if fixed_code:
                     self.section_codes[section_id] = fixed_code
@@ -419,7 +542,11 @@ class TeachingVideoAgent:
             return has_layout_issues, suggested_improvements
 
         try:
-            response = request_gemini_video_img(prompt=analysis_prompt, video_path=video_path, image_path=self.GRID_IMG_PATH)
+            response = self._request_video_api_and_track_tokens(
+                prompt=analysis_prompt,
+                video_path=video_path,
+                source=f"video_review:{section.id}",
+            )
             feedback_content = extract_answer_from_response(response)
             has_layout_issues, suggested_improvements = _parse_layout(feedback_content)
             feedback = VideoFeedback(
@@ -563,7 +690,7 @@ class TeachingVideoAgent:
             print(f"❌ {self.learning_topic} {section_id} render process exception: {str(e)}")
             return False
 
-    def render_section_worker(self, section_data) -> Tuple[str, bool, Optional[str]]:
+    def render_section_worker(self, section_data) -> Tuple[str, bool, Optional[str], Dict[str, int]]:
         section_id = "unknown"
         try:
             section, agent_class, kwargs = section_data
@@ -571,11 +698,11 @@ class TeachingVideoAgent:
             agent = agent_class(**kwargs)
             success = agent.render_section(section)
             video_path = agent.section_videos.get(section.id) if success else None
-            return section_id, success, video_path
+            return section_id, success, video_path, agent._copy_token_usage_summary()
 
         except Exception as e:
             print(f"❌ {self.learning_topic} {section_id} render process exception: {str(e)}")
-            return section_id, False, None
+            return section_id, False, None, _empty_token_usage_summary()
 
     def render_all_sections(self, max_workers: int = 6) -> Dict[str, str]:
         print(f"🎥 Start parallel rendering of all section videos (up to {max_workers} processes)...")
@@ -612,7 +739,8 @@ class TeachingVideoAgent:
                 for future in as_completed(future_to_section):
                     section_id = future_to_section[future]
                     try:
-                        sid, success, video_path = future.result(timeout=300)
+                        sid, success, video_path, token_usage = future.result(timeout=300)
+                        self._merge_token_usage(token_usage)
 
                         if success and video_path:
                             results[sid] = video_path
@@ -712,6 +840,8 @@ class TeachingVideoAgent:
         except Exception as e:
             print(f"❌ Video generation failed: {e}")
             return None
+        finally:
+            self._sync_token_usage_summary()
 
 
 def process_knowledge_point(idx, kp, folder_path: Path, cfg: RunConfig):
