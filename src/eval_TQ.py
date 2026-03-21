@@ -12,8 +12,11 @@ import functools
 import random
 
 from utils import extract_answer_from_response, eva_video_list
-from gpt_request import request_gemini_with_video, request_gemini
+from gpt_request import cfg, request_gemini_with_video, request_gemini
 from prompts import get_unlearning_and_video_learning_prompt, get_unlearning_prompt
+
+
+DEFAULT_TEACHQUIZ_MODEL = cfg("teachquiz", "model", "gemini-2.5-pro")
 
 
 def retry(max_retries=3, base_delay=0.5, jitter=0.2):
@@ -99,22 +102,22 @@ def load_questions_from_json(json_path: str) -> Dict[str, List[Question]]:
 
 
 @retry(max_retries=3, base_delay=0.6, jitter=0.3)
-def _call_text_api(prompt: str) -> str:
-    response = request_gemini(prompt=prompt)
+def _call_text_api(prompt: str, model_name: str = DEFAULT_TEACHQUIZ_MODEL) -> str:
+    response = request_gemini(prompt=prompt, model_name=model_name)
     return extract_answer_from_response(response)
 
 
 @retry(max_retries=3, base_delay=0.6, jitter=0.3)
-def _call_video_api(prompt: str, video_path: str) -> str:
-    response = request_gemini_with_video(prompt=prompt, video_path=video_path)
+def _call_video_api(prompt: str, video_path: str, model_name: str = DEFAULT_TEACHQUIZ_MODEL) -> str:
+    response = request_gemini_with_video(prompt=prompt, video_path=video_path, model_name=model_name)
     return extract_answer_from_response(response)
 
 
-def make_mllm_api(video_path: Optional[str]) -> Callable[[str], str]:
+def make_mllm_api(video_path: Optional[str], model_name: str = DEFAULT_TEACHQUIZ_MODEL) -> Callable[[str], str]:
     if video_path:
-        return lambda prompt: _call_video_api(prompt, video_path)
+        return lambda prompt: _call_video_api(prompt, video_path, model_name=model_name)
     else:
-        return lambda prompt: _call_text_api(prompt)
+        return lambda prompt: _call_text_api(prompt, model_name=model_name)
 
 
 class SelectiveKnowledgeUnlearning:
@@ -286,9 +289,15 @@ SUMMARY STATISTICS:
     return report
 
 
-def run_one_concept(concept: str, questions: List[Question], video_path: str, per_question_workers: int) -> EvaluationResult:
-    text_api = make_mllm_api(video_path=None)
-    video_api = make_mllm_api(video_path=video_path)
+def run_one_concept(
+    concept: str,
+    questions: List[Question],
+    video_path: str,
+    per_question_workers: int,
+    teachquiz_model: str = DEFAULT_TEACHQUIZ_MODEL,
+) -> EvaluationResult:
+    text_api = make_mllm_api(video_path=None, model_name=teachquiz_model)
+    video_api = make_mllm_api(video_path=video_path, model_name=teachquiz_model)
     sku = SelectiveKnowledgeUnlearning(mllm_api_function=text_api, per_question_workers=per_question_workers)
     return sku.evaluate_educational_video(concept=concept, questions=questions, video_api_fn=video_api)
 
@@ -297,6 +306,12 @@ def main():
     parser = argparse.ArgumentParser(description="Run SKU evaluation over a question JSON and generated videos (parallel).")
     parser.add_argument("--concept_workers", type=int, default=2, help="Parallel workers across concepts.")
     parser.add_argument("--per_question_workers", type=int, default=5, help="Parallel workers per concept per stage.")
+    parser.add_argument(
+        "--teachquiz_model",
+        type=str,
+        default=DEFAULT_TEACHQUIZ_MODEL,
+        help=f"Gemini model used for baseline, unlearning, and relearning. Default: {DEFAULT_TEACHQUIZ_MODEL}",
+    )
     parser.add_argument(
         "--questions_json",
         type=str,
@@ -347,7 +362,7 @@ def main():
                 continue
             if not Path(vpath).exists():
                 print(f"[WARN] Video file not found: {vpath} (concept '{concept}'). API may fail.")
-            fut = pool.submit(run_one_concept, concept, qs, vpath, args.per_question_workers)
+            fut = pool.submit(run_one_concept, concept, qs, vpath, args.per_question_workers, args.teachquiz_model)
             futures[fut] = concept
         for fut in as_completed(futures):
             concept = futures[fut]

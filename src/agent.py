@@ -932,6 +932,19 @@ def run_Code2Video(
     print("=" * 50)
 
 
+def resolve_versioned_output_root(base_dir: Path) -> Path:
+    if not base_dir.exists():
+        return base_dir
+
+    suffix = time.strftime("%Y%m%d_%H%M%S")
+    candidate = base_dir.parent / f"{base_dir.name}_{suffix}"
+    attempt = 1
+    while candidate.exists():
+        candidate = base_dir.parent / f"{base_dir.name}_{suffix}_{attempt}"
+        attempt += 1
+    return candidate
+
+
 def get_api_and_output(API_name):
     mapping = {
         "gpt-41": (request_gpt41_token, "Chatgpt41"),
@@ -991,7 +1004,10 @@ if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
 
     api, folder_name = get_api_and_output(args.API)
-    folder = project_root / "CASES" / f"{args.folder_prefix}_{folder_name}"
+    requested_folder = project_root / "CASES" / f"{args.folder_prefix}_{folder_name}"
+    folder = resolve_versioned_output_root(requested_folder)
+    if folder != requested_folder:
+        print(f"Output folder exists, using versioned folder: {folder}")
 
     _CFG_PATH = pathlib.Path(__file__).with_name("api_config.json")
     with _CFG_PATH.open("r", encoding="utf-8") as _f:

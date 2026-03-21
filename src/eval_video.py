@@ -5,7 +5,7 @@ import sys
 from dataclasses import asdict, is_dataclass
 from difflib import get_close_matches
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -89,7 +89,7 @@ def evaluate_video(
     video_path: Path,
     topic: str,
     questions_json: Path,
-    tq_concept: str | None = None,
+    tq_concept: Optional[str] = None,
     per_question_workers: int = 5,
 ) -> Dict[str, Any]:
     concept_questions = load_questions_from_json(str(questions_json))

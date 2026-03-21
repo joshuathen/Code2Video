@@ -50,6 +50,10 @@ def generate_log_id():
     return f"tkb{int(time.time() * 1000)}"
 
 
+def _resolve_gemini_model(model_name=None):
+    return model_name or cfg("gemini", "model")
+
+
 def request_claude(prompt, log_id=None, max_tokens=16384, max_retries=3):
     base_url = cfg("claude", "base_url")
     api_key = cfg("claude", "api_key")
@@ -147,7 +151,14 @@ def request_claude_token(prompt, log_id=None, max_tokens=10000, max_retries=3):
     return None, usage_info
 
 
-def request_gemini_with_video(prompt: str, video_path: str, log_id=None, max_tokens: int = 10000, max_retries: int = 3):
+def request_gemini_with_video(
+    prompt: str,
+    video_path: str,
+    log_id=None,
+    max_tokens: int = 10000,
+    max_retries: int = 3,
+    model_name=None,
+):
     """
     Makes a multimodal request to the Gemini-2.5 model using video + text.
 
@@ -161,7 +172,7 @@ def request_gemini_with_video(prompt: str, video_path: str, log_id=None, max_tok
     Returns:
         dict: The Gemini model response
     """
-    model_name = cfg("gemini", "model")
+    model_name = _resolve_gemini_model(model_name)
 
     client = build_gemini_client()
 
@@ -370,7 +381,7 @@ def request_gemini_video_img_token(
     return None, usage_info
 
 
-def request_gemini(prompt, log_id=None, max_tokens=8000, max_retries=3):
+def request_gemini(prompt, log_id=None, max_tokens=8000, max_retries=3, model_name=None):
     """
     Makes a request to the gemini-2.5-pro-preview-03-25 model with retry functionality.
 
@@ -383,7 +394,7 @@ def request_gemini(prompt, log_id=None, max_tokens=8000, max_retries=3):
     Returns:
         dict: The model's response
     """
-    model_name = cfg("gemini", "model")
+    model_name = _resolve_gemini_model(model_name)
 
     client = build_gemini_client()
 
