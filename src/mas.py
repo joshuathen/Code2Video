@@ -13,6 +13,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from type_utils import *
+from external_assets import process_storyboard_with_assets
 from gpt_request import request_gemini_token, request_gemini_video_img_token
 from scope_refine import ScopeRefineFixer, GridPositionExtractor
 from utils import extract_answer_from_response
@@ -89,7 +90,8 @@ STAGE2_STORYBOARD_REQUIREMENTS = """
 - Avoid coordinate axes unless absolutely necessary.
 - Focus animations on visualizing concepts that are difficult to grasp from lecture lines alone.
 - Ensure that all animations are easy to understand.
-- Do not involve any external elements (such as SVGs or other assets that require downloading or dependencies).
+- Do not introduce new external elements on your own (such as SVGs or downloaded assets) unless they are already provided as existing [Asset: ...] references.
+- If existing [Asset: ...] references are present in the storyboard, preserve them in the animation descriptions and do not remove them.
 """.strip()
 
 STAGE3_CODE_REQUIREMENTS = """
@@ -140,6 +142,7 @@ class Section1Scene(TeachingScene):
 - Scaling: Maintain appropriate font sizes and object scales for readability.
 - Consistency: Do not apply any animation to the lecture lines except for color changes; The lecture lines and title's size and position must remain unchanged.
 - Assets: If provided, MUST use the elements in the Animation Description formatted as [Asset: XXX/XXX.png] (abstract path).
+- Assets: Existing [Asset: ...] references are mandatory inputs. Do not remove, ignore, or replace them unless an issue explicitly instructs you to do so.
 - Simplicity: Avoid 3D functions, complex panels, or external dependencies except for filenames in Animation Description.
 """.strip()
 
@@ -160,6 +163,7 @@ Follow the original Code2Video Stage-2 storyboard requirements and only update `
 - No panels or 3D methods.
 - Avoid coordinate axes unless absolutely necessary.
 - Ensure that all animations are easy to understand.
+- Only update lecture_lines. Do not remove or rewrite existing [Asset: ...] references in animations.
 """.strip()
 
 def _load_api_key() -> str:
@@ -180,6 +184,21 @@ def _load_api_key() -> str:
     if not key:
         raise ValueError("Missing gemini.api_key in src/api_config.json")
     return key
+
+
+def _load_iconfinder_api_key() -> str:
+    env_key = os.getenv("ICONFINDER_API_KEY")
+    if env_key:
+        return env_key
+
+    cfg_path = Path(__file__).with_name("api_config.json")
+    if not cfg_path.exists():
+        return ""
+
+    with cfg_path.open("r", encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    return str(cfg.get("iconfinder", {}).get("api_key", "") or "")
 
 
 API_KEY = _load_api_key()
@@ -1244,6 +1263,9 @@ class MASRunConfig:
     section_parallel_workers: int = 4
     clear_logs: bool = False
     case_index: Optional[int] = None
+    enable_storyboard_asset_enhancement: bool = True
+    storyboard_asset_enhancement_turn: int = 2
+    iconfinder_api_key: str = ""
 
 
 def generate_outline_with_code2video_stage1(
@@ -1578,12 +1600,14 @@ class VideoTeamBaseAgent(MASAgent):
 
         if self.name == SCRIPT_WRITER:
             edit_instruction = (
-                "Use replace_lecture_lines(section_id, lecture_lines) to update narration for any section."
+                "Use replace_lecture_lines(section_id, lecture_lines) to update narration for any section. "
+                "Do not edit or remove existing [Asset: ...] references in animations."
             )
             base_class_context = ""
         elif self.name == ANIMATION_PLANNER:
             edit_instruction = (
-                "Use replace_animations(section_id, animations) to update animation steps for any section."
+                "Use replace_animations(section_id, animations) to update animation steps for any section. "
+                "Preserve any existing [Asset: ...] references unless an issue explicitly tells you to replace them."
             )
             base_class_context = ""
         else:
@@ -1634,10 +1658,11 @@ Instructions:
 1. Resolve your assigned active issues first.
 2. Mark each attempted issue with update_issue(issue_id, under_review=True, resolution_note=...).
 3. Keep changes section-specific and avoid editing sections outside your assignment.
-4. {edit_instruction}
-5. You do NOT see the global issue list; only your assigned issues are visible.
-6. If blocked, add targeted cross-agent issues via add_issue(section_id, toAgent, description).
-7. Any issue you create for another agent must be self-contained: include the concrete problem, relevant local context, and the action you want that agent to take.
+4. If your section snapshot or issues contain existing [Asset: ...] references, preserve them. Coders must use them in code, and non-coder agents must not remove them unless explicitly instructed.
+5. {edit_instruction}
+6. You do NOT see the global issue list; only your assigned issues are visible.
+7. If blocked, add targeted cross-agent issues via add_issue(section_id, toAgent, description).
+8. Any issue you create for another agent must be self-contained: include the concrete problem, relevant local context, and the action you want that agent to take.
 
 Guidelines:
 {self.guidelines}
@@ -1947,6 +1972,9 @@ class MASVideoRunner:
         self.case_dir.mkdir(parents=True, exist_ok=True)
         self.state_logs_dir.mkdir(parents=True, exist_ok=True)
         self.call_logger = MASAgentCallLogger(self.case_dir / "agent_function_calls.jsonl")
+        self.assets_dir = Path(__file__).resolve().parent.parent / "assets" / "icon"
+        self.assets_dir.mkdir(parents=True, exist_ok=True)
+        self.iconfinder_api_key = self.cfg.iconfinder_api_key or _load_iconfinder_api_key()
 
         self._sync_token_usage()
 
@@ -2044,6 +2072,134 @@ class MASVideoRunner:
             "target_audience": self.video_state.target_audience,
             "sections": [asdict(section) for section in self.video_state.storyboard],
         }
+
+    def _storyboard_contains_assets(self) -> bool:
+        return any(
+            isinstance(animation, str) and "[Asset:" in animation
+            for section in self.video_state.storyboard
+            for animation in section.animations
+        )
+
+    def _request_asset_enhancement(self, prompt: str, max_tokens: int = 10000):
+        return _scope_refine_request_with_client(
+            self.client,
+            prompt,
+            max_tokens=max_tokens,
+            token_tracker=self.token_tracker,
+            usage_source="assets",
+        )
+
+    def _ensure_asset_integration_issue(
+        self,
+        section_id: str,
+        asset_animations: List[str],
+        turn_idx: int,
+    ) -> None:
+        coder_name = self.video_state.coder_assignments.get(section_id)
+        if not coder_name:
+            return
+
+        issue_marker = "[AUTO-ASSET-INTEGRATION]"
+        for issue in self.video_state.issues:
+            if (
+                issue.section_id == section_id
+                and issue.toAgent == coder_name
+                and not issue.resolved
+                and issue_marker in issue.description
+            ):
+                issue.isActive = True
+                issue.under_review = False
+                return
+
+        issue_description = (
+            f"{issue_marker} [{section_id}] The storyboard was enhanced with asset references at the end of turn "
+            f"{turn_idx}. Update this section's Manim code so it uses every [Asset: ...] reference now present in "
+            "the animation descriptions. Load and place the referenced files in the scene where the storyboard "
+            "calls for them, while preserving the existing lecture-line alignment and layout constraints. "
+            f"Asset-tagged animations: {asset_animations}"
+        )
+        self.video_state.issues.append(
+            Issue(
+                id=max((x.id for x in self.video_state.issues), default=0) + 1,
+                fromAgent=ORCHESTRATOR,
+                toAgent=coder_name,
+                description=issue_description,
+                isActive=True,
+                section_id=section_id,
+            )
+        )
+
+    def _enhance_storyboard_with_assets(self, turn_idx: int) -> None:
+        if self._storyboard_contains_assets():
+            print("[VideoMAS] Storyboard already contains asset tags; skipping asset enhancement.")
+            return
+
+        storyboard_payload = self._storyboard_payload()
+        original_animations_by_section = {
+            section.id: list(section.animations)
+            for section in self.video_state.storyboard
+        }
+
+        try:
+            enhanced_storyboard = process_storyboard_with_assets(
+                storyboard=storyboard_payload,
+                api_function=self._request_asset_enhancement,
+                assets_dir=str(self.assets_dir),
+                iconfinder_api_key=self.iconfinder_api_key,
+            )
+        except Exception as e:
+            print(f"[VideoMAS] Storyboard asset enhancement failed: {e}")
+            return
+
+        enhanced_sections = enhanced_storyboard.get("sections", []) if isinstance(enhanced_storyboard, dict) else []
+        if not isinstance(enhanced_sections, list):
+            print("[VideoMAS] Storyboard asset enhancement returned an invalid payload; skipping.")
+            return
+
+        sections_by_id = {
+            str(section_data.get("id", "")): section_data
+            for section_data in enhanced_sections
+            if isinstance(section_data, dict)
+        }
+        sections_with_new_assets: List[Tuple[str, List[str]]] = []
+
+        for section in self.video_state.storyboard:
+            section_data = sections_by_id.get(section.id)
+            if section_data is None:
+                continue
+
+            enhanced_animations = section_data.get("animations", [])
+            if not isinstance(enhanced_animations, list):
+                continue
+
+            cleaned_animations: List[str] = []
+            for animation in enhanced_animations:
+                if not isinstance(animation, str):
+                    continue
+                normalized = animation.strip()
+                if normalized:
+                    cleaned_animations.append(normalized)
+
+            if not cleaned_animations:
+                continue
+
+            previous_animations = original_animations_by_section.get(section.id, [])
+            section.animations = cleaned_animations
+            asset_animations = [animation for animation in cleaned_animations if "[Asset:" in animation]
+            if asset_animations and cleaned_animations != previous_animations:
+                sections_with_new_assets.append((section.id, asset_animations))
+
+        if not sections_with_new_assets:
+            print("[VideoMAS] Storyboard asset enhancement completed, but no new asset-tagged animations were added.")
+            return
+
+        for section_id, asset_animations in sections_with_new_assets:
+            self._ensure_asset_integration_issue(section_id, asset_animations, turn_idx)
+
+        print(
+            "[VideoMAS] Storyboard enhanced with assets for sections: "
+            f"{[section_id for section_id, _ in sections_with_new_assets]}"
+        )
 
     def _sync_case_documents(self) -> None:
         outline_path = self.case_dir / "outline.json"
@@ -2306,6 +2462,11 @@ class MASVideoRunner:
             }
             self._activate_ready_coder_issues()
             completed_agent_names = self._run_workers_parallel()
+            if (
+                self.cfg.enable_storyboard_asset_enhancement
+                and turn_idx == self.cfg.storyboard_asset_enhancement_turn
+            ):
+                self._enhance_storyboard_with_assets(turn_idx)
             self._activate_ready_coder_issues()
             sections_to_debug = self._sections_with_updated_code(prior_code_by_section, completed_agent_names)
             self._run_coder_runtimes_parallel(
