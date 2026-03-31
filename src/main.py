@@ -431,6 +431,10 @@ def _build_mas_generation_result(args: argparse.Namespace, idx: int) -> Dict[str
         args.final_render_fix_attempts,
         args.max_fix_bug_tries,
     )
+    coder_regenerate_tries = _resolve_with_fallback(
+        args.coder_regenerate_tries,
+        args.max_regenerate_tries,
+    )
 
     generated_outline = generate_outline_with_code2video_stage1(
         knowledge_point=args.knowledge_point,
@@ -453,6 +457,7 @@ def _build_mas_generation_result(args: argparse.Namespace, idx: int) -> Dict[str
         max_retries=args.max_retries,
         coder_fix_attempts=coder_fix_attempts,
         final_render_fix_attempts=final_render_fix_attempts,
+        coder_regenerate_tries=coder_regenerate_tries,
         max_code_token_length=args.max_code_token_length,
         worker_model=args.worker_model,
         orchestrator_model=args.orchestrator_model,
@@ -656,6 +661,7 @@ def run_mas_generation_and_evaluation_pipeline(
     max_retries: int = DEFAULT_MAS_MAX_RETRIES,
     coder_fix_attempts: Optional[int] = None,
     final_render_fix_attempts: Optional[int] = None,
+    coder_regenerate_tries: Optional[int] = None,
     section_parallel_workers: Optional[int] = None,
     worker_model: str = DEFAULT_OUTLINE_MODEL,
     orchestrator_model: str = DEFAULT_OUTLINE_MODEL,
@@ -678,6 +684,7 @@ def run_mas_generation_and_evaluation_pipeline(
         max_retries=max_retries,
         coder_fix_attempts=coder_fix_attempts,
         final_render_fix_attempts=final_render_fix_attempts,
+        coder_regenerate_tries=coder_regenerate_tries,
         section_parallel_workers=section_parallel_workers,
         worker_model=worker_model,
         orchestrator_model=orchestrator_model,
@@ -730,6 +737,7 @@ def _run_pipeline_from_cli(args: argparse.Namespace) -> int:
             max_retries=args.max_retries,
             coder_fix_attempts=args.coder_fix_attempts,
             final_render_fix_attempts=args.final_render_fix_attempts,
+            coder_regenerate_tries=args.coder_regenerate_tries,
             section_parallel_workers=args.section_parallel_workers,
             worker_model=args.worker_model,
             orchestrator_model=args.orchestrator_model,
@@ -826,6 +834,12 @@ def build_and_parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Defaults to --max_fix_bug_tries for closer agent/MAS alignment.",
+    )
+    parser.add_argument(
+        "--coder_regenerate_tries",
+        type=int,
+        default=None,
+        help="Defaults to --max_regenerate_tries for closer agent/MAS alignment.",
     )
     parser.add_argument("--section_parallel_workers", type=int, default=None)
     parser.add_argument("--worker_model", type=str, default=DEFAULT_OUTLINE_MODEL)

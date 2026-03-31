@@ -22,7 +22,7 @@ from utils import replace_base_class
 from utils import topic_to_safe_name
 
 try:
-    from prompts import get_prompt1_outline, get_prompt4_layout_feedback
+    from prompts import get_prompt1_outline, get_prompt3_code, get_prompt4_layout_feedback, get_regenerate_note
 except ModuleNotFoundError:
     # Allow running `python src/mas.py` without manually setting PYTHONPATH.
     import sys
@@ -30,7 +30,7 @@ except ModuleNotFoundError:
     _repo_root = Path(__file__).resolve().parent.parent
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
-    from prompts import get_prompt1_outline, get_prompt4_layout_feedback
+    from prompts import get_prompt1_outline, get_prompt3_code, get_prompt4_layout_feedback, get_regenerate_note
 
 from google.genai import types, Client
 from google.genai.errors import ClientError, ServerError
@@ -52,6 +52,7 @@ GLOBAL_MAX_TURNS = 3
 MAX_RETRIES = 3
 DEFAULT_TURN_CODER_FIX_ATTEMPTS = 3
 DEFAULT_FINAL_RENDER_FIX_ATTEMPTS = 10
+DEFAULT_CODER_REGENERATE_TRIES = 10
 # Default topic for standalone `python src/mas.py` runs.
 TOPIC = "Implicit Differentiation"
 OUTLINE_DURATION_MINUTES = 5
@@ -263,8 +264,11 @@ def _extract_token_usage(response: object = None, usage: Optional[Dict[str, int]
             )
             or 0
         )
-
-    return bucket
+        return bucket
+    
+    else:
+        print("[Warning] Unable to extract token usage from response. No 'usage' or 'usage_metadata' found.")
+        return bucket
 
 
 class MASTokenTracker:
@@ -697,136 +701,6 @@ def _scene_name_from_section_id(section_id: str) -> str:
     return f"{section_id.title().replace('_', '')}Scene"
 
 
-def _normalize_scene_class_name(code: str, scene_name: str) -> str:
-    class_pattern = re.compile(r"^(\s*class\s+)([A-Za-z_]\w*)(\s*\(([^)]*)\)\s*:)", re.MULTILINE)
-
-    for match in class_pattern.finditer(code):
-        class_name = match.group(2)
-        bases = match.group(4) or ""
-
-        if class_name == "TeachingScene":
-            continue
-
-        if "TeachingScene" in bases or "Scene" in bases:
-            if class_name == scene_name:
-                return code
-            return f"{code[:match.start(2)]}{scene_name}{code[match.end(2):]}"
-
-    return code
-
-
-def _ensure_scene_inherits_teaching_scene(code: str, scene_name: str) -> str:
-    # class X(Base): -> class X(TeachingScene):
-    class_with_bases = re.compile(
-        rf"^(\s*class\s+{re.escape(scene_name)}\s*)\(([^)]*)\)(\s*:)",
-        re.MULTILINE,
-    )
-    match = class_with_bases.search(code)
-    if match:
-        if "TeachingScene" in (match.group(2) or ""):
-            return code
-        return f"{code[:match.start(2)]}TeachingScene{code[match.end(2):]}"
-
-    # class X: -> class X(TeachingScene):
-    class_without_bases = re.compile(
-        rf"^(\s*class\s+{re.escape(scene_name)}\s*)(:)",
-        re.MULTILINE,
-    )
-    match = class_without_bases.search(code)
-    if match:
-        return f"{code[:match.start(2)]}(TeachingScene){code[match.start(2):]}"
-
-    return code
-
-
-def _remove_non_stage3_helper_stubs(code: str) -> str:
-    stub_line = re.compile(
-        r"^\s*self\.(add_line|highlight_line|place_at_grid|place_in_area)\s*=\s*lambda\b.*$",
-        re.MULTILINE,
-    )
-    return stub_line.sub("", code)
-
-
-def _ensure_setup_layout_call(code: str, scene_name: str, section_title: str, lecture_lines: List[str]) -> str:
-    lines = code.splitlines()
-
-    class_idx = None
-    class_indent = 0
-    class_pattern = re.compile(
-        rf"^(\s*)class\s+{re.escape(scene_name)}\s*(?:\([^)]*\))?\s*:",
-    )
-    for idx, line in enumerate(lines):
-        class_match = class_pattern.match(line)
-        if class_match:
-            class_idx = idx
-            class_indent = len(class_match.group(1))
-            break
-
-    if class_idx is None:
-        fallback = [
-            "",
-            f"class {scene_name}(TeachingScene):",
-            "    def construct(self):",
-            f"        self.setup_layout({json.dumps(section_title)}, {json.dumps(lecture_lines, ensure_ascii=False)})",
-            "        self.wait(1)",
-        ]
-        return (code.rstrip() + "\n" + "\n".join(fallback)).strip() + "\n"
-
-    def_idx = None
-    def_indent = 0
-    for idx in range(class_idx + 1, len(lines)):
-        line = lines[idx]
-        stripped = line.strip()
-        current_indent = len(line) - len(line.lstrip(" "))
-        if stripped and current_indent <= class_indent:
-            break
-        if re.match(r"^\s*def\s+construct\s*\(self[^\)]*\)\s*:", line):
-            def_idx = idx
-            def_indent = current_indent
-            break
-
-    setup_call = f"self.setup_layout({json.dumps(section_title)}, {json.dumps(lecture_lines, ensure_ascii=False)})"
-    if def_idx is None:
-        # Add construct() to the scene class when missing.
-        insert_idx = class_idx + 1
-        while insert_idx < len(lines):
-            line = lines[insert_idx]
-            stripped = line.strip()
-            current_indent = len(line) - len(line.lstrip(" "))
-            if stripped and current_indent <= class_indent:
-                break
-            insert_idx += 1
-
-        method_block = [
-            " " * (class_indent + 4) + "def construct(self):",
-            " " * (class_indent + 8) + setup_call,
-            " " * (class_indent + 8) + "self.wait(1)",
-        ]
-        lines[insert_idx:insert_idx] = method_block
-        return "\n".join(lines).rstrip() + "\n"
-
-    has_setup_layout = False
-    for idx in range(def_idx + 1, len(lines)):
-        line = lines[idx]
-        stripped = line.strip()
-        current_indent = len(line) - len(line.lstrip(" "))
-        if stripped and current_indent <= def_indent:
-            break
-        if "self.setup_layout(" in line:
-            has_setup_layout = True
-            break
-
-    if has_setup_layout:
-        return "\n".join(lines).rstrip() + "\n"
-
-    insert_idx = def_idx + 1
-    while insert_idx < len(lines) and lines[insert_idx].strip() == "":
-        insert_idx += 1
-
-    lines.insert(insert_idx, " " * (def_indent + 4) + setup_call)
-    return "\n".join(lines).rstrip() + "\n"
-
-
 def normalize_code_to_code2video(
     code: str,
     section_id: str,
@@ -842,31 +716,8 @@ def normalize_code_to_code2video(
     elif "```" in normalized:
         normalized = normalized.split("```", 1)[1].split("```", 1)[0].strip()
 
-    if not re.search(r"^\s*from\s+manim\s+import\s+\*", normalized, re.MULTILINE):
-        normalized = f"from manim import *\n\n{normalized}"
-
-    scene_name = _scene_name_from_section_id(section_id)
-    normalized = _remove_non_stage3_helper_stubs(normalized)
-    normalized = _normalize_scene_class_name(normalized, scene_name)
-    normalized = _ensure_scene_inherits_teaching_scene(normalized, scene_name)
     normalized = replace_base_class(normalized, TEACHING_SCENE_BASE_CLASS)
-    normalized = _ensure_setup_layout_call(normalized, scene_name, section_title, lecture_lines)
     return normalized.strip() + "\n"
-
-
-class _FakeChoiceMessage:
-    def __init__(self, content: str):
-        self.content = content
-
-
-class _FakeChoice:
-    def __init__(self, content: str):
-        self.message = _FakeChoiceMessage(content)
-
-
-class _FakeCompletion:
-    def __init__(self, content: str):
-        self.choices = [_FakeChoice(content)]
 
 
 def _extract_text_from_gemini_response(response) -> str:
@@ -888,6 +739,32 @@ def _extract_text_from_gemini_response(response) -> str:
             text_parts.append(text_value)
 
     return "\n".join(text_parts).strip()
+
+
+def _extract_python_code_from_response(response: object) -> str:
+    text = _extract_text_from_gemini_response(response)
+    if not text:
+        try:
+            text = str(response.choices[0].message.content or "").strip()
+        except Exception:
+            text = str(response)
+
+    if not text:
+        return ""
+
+    fenced_match = re.search(r"```(?:python)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    if fenced_match:
+        return fenced_match.group(1).strip()
+
+    # Fallback for models that return bare code without fences.
+    if re.search(r"^\s*class\s+\w+Scene\b", text, re.MULTILINE) and re.search(
+        r"^\s*def\s+construct\s*\(",
+        text,
+        re.MULTILINE,
+    ):
+        return text.strip()
+
+    return ""
 
 
 def _scope_refine_request_with_client(
@@ -949,13 +826,6 @@ class CoderRuntime:
             if path.exists():
                 return path
         return None
-
-    def _normalize_scene_class_name(self, code: str, scene_name: str) -> str:
-        """
-        Ensure the runnable scene class name matches the expected `{section_id}Scene`.
-        This prevents ScopeRefine dry-run import failures when LLM renames the class.
-        """
-        return _normalize_scene_class_name(code, scene_name)
 
     def debug_and_fix(
         self,
@@ -1257,6 +1127,7 @@ class MASRunConfig:
     max_retries: int = MAX_RETRIES
     coder_fix_attempts: int = DEFAULT_TURN_CODER_FIX_ATTEMPTS
     final_render_fix_attempts: int = DEFAULT_FINAL_RENDER_FIX_ATTEMPTS
+    coder_regenerate_tries: int = DEFAULT_CODER_REGENERATE_TRIES
     max_code_token_length: int = 10000
     worker_model: str = "gemini-3-flash-preview"
     orchestrator_model: str = "gemini-3-flash-preview"
@@ -1591,9 +1462,113 @@ class VideoTeamBaseAgent(MASAgent):
             }
         return payload
 
-    def run(self, max_retries: int = 3) -> str:
+    def _build_coder_generation_prompt(
+        self,
+        *,
+        agent_lines: str,
+        my_active_issues: List[Issue],
+        codegen_attempt: int,
+        max_codegen_attempts: int,
+        failure_context: str,
+    ) -> str:
+        section_id = self.managed_sections[0]
+        section_idx = self.video_state.section_index(section_id)
+        section = self.video_state.storyboard[section_idx]
+        section_snapshot = self._managed_section_payload()[section_id]
+        current_code = self.video_state.code[section_idx] or ""
+        regenerate_note = ""
+        if codegen_attempt > 1:
+            regenerate_note = get_regenerate_note(
+                codegen_attempt,
+                MAX_REGENERATE_TRIES=max_codegen_attempts,
+            )
+
+        stage3_prompt = get_prompt3_code(
+            regenerate_note=regenerate_note,
+            section=section,
+            base_class=TEACHING_SCENE_BASE_CLASS,
+        )
+        failure_block = failure_context.strip() or "None"
+        current_code_block = current_code if current_code.strip() else "# No existing code yet."
+
+        return f"""You are {self.name} in a single shared MAS team building one multi-section video.
+
+Topic: {self.video_state.topic}
+Target audience: {self.video_state.target_audience}
+
+Team members:
+{agent_lines}
+
+Coder assignments by section:
+{self.video_state.coder_assignments}
+
+You are assigned to exactly one section:
+{section_id}
+
+Current section snapshot:
+{json.dumps(section_snapshot, ensure_ascii=False, indent=2)}
+
+Current code for this section:
+```python
+{current_code_block}
+```
+
+Active issues assigned to you:
+{my_active_issues}
+
+Latest render/debug failure context:
+{failure_block}
+
+MAS-specific instructions:
+1. Resolve your assigned active issues first.
+2. Use replace_code(code) to update your assigned section.
+3. Mark each attempted issue with update_issue(issue_id, under_review=True, resolution_note=...).
+4. Keep changes section-specific and avoid editing sections outside your assignment.
+5. Preserve any existing [Asset: ...] references in animations and use them in code.
+6. If blocked, add targeted cross-agent issues via add_issue(section_id, toAgent, description).
+7. Any issue you create for another agent must be self-contained: include the concrete problem, relevant local context, and the action you want that agent to take.
+8. If you answer in plain text instead of a tool call, return only the complete Python code for this section.
+
+Original Code2Video Stage-3 prompt (follow this fully):
+{stage3_prompt}
+"""
+
+    def _apply_text_response_code_fallback(self, response: object, previous_code: str) -> bool:
+        if self.name in (SCRIPT_WRITER, ANIMATION_PLANNER) or len(self.managed_sections) != 1:
+            return False
+
+        section_id = self.managed_sections[0]
+        section_idx = self.video_state.section_index(section_id)
+        current_code = self.video_state.code[section_idx] or ""
+        if current_code.strip() and current_code != (previous_code or ""):
+            return False
+
+        fallback_code = _extract_python_code_from_response(response)
+        if not fallback_code:
+            return False
+
+        self.replace_code(fallback_code)
+        updated_code = self.video_state.code[section_idx] or ""
+        if not updated_code.strip():
+            return False
+
+        print(f"[{self.name}] Applied text-response code fallback for {section_id}.")
+        return True
+
+    def run(
+        self,
+        max_retries: int = 3,
+        *,
+        codegen_attempt: int = 1,
+        max_codegen_attempts: int = 1,
+        failure_context: str = "",
+    ) -> str:
         tools = [self.add_issue, self.update_issue]
         tools.extend(self.tools)
+        previous_code = ""
+        if self.name not in (SCRIPT_WRITER, ANIMATION_PLANNER) and len(self.managed_sections) == 1:
+            section_idx = self.video_state.section_index(self.managed_sections[0])
+            previous_code = self.video_state.code[section_idx] or ""
 
         agent_lines = "\n".join(f"- {agent.name}: {agent.role}" for agent in self.team_agents)
         my_active_issues = self._issues_for_me(active_only=True)
@@ -1611,26 +1586,19 @@ class VideoTeamBaseAgent(MASAgent):
             )
             base_class_context = ""
         else:
-            section_id = self.managed_sections[0]
-            section_idx = self.video_state.section_index(section_id)
-            section = self.video_state.storyboard[section_idx]
-            scene_name = _scene_name_from_section_id(section_id)
-            required_setup_layout = (
-                f"self.setup_layout({json.dumps(section.title)}, "
-                f"{json.dumps(section.lecture_lines, ensure_ascii=False)})"
+            prompt = self._build_coder_generation_prompt(
+                agent_lines=agent_lines,
+                my_active_issues=my_active_issues,
+                codegen_attempt=codegen_attempt,
+                max_codegen_attempts=max_codegen_attempts,
+                failure_context=failure_context,
             )
-            edit_instruction = (
-                "You are a dedicated coder for one section. Use replace_code(code) for your assigned section. "
-                "Return only Python code. "
-                f"Mandatory structure: class {scene_name}(TeachingScene) and a construct() containing "
-                f"`{required_setup_layout}` before section animations."
-            )
-            base_class_context = (
-                "Provided TeachingScene base class (use as-is; do not assume extra helper methods):\n"
-                "```python\n"
-                f"{TEACHING_SCENE_BASE_CLASS}\n"
-                "```"
-            )
+            response = self.run_with_retry([prompt], tools, max_retries)
+            if response is not None:
+                self._apply_text_response_code_fallback(response, previous_code)
+                self.eval_dump([prompt], tools, response)
+                return [response.usage_metadata, self.model, self.name]
+            return None
 
         prompt = f"""You are {self.name} in a single shared MAS team building one multi-section video.
 
@@ -1670,6 +1638,7 @@ Guidelines:
 
         response = self.run_with_retry([prompt], tools, max_retries)
         if response is not None:
+            self._apply_text_response_code_fallback(response, previous_code)
             self.eval_dump([prompt], tools, response)
             return [response.usage_metadata, self.model, self.name]
         return None
@@ -2022,6 +1991,7 @@ class MASVideoRunner:
         self.animation_planner_agent.tools.append(self.animation_planner_agent.replace_animations)
 
         self.coder_agents: List[VideoTeamBaseAgent] = []
+        self.coder_agents_by_section: Dict[str, VideoTeamBaseAgent] = {}
         for section_id in self.video_state.section_ids():
             coder_name = self.video_state.coder_assignments[section_id]
             coder_agent = VideoTeamBaseAgent(
@@ -2037,6 +2007,7 @@ class MASVideoRunner:
             )
             coder_agent.tools.append(coder_agent.replace_code)
             self.coder_agents.append(coder_agent)
+            self.coder_agents_by_section[section_id] = coder_agent
 
         self.team_agents: List[VideoTeamBaseAgent] = [
             self.script_writer_agent,
@@ -2309,7 +2280,14 @@ class MASVideoRunner:
         completed_agent_names: List[str] = []
         print(f"[VideoMAS] Running workers: {[agent.name for agent in next_agents]}")
         with ThreadPoolExecutor(max_workers=len(next_agents)) as executor:
-            futures = {executor.submit(agent.run, max_retries=self.cfg.max_retries): agent for agent in next_agents}
+            futures = {
+                executor.submit(
+                    agent.run,
+                    max_retries=self.cfg.max_retries,
+                    max_codegen_attempts=self.cfg.coder_regenerate_tries,
+                ): agent
+                for agent in next_agents
+            }
             for future in as_completed(futures):
                 agent = futures[future]
                 try:
@@ -2396,7 +2374,8 @@ class MASVideoRunner:
         max_fix_attempts: int,
         phase_label: str,
         sections_to_run: Optional[List[str]] = None,
-    ) -> None:
+    ) -> Dict[str, Dict[str, object]]:
+        results: Dict[str, Dict[str, object]] = {}
         if sections_to_run is None:
             runnable_sections = [
                 section_id
@@ -2408,7 +2387,7 @@ class MASVideoRunner:
 
         if not runnable_sections:
             print(f"[VideoMAS] No sections require coder runtime execution for {phase_label}.")
-            return
+            return results
 
         max_workers = min(max(1, len(runnable_sections)), max(1, self.cfg.section_parallel_workers))
         tasks = []
@@ -2417,6 +2396,11 @@ class MASVideoRunner:
             section = self.video_state.storyboard[section_idx]
             current_code = self.video_state.code[section_idx] or ""
             if not current_code.strip():
+                results[section_id] = {
+                    "success": False,
+                    "status": "skipped",
+                    "error": "No code available for section",
+                }
                 continue
 
             print(f"[{section_id}][CoderRuntime][{phase_label}] Debugging updated code.")
@@ -2435,7 +2419,7 @@ class MASVideoRunner:
 
         if not tasks:
             print(f"[VideoMAS] No sections require coder runtime execution for {phase_label}.")
-            return
+            return results
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {
@@ -2448,8 +2432,109 @@ class MASVideoRunner:
                     _, result, token_usage_summary = future.result()
                     self.token_tracker.merge_summary(token_usage_summary)
                     self._apply_coder_runtime_result(section_id, result)
+                    results[section_id] = result
                 except Exception as e:
                     print(f"[{section_id}][CoderRuntime][{phase_label}] failed: {e}")
+                    failure_result = {
+                        "success": False,
+                        "status": "failed",
+                        "error": str(e),
+                        "code": self.video_state.code[self.video_state.section_index(section_id)] or "",
+                    }
+                    self._apply_coder_runtime_result(section_id, failure_result)
+                    results[section_id] = failure_result
+
+        return results
+
+    def _collect_failed_coder_runtime_sections(
+        self,
+        runtime_results: Dict[str, Dict[str, object]],
+        attempted_sections: List[str],
+    ) -> Dict[str, str]:
+        failed_sections: Dict[str, str] = {}
+        for section_id in attempted_sections:
+            result = runtime_results.get(section_id)
+            if not isinstance(result, dict):
+                failed_sections[section_id] = "No coder runtime result recorded."
+                continue
+            if result.get("success"):
+                continue
+            failed_sections[section_id] = str(
+                result.get("error")
+                or result.get("reason")
+                or result.get("status")
+                or "Coder runtime failed."
+            )
+        return failed_sections
+
+    def _regenerate_failed_sections(
+        self,
+        *,
+        failed_sections: Dict[str, str],
+        phase_label: str,
+        max_fix_attempts: int,
+    ) -> None:
+        if not failed_sections:
+            return
+
+        for codegen_attempt in range(2, self.cfg.coder_regenerate_tries + 1):
+            if not failed_sections:
+                return
+
+            print(
+                f"[VideoMAS] Regenerating failed coder sections for {phase_label}, "
+                f"attempt {codegen_attempt}/{self.cfg.coder_regenerate_tries}: {sorted(failed_sections)}"
+            )
+            sections_to_rerun: List[str] = []
+            pending_failures: Dict[str, str] = {}
+
+            for section_id, failure_reason in failed_sections.items():
+                coder_agent = self.coder_agents_by_section.get(section_id)
+                if coder_agent is None:
+                    pending_failures[section_id] = failure_reason
+                    continue
+
+                section_idx = self.video_state.section_index(section_id)
+                previous_code = self.video_state.code[section_idx] or ""
+                try:
+                    coder_agent.run(
+                        max_retries=self.cfg.max_retries,
+                        codegen_attempt=codegen_attempt,
+                        max_codegen_attempts=self.cfg.coder_regenerate_tries,
+                        failure_context=failure_reason,
+                    )
+                except Exception as e:
+                    pending_failures[section_id] = f"Coder regeneration attempt {codegen_attempt} failed: {e}"
+                    continue
+
+                current_code = self.video_state.code[section_idx] or ""
+                if current_code.strip() and current_code != previous_code:
+                    sections_to_rerun.append(section_id)
+                elif not current_code.strip():
+                    pending_failures[section_id] = (
+                        f"Coder regeneration attempt {codegen_attempt} produced no code. "
+                        f"Last failure: {failure_reason}"
+                    )
+                else:
+                    pending_failures[section_id] = (
+                        f"Coder regeneration attempt {codegen_attempt} did not change the code. "
+                        f"Last failure: {failure_reason}"
+                    )
+
+            if sections_to_rerun:
+                rerun_results = self._run_coder_runtimes_parallel(
+                    max_fix_attempts=max_fix_attempts,
+                    phase_label=f"{phase_label}_regen_{codegen_attempt:02d}",
+                    sections_to_run=sections_to_rerun,
+                )
+                pending_failures.update(
+                    self._collect_failed_coder_runtime_sections(rerun_results, sections_to_rerun)
+                )
+
+            failed_sections = pending_failures
+
+        if failed_sections:
+            print(f"[VideoMAS] Sections still failing after regeneration for {phase_label}: {failed_sections}")
 
     def run(self) -> VideoMASState:
         while self.video_state.unresolved_issues() and self.video_state.turns_run < self.cfg.max_turns:
@@ -2469,10 +2554,15 @@ class MASVideoRunner:
                 self._enhance_storyboard_with_assets(turn_idx)
             self._activate_ready_coder_issues()
             sections_to_debug = self._sections_with_updated_code(prior_code_by_section, completed_agent_names)
-            self._run_coder_runtimes_parallel(
+            runtime_results = self._run_coder_runtimes_parallel(
                 max_fix_attempts=self.cfg.coder_fix_attempts,
                 phase_label=f"turn_{turn_idx:02d}",
                 sections_to_run=sections_to_debug,
+            )
+            self._regenerate_failed_sections(
+                failed_sections=self._collect_failed_coder_runtime_sections(runtime_results, sections_to_debug),
+                phase_label=f"turn_{turn_idx:02d}",
+                max_fix_attempts=self.cfg.coder_fix_attempts,
             )
 
             self._sync_case_documents()
@@ -2494,9 +2584,23 @@ class MASVideoRunner:
             )
 
         # Final render-readiness pass: align with original Code2Video "final render" bug-fix budget.
-        self._run_coder_runtimes_parallel(
+        final_render_sections = [
+            section_id
+            for section_id in self.video_state.section_ids()
+            if bool((self.video_state.code[self.video_state.section_index(section_id)] or "").strip())
+        ]
+        final_render_results = self._run_coder_runtimes_parallel(
             max_fix_attempts=self.cfg.final_render_fix_attempts,
             phase_label="final_render",
+            sections_to_run=final_render_sections,
+        )
+        self._regenerate_failed_sections(
+            failed_sections=self._collect_failed_coder_runtime_sections(
+                final_render_results,
+                final_render_sections,
+            ),
+            phase_label="final_render",
+            max_fix_attempts=self.cfg.final_render_fix_attempts,
         )
         self._sync_case_documents()
         self._sync_section_code_files()
