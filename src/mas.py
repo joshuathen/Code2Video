@@ -72,7 +72,7 @@ STAGE2_STORYBOARD_REQUIREMENTS = """
 
 ### Content Structure
 - For key sections (max 3 sections), use up to 5 lecture lines along with their corresponding 5 animations to provide a logically coherent explanation. Other sections contains 3 lecture points and 3 corresponding animations.
-- In key sections, assets not forbiddened.
+- For key sections, use richer Manim-native visuals when helpful, but do not introduce external assets or [Asset: ...] tags.
 - Must keep each lecture line brief [NO MORE THAN 10 WORDS FOR ONE LINE].
 - Animation steps must closely correspond to lecture points.
 - Do not apply any animation to lecture lines except for changing the color of corresponding line when its related animation is presented.
@@ -91,7 +91,7 @@ STAGE2_STORYBOARD_REQUIREMENTS = """
 - Avoid coordinate axes unless absolutely necessary.
 - Focus animations on visualizing concepts that are difficult to grasp from lecture lines alone.
 - Ensure that all animations are easy to understand.
-- Do not introduce new external elements on your own (such as SVGs or downloaded assets) unless they are already provided as existing [Asset: ...] references.
+- Do not introduce new external elements or invent new [Asset: ...] references on your own. Only the built-in asset enhancement step may add new asset tags.
 - If existing [Asset: ...] references are present in the storyboard, preserve them in the animation descriptions and do not remove them.
 """.strip()
 
@@ -166,6 +166,63 @@ Follow the original Code2Video Stage-2 storyboard requirements and only update `
 - Ensure that all animations are easy to understand.
 - Only update lecture_lines. Do not remove or rewrite existing [Asset: ...] references in animations.
 """.strip()
+
+ASSET_TAG_PATTERN = re.compile(r"\[Asset:\s*([^\]]+?)\]")
+CODE_ASSET_PATH_PATTERN = re.compile(r'(["\'])([^"\']+\.(?:png|svg|jpe?g|webp))\1', re.IGNORECASE)
+
+
+def _normalize_asset_tag(tag: str) -> str:
+    match = ASSET_TAG_PATTERN.fullmatch(tag.strip())
+    if not match:
+        return tag.strip()
+    return f"[Asset: {match.group(1).strip()}]"
+
+
+def _extract_asset_tags(text: str) -> List[str]:
+    return [_normalize_asset_tag(match.group(0)) for match in ASSET_TAG_PATTERN.finditer(text)]
+
+
+def _strip_disallowed_asset_tags(text: str, allowed_tags: set[str]) -> Tuple[str, List[str]]:
+    removed_tags: List[str] = []
+
+    def _replace(match: re.Match[str]) -> str:
+        normalized_tag = _normalize_asset_tag(match.group(0))
+        if normalized_tag in allowed_tags:
+            return normalized_tag
+        removed_tags.append(normalized_tag)
+        return ""
+
+    cleaned = ASSET_TAG_PATTERN.sub(_replace, text)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+    return cleaned.strip(), removed_tags
+
+
+def _clean_asset_tag_spacing(text: str) -> str:
+    cleaned = re.sub(r"\s{2,}", " ", text)
+    cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+    return cleaned.strip()
+
+
+def _resolve_code_asset_paths(code: str, assets_dir: Path) -> str:
+    resolved_assets_dir = assets_dir.resolve()
+
+    def _replace(match: re.Match[str]) -> str:
+        quote, original_path = match.groups()
+        path_obj = Path(original_path)
+        if path_obj.is_absolute():
+            try:
+                if resolved_assets_dir in path_obj.parents and path_obj.exists():
+                    return match.group(0)
+            except RuntimeError:
+                pass
+
+        candidate = resolved_assets_dir / path_obj.name
+        if candidate.exists():
+            return f"{quote}{candidate}{quote}"
+        return match.group(0)
+
+    return CODE_ASSET_PATH_PATTERN.sub(_replace, code)
 
 def _load_api_key() -> str:
     # Prefer environment variable overrides.
@@ -808,11 +865,13 @@ class CoderRuntime:
         runtime_dir: Path,
         request_fn: Callable,
         max_code_token_length: int = 10000,
+        assets_dir: Optional[Path] = None,
     ):
         self.runtime_dir = runtime_dir
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
         self.request_fn = request_fn
         self.max_code_token_length = max_code_token_length
+        self.assets_dir = assets_dir.resolve() if assets_dir is not None else None
 
     def _scene_name(self, section_id: str) -> str:
         return _scene_name_from_section_id(section_id)
@@ -841,7 +900,7 @@ class CoderRuntime:
 
         scene_name = self._scene_name(section_id)
         code_file = self.runtime_dir / f"{section_id}.py"
-        current_code = code
+        current_code = _resolve_code_asset_paths(code, self.assets_dir) if self.assets_dir is not None else code
         code_file.write_text(current_code, encoding="utf-8")
 
         last_error = ""
@@ -881,8 +940,12 @@ class CoderRuntime:
                 fixed_code = scope_refine_fixer.fix_code_smart(section_id, current_code, result.stderr, self.runtime_dir)
 
                 if fixed_code:
-                    current_code = fixed_code
-                    code_file.write_text(fixed_code, encoding="utf-8")
+                    current_code = (
+                        _resolve_code_asset_paths(fixed_code, self.assets_dir)
+                        if self.assets_dir is not None
+                        else fixed_code
+                    )
+                    code_file.write_text(current_code, encoding="utf-8")
                 else:
                     break
             except subprocess.TimeoutExpired:
@@ -911,6 +974,7 @@ def _run_coder_runtime_worker(
     max_code_token_length: int,
     section_title: str,
     lecture_lines: List[str],
+    assets_dir: str = "",
 ) -> Tuple[str, Dict[str, object], Dict[str, object]]:
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
@@ -940,6 +1004,7 @@ def _run_coder_runtime_worker(
             usage_source=f"scope_refine:{section_id}",
         ),
         max_code_token_length=max_code_token_length,
+        assets_dir=Path(assets_dir).resolve() if assets_dir else None,
     )
 
     try:
@@ -1400,22 +1465,44 @@ class VideoTeamBaseAgent(MASAgent):
         if not isinstance(animations, list):
             raise ValueError("animations must be a list of strings.")
 
+        existing_asset_tags = {
+            tag
+            for current_animation in self.video_state.storyboard[section_idx].animations
+            for tag in _extract_asset_tags(current_animation)
+        }
         cleaned_animations: List[str] = []
+        removed_asset_tags: List[str] = []
         for animation in animations:
             if not isinstance(animation, str):
                 raise ValueError("Every animation must be a string.")
             normalized = animation.strip()
             if not normalized:
                 raise ValueError("Animations cannot contain empty strings.")
+            if self.name == ANIMATION_PLANNER:
+                normalized, stripped_tags = _strip_disallowed_asset_tags(normalized, existing_asset_tags)
+                if stripped_tags:
+                    removed_asset_tags.extend(stripped_tags)
+                if not normalized:
+                    raise ValueError(
+                        "Animations cannot consist only of new [Asset: ...] tags. "
+                        "Only the built-in asset enhancement step may add new asset references."
+                    )
             cleaned_animations.append(normalized)
 
         self.video_state.storyboard[section_idx].animations = cleaned_animations
-        return {
+        result: Dict[str, object] = {
             "status": "ok",
             "section_id": section_id,
             "animations": cleaned_animations,
             "count": len(cleaned_animations),
         }
+        if removed_asset_tags:
+            result["asset_tags_removed"] = sorted(set(removed_asset_tags))
+            result["warning"] = (
+                "New [Asset: ...] references were removed. "
+                "Only the built-in asset enhancement step may introduce asset tags."
+            )
+        return result
 
     def replace_code_for_section(self, section_id: str, code: str) -> Dict[str, object]:
         section_idx = self._validate_section_access(section_id)
@@ -1582,7 +1669,8 @@ Original Code2Video Stage-3 prompt (follow this fully):
         elif self.name == ANIMATION_PLANNER:
             edit_instruction = (
                 "Use replace_animations(section_id, animations) to update animation steps for any section. "
-                "Preserve any existing [Asset: ...] references unless an issue explicitly tells you to replace them."
+                "Preserve any existing [Asset: ...] references unless an issue explicitly tells you to replace them. "
+                "Do not add new [Asset: ...] references yourself; only the built-in asset enhancer may introduce them."
             )
             base_class_context = ""
         else:
@@ -1944,6 +2032,7 @@ class MASVideoRunner:
         self.assets_dir = Path(__file__).resolve().parent.parent / "assets" / "icon"
         self.assets_dir.mkdir(parents=True, exist_ok=True)
         self.iconfinder_api_key = self.cfg.iconfinder_api_key or _load_iconfinder_api_key()
+        self.pre_asset_storyboard_payload: Optional[Dict[str, object]] = None
 
         self._sync_token_usage()
 
@@ -1962,6 +2051,7 @@ class MASVideoRunner:
                     usage_source=f"scope_refine:{section_id}",
                 ),
                 max_code_token_length=self.cfg.max_code_token_length,
+                assets_dir=self.assets_dir,
             )
 
         self.script_writer_agent = VideoTeamBaseAgent(
@@ -2051,6 +2141,66 @@ class MASVideoRunner:
             for animation in section.animations
         )
 
+    def _single_section_storyboard_payload(self, section: Section) -> Dict[str, object]:
+        return {
+            "topic": self.video_state.topic,
+            "target_audience": self.video_state.target_audience,
+            "sections": [asdict(section)],
+        }
+
+    def _available_asset_paths(self) -> Dict[str, Path]:
+        return {
+            path.name: path.resolve()
+            for path in self.assets_dir.iterdir()
+            if path.is_file()
+        }
+
+    def _normalize_real_asset_ref(self, raw_asset_ref: str, available_assets: Dict[str, Path]) -> Optional[str]:
+        candidate = Path(raw_asset_ref.strip())
+        if candidate.is_absolute():
+            try:
+                resolved_candidate = candidate.resolve()
+            except Exception:
+                resolved_candidate = candidate
+            try:
+                if self.assets_dir.resolve() in resolved_candidate.parents and resolved_candidate.exists():
+                    return str(resolved_candidate)
+            except RuntimeError:
+                pass
+
+        resolved_path = available_assets.get(candidate.name)
+        if resolved_path is not None:
+            return str(resolved_path)
+        return None
+
+    def _sanitize_enhanced_animations(self, animations: List[str]) -> Tuple[List[str], List[str]]:
+        available_assets = self._available_asset_paths()
+        sanitized_animations: List[str] = []
+        asset_animations: List[str] = []
+
+        for animation in animations:
+            if not isinstance(animation, str):
+                continue
+
+            found_valid_tag = False
+
+            def _replace(match: re.Match[str]) -> str:
+                nonlocal found_valid_tag
+                asset_ref = self._normalize_real_asset_ref(match.group(1), available_assets)
+                if asset_ref is None:
+                    return ""
+                found_valid_tag = True
+                return f"[Asset: {asset_ref}]"
+
+            cleaned = ASSET_TAG_PATTERN.sub(_replace, animation.strip())
+            cleaned = _clean_asset_tag_spacing(cleaned)
+            if cleaned:
+                sanitized_animations.append(cleaned)
+                if found_valid_tag:
+                    asset_animations.append(cleaned)
+
+        return sanitized_animations, asset_animations
+
     def _request_asset_enhancement(self, prompt: str, max_tokens: int = 10000):
         return _scope_refine_request_with_client(
             self.client,
@@ -2101,42 +2251,33 @@ class MASVideoRunner:
         )
 
     def _enhance_storyboard_with_assets(self, turn_idx: int) -> None:
-        if self._storyboard_contains_assets():
-            print("[VideoMAS] Storyboard already contains asset tags; skipping asset enhancement.")
-            return
+        if self.pre_asset_storyboard_payload is None:
+            self.pre_asset_storyboard_payload = self._storyboard_payload()
 
-        storyboard_payload = self._storyboard_payload()
-        original_animations_by_section = {
-            section.id: list(section.animations)
-            for section in self.video_state.storyboard
-        }
-
-        try:
-            enhanced_storyboard = process_storyboard_with_assets(
-                storyboard=storyboard_payload,
-                api_function=self._request_asset_enhancement,
-                assets_dir=str(self.assets_dir),
-                iconfinder_api_key=self.iconfinder_api_key,
-            )
-        except Exception as e:
-            print(f"[VideoMAS] Storyboard asset enhancement failed: {e}")
-            return
-
-        enhanced_sections = enhanced_storyboard.get("sections", []) if isinstance(enhanced_storyboard, dict) else []
-        if not isinstance(enhanced_sections, list):
-            print("[VideoMAS] Storyboard asset enhancement returned an invalid payload; skipping.")
-            return
-
-        sections_by_id = {
-            str(section_data.get("id", "")): section_data
-            for section_data in enhanced_sections
-            if isinstance(section_data, dict)
-        }
         sections_with_new_assets: List[Tuple[str, List[str]]] = []
 
         for section in self.video_state.storyboard:
-            section_data = sections_by_id.get(section.id)
-            if section_data is None:
+            original_animations = list(section.animations)
+            section_payload = self._single_section_storyboard_payload(section)
+
+            try:
+                enhanced_storyboard = process_storyboard_with_assets(
+                    storyboard=section_payload,
+                    api_function=self._request_asset_enhancement,
+                    assets_dir=str(self.assets_dir),
+                    iconfinder_api_key=self.iconfinder_api_key,
+                )
+            except Exception as e:
+                print(f"[VideoMAS] Storyboard asset enhancement failed for {section.id}: {e}")
+                continue
+
+            enhanced_sections = enhanced_storyboard.get("sections", []) if isinstance(enhanced_storyboard, dict) else []
+            if not isinstance(enhanced_sections, list) or len(enhanced_sections) != 1:
+                print(f"[VideoMAS] Storyboard asset enhancement returned an invalid payload for {section.id}; skipping.")
+                continue
+
+            section_data = enhanced_sections[0]
+            if not isinstance(section_data, dict):
                 continue
 
             enhanced_animations = section_data.get("animations", [])
@@ -2154,10 +2295,12 @@ class MASVideoRunner:
             if not cleaned_animations:
                 continue
 
-            previous_animations = original_animations_by_section.get(section.id, [])
-            section.animations = cleaned_animations
-            asset_animations = [animation for animation in cleaned_animations if "[Asset:" in animation]
-            if asset_animations and cleaned_animations != previous_animations:
+            sanitized_animations, asset_animations = self._sanitize_enhanced_animations(cleaned_animations)
+            if not sanitized_animations:
+                continue
+
+            section.animations = sanitized_animations
+            if asset_animations and sanitized_animations != original_animations:
                 sections_with_new_assets.append((section.id, asset_animations))
 
         if not sections_with_new_assets:
@@ -2180,7 +2323,7 @@ class MASVideoRunner:
         storyboard_payload = self._storyboard_payload()
         storyboard_path = self.case_dir / "storyboard.json"
         with storyboard_path.open("w", encoding="utf-8") as f:
-            json.dump(storyboard_payload, f, ensure_ascii=False, indent=2)
+            json.dump(self.pre_asset_storyboard_payload or storyboard_payload, f, ensure_ascii=False, indent=2)
 
         storyboard_assets_path = self.case_dir / "storyboard_with_assets.json"
         with storyboard_assets_path.open("w", encoding="utf-8") as f:
@@ -2414,6 +2557,7 @@ class MASVideoRunner:
                     "max_code_token_length": self.cfg.max_code_token_length,
                     "section_title": section.title,
                     "lecture_lines": list(section.lecture_lines),
+                    "assets_dir": str(self.assets_dir),
                 }
             )
 
