@@ -33,6 +33,7 @@ export PYTHONPATH="$REPO_ROOT:$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 # MAS pipeline defaults. Override any of these via exported env vars before sbatch.
 KNOWLEDGE_FILE="${KNOWLEDGE_FILE:-long_video_topics_list.json}"
 MAX_TOPICS="${MAX_TOPICS:-10}"
+RANDOM_SEED="${RANDOM_SEED:-}"
 PER_QUESTION_WORKERS="${PER_QUESTION_WORKERS:-5}"
 
 MAX_CODE_TOKEN_LENGTH="${MAX_CODE_TOKEN_LENGTH:-10000}"
@@ -49,11 +50,66 @@ SECTION_PARALLEL_WORKERS="${SECTION_PARALLEL_WORKERS:-}"
 WORKER_MODEL="${WORKER_MODEL:-gemini-3-flash-preview}"
 ORCHESTRATOR_MODEL="${ORCHESTRATOR_MODEL:-gemini-3-flash-preview}"
 
+RESOLVED_KNOWLEDGE_FILE="$KNOWLEDGE_FILE"
+if [[ "$KNOWLEDGE_FILE" != /* ]]; then
+  if [[ -f "$REPO_ROOT/json_files/$KNOWLEDGE_FILE" ]]; then
+    RESOLVED_KNOWLEDGE_FILE="$REPO_ROOT/json_files/$KNOWLEDGE_FILE"
+  elif [[ -f "$REPO_ROOT/$KNOWLEDGE_FILE" ]]; then
+    RESOLVED_KNOWLEDGE_FILE="$REPO_ROOT/$KNOWLEDGE_FILE"
+  fi
+fi
+
+SAMPLED_KNOWLEDGE_FILE=$(mktemp "${TMPDIR:-/tmp}/code2video-mas-top10.XXXXXX.json")
+cleanup() {
+  rm -f "$SAMPLED_KNOWLEDGE_FILE"
+}
+trap cleanup EXIT
+
+if [[ -n "$RANDOM_SEED" ]]; then
+  SAMPLE_ARGS=("$RESOLVED_KNOWLEDGE_FILE" "$SAMPLED_KNOWLEDGE_FILE" "$MAX_TOPICS" "$RANDOM_SEED")
+else
+  SAMPLE_ARGS=("$RESOLVED_KNOWLEDGE_FILE" "$SAMPLED_KNOWLEDGE_FILE" "$MAX_TOPICS")
+fi
+
+"$PYTHON_BIN" -c '
+import json
+import random
+import sys
+from pathlib import Path
+
+source_path = Path(sys.argv[1])
+target_path = Path(sys.argv[2])
+max_topics = int(sys.argv[3])
+seed = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != "" else None
+
+with source_path.open("r", encoding="utf-8") as f:
+    topics = json.load(f)
+
+if not isinstance(topics, list):
+    raise ValueError(f"Knowledge file must contain a JSON list: {source_path}")
+
+normalized_topics = [str(item) for item in topics]
+rng = random.Random(seed)
+sample_size = len(normalized_topics) if max_topics < 0 else min(max_topics, len(normalized_topics))
+sampled_topics = rng.sample(normalized_topics, sample_size) if sample_size < len(normalized_topics) else normalized_topics[:]
+if sample_size == len(normalized_topics):
+    rng.shuffle(sampled_topics)
+
+with target_path.open("w", encoding="utf-8") as f:
+    json.dump(sampled_topics, f, ensure_ascii=False, indent=2)
+
+print(f"Randomly selected {len(sampled_topics)} topics from {source_path}")
+if seed is not None:
+    print(f"Random seed: {seed}")
+for idx, topic in enumerate(sampled_topics, start=1):
+    print(f"{idx}. {topic}")
+' "${SAMPLE_ARGS[@]}"
+
 CMD=(
   "$PYTHON_BIN" src/main.py
   --runner mas
   --run_pipeline
-  --knowledge_file "$KNOWLEDGE_FILE"
+  --knowledge_file "$SAMPLED_KNOWLEDGE_FILE"
   --max_topics "$MAX_TOPICS"
   --per_question_workers "$PER_QUESTION_WORKERS"
   --max_code_token_length "$MAX_CODE_TOKEN_LENGTH"
@@ -99,7 +155,11 @@ echo "Starting MAS generation+evaluation pipeline at $(date)"
 echo "Repository: $REPO_ROOT"
 echo "Python: $PYTHON_BIN"
 echo "Topics file: $KNOWLEDGE_FILE"
+echo "Sampled topics file: $SAMPLED_KNOWLEDGE_FILE"
 echo "Max topics: $MAX_TOPICS"
+if [ -n "$RANDOM_SEED" ]; then
+  echo "Random seed: $RANDOM_SEED"
+fi
 echo "Command: ${CMD[*]}"
 
 "${CMD[@]}"
