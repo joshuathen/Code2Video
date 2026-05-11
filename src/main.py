@@ -464,6 +464,7 @@ def _build_mas_generation_result(args: argparse.Namespace, idx: int) -> Dict[str
         section_parallel_workers=section_parallel_workers,
         clear_logs=args.clear_logs,
         case_index=args.case_index,
+        auto_review_changed_only=True,
         iconfinder_api_key=_load_iconfinder_api_key(),
     )
 

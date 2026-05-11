@@ -1,6 +1,7 @@
 from copy import deepcopy
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -886,6 +887,60 @@ class CoderRuntime:
                 return path
         return None
 
+    def _timeout_artifacts_dir(self, section_id: str) -> Path:
+        artifacts_dir = self.runtime_dir / "coder_runtime_timeouts" / section_id
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        return artifacts_dir
+
+    @staticmethod
+    def _coerce_text(value: object) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return str(value)
+
+    def _write_timeout_artifacts(
+        self,
+        *,
+        section_id: str,
+        scene_name: str,
+        attempt_number: int,
+        timeout_seconds: int,
+        elapsed_seconds: float,
+        command: List[str],
+        code: str,
+        topic: str,
+        timeout_error: subprocess.TimeoutExpired,
+    ) -> Dict[str, str]:
+        artifacts_dir = self._timeout_artifacts_dir(section_id)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        stem = f"{section_id}_attempt_{attempt_number:02d}_timeout_{timestamp}_{time.time_ns() % 1_000_000:06d}"
+
+        code_snapshot_path = artifacts_dir / f"{stem}.py"
+        metadata_path = artifacts_dir / f"{stem}.json"
+
+        code_snapshot_path.write_text(code, encoding="utf-8")
+        metadata = {
+            "section_id": section_id,
+            "scene_name": scene_name,
+            "topic": topic,
+            "attempt_number": attempt_number,
+            "timeout_seconds": timeout_seconds,
+            "elapsed_seconds": round(elapsed_seconds, 3),
+            "command": command,
+            "cwd": str(self.runtime_dir),
+            "code_snapshot_path": str(code_snapshot_path),
+            "stdout": self._coerce_text(getattr(timeout_error, "stdout", None)),
+            "stderr": self._coerce_text(getattr(timeout_error, "stderr", None)),
+        }
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
+        return {
+            "code_snapshot_path": str(code_snapshot_path),
+            "metadata_path": str(metadata_path),
+        }
+
     def debug_and_fix(
         self,
         section_id: str,
@@ -904,20 +959,28 @@ class CoderRuntime:
         code_file.write_text(current_code, encoding="utf-8")
 
         last_error = ""
+        last_elapsed_seconds: Optional[float] = None
+        timeout_artifacts: Dict[str, str] = {}
         topic_prefix = f"{topic} " if topic else ""
+        render_timeout_seconds = 180
         for fix_attempt in range(max_fix_attempts):
+            attempt_number = fix_attempt + 1
+            command = ["manim", "-ql", code_file.name, scene_name]
             print(
-                f"🔧 {topic_prefix}Debugging {section_id} (attempt {fix_attempt + 1}/{max_fix_attempts})",
+                f"🔧 {topic_prefix}Debugging {section_id} (attempt {attempt_number}/{max_fix_attempts})",
                 flush=True,
             )
+            render_started_at = time.perf_counter()
             try:
                 result = subprocess.run(
-                    ["manim", "-ql", code_file.name, scene_name],
+                    command,
                     capture_output=True,
                     text=True,
                     cwd=self.runtime_dir,
-                    timeout=180,
+                    timeout=render_timeout_seconds,
                 )
+                elapsed_seconds = time.perf_counter() - render_started_at
+                last_elapsed_seconds = elapsed_seconds
 
                 if result.returncode == 0:
                     video_patterns = [
@@ -930,9 +993,10 @@ class CoderRuntime:
                             return {
                                 "success": True,
                                 "status": "ok",
-                                "attempts": fix_attempt + 1,
+                                "attempts": attempt_number,
                                 "code": current_code,
                                 "video_path": str(video_path),
+                                "elapsed_seconds": round(elapsed_seconds, 3),
                             }
 
                 last_error = (result.stderr or "").strip()
@@ -948,20 +1012,47 @@ class CoderRuntime:
                     code_file.write_text(current_code, encoding="utf-8")
                 else:
                     break
-            except subprocess.TimeoutExpired:
-                print(f"❌ {topic_prefix}{section_id} timed out", flush=True)
+            except subprocess.TimeoutExpired as timeout_error:
+                elapsed_seconds = time.perf_counter() - render_started_at
+                last_elapsed_seconds = elapsed_seconds
+                timeout_artifacts = self._write_timeout_artifacts(
+                    section_id=section_id,
+                    scene_name=scene_name,
+                    attempt_number=attempt_number,
+                    timeout_seconds=render_timeout_seconds,
+                    elapsed_seconds=elapsed_seconds,
+                    command=command,
+                    code=current_code,
+                    topic=topic,
+                    timeout_error=timeout_error,
+                )
+                last_error = f"Render timed out after {elapsed_seconds:.2f}s (limit {render_timeout_seconds}s)."
+                print(
+                    f"❌ {topic_prefix}{section_id} timed out after {elapsed_seconds:.2f}s",
+                    flush=True,
+                )
+                print(
+                    "   ↳ Saved timeout snapshot: "
+                    f"{timeout_artifacts['code_snapshot_path']} | metadata: {timeout_artifacts['metadata_path']}",
+                    flush=True,
+                )
                 break
             except Exception as e:
                 print(f"❌ {topic_prefix}{section_id} failed with exception: {e}", flush=True)
                 break
 
-        return {
+        failure_result = {
             "success": False,
             "status": "failed",
             "attempts": max_fix_attempts,
             "code": current_code,
             "error": last_error,
         }
+        if last_elapsed_seconds is not None:
+            failure_result["elapsed_seconds"] = round(last_elapsed_seconds, 3)
+        if timeout_artifacts:
+            failure_result["timeout_artifacts"] = timeout_artifacts
+        return failure_result
 
 
 def _run_coder_runtime_worker(
@@ -1201,6 +1292,7 @@ class MASRunConfig:
     case_index: Optional[int] = None
     enable_storyboard_asset_enhancement: bool = True
     storyboard_asset_enhancement_turn: int = 2
+    auto_review_changed_only: bool = True
     iconfinder_api_key: str = ""
 
 
@@ -1535,18 +1627,31 @@ class VideoTeamBaseAgent(MASAgent):
             )
         return self.replace_code_for_section(self.managed_sections[0], code)
 
-    def _managed_section_payload(self) -> Dict[str, Dict[str, object]]:
+    def _managed_section_payload(
+        self,
+        *,
+        include_outline: bool = True,
+        include_storyboard: bool = True,
+        include_code: bool = False,
+        include_render_context: bool = True,
+    ) -> Dict[str, Dict[str, object]]:
         payload: Dict[str, Dict[str, object]] = {}
         for section_id in self.managed_sections:
             section_idx = self.video_state.section_index(section_id)
-            payload[section_id] = {
-                "highLevel": self.video_state.section_outline(section_id),
-                "section": asdict(self.video_state.storyboard[section_idx]),
-                "code": self.video_state.code[section_idx],
-                "render_status": self.video_state.render_status[section_idx],
-                "render_error": self.video_state.render_error[section_idx],
-                "rendered_video_path": self.video_state.rendered_video_path[section_idx],
-            }
+            section_payload: Dict[str, object] = {}
+            if include_outline:
+                section_payload["highLevel"] = self.video_state.section_outline(section_id)
+            if include_storyboard:
+                section_payload["section"] = asdict(self.video_state.storyboard[section_idx])
+            if include_code:
+                section_payload["code"] = self.video_state.code[section_idx]
+            if include_render_context:
+                section_payload["render"] = {
+                    "status": self.video_state.render_status[section_idx],
+                    "error": self.video_state.render_error[section_idx],
+                    "has_rendered_video": bool(self.video_state.rendered_video_path[section_idx]),
+                }
+            payload[section_id] = section_payload
         return payload
 
     def _build_coder_generation_prompt(
@@ -1561,7 +1666,12 @@ class VideoTeamBaseAgent(MASAgent):
         section_id = self.managed_sections[0]
         section_idx = self.video_state.section_index(section_id)
         section = self.video_state.storyboard[section_idx]
-        section_snapshot = self._managed_section_payload()[section_id]
+        section_context = self._managed_section_payload(
+            include_outline=True,
+            include_storyboard=False,
+            include_code=False,
+            include_render_context=True,
+        )[section_id]
         current_code = self.video_state.code[section_idx] or ""
         regenerate_note = ""
         if codegen_attempt > 1:
@@ -1592,8 +1702,8 @@ Coder assignments by section:
 You are assigned to exactly one section:
 {section_id}
 
-Current section snapshot:
-{json.dumps(section_snapshot, ensure_ascii=False, indent=2)}
+Current section context:
+{json.dumps(section_context, ensure_ascii=False, indent=2)}
 
 Current code for this section:
 ```python
@@ -1614,7 +1724,10 @@ MAS-specific instructions:
 5. Preserve any existing [Asset: ...] references in animations and use them in code.
 6. If blocked, add targeted cross-agent issues via add_issue(section_id, toAgent, description).
 7. Any issue you create for another agent must be self-contained: include the concrete problem, relevant local context, and the action you want that agent to take.
-8. If you answer in plain text instead of a tool call, return only the complete Python code for this section.
+8. Keep render performance within the MAS runtime budget: your section must render comfortably under the 180-second `manim -ql` timeout.
+9. Prefer persistent mobjects plus `add_updater(...)`/`ValueTracker` for animated movement. Avoid `always_redraw(...)` for heavyweight or text-like objects.
+10. Do NOT create `SVGMobject`, `Text`, `DecimalNumber`, `MathTex`, `Tex`, `NumberLine`, or other expensive mobjects inside `always_redraw(...)`. Load/build them once, then update position/value/geometry in place.
+11. If you answer in plain text instead of a tool call, return only the complete Python code for this section.
 
 Original Code2Video Stage-3 prompt (follow this fully):
 {stage3_prompt}
@@ -1688,6 +1801,12 @@ Original Code2Video Stage-3 prompt (follow this fully):
                 return [response.usage_metadata, self.model, self.name]
             return None
 
+        section_context = self._managed_section_payload(
+            include_outline=True,
+            include_storyboard=True,
+            include_code=False,
+            include_render_context=False,
+        )
         prompt = f"""You are {self.name} in a single shared MAS team building one multi-section video.
 
 Topic: {self.video_state.topic}
@@ -1696,14 +1815,11 @@ Target audience: {self.video_state.target_audience}
 Team members:
 {agent_lines}
 
-Coder assignments by section:
-{self.video_state.coder_assignments}
-
 Sections you are allowed to edit:
 {self.managed_sections}
 
-Section snapshots for your scope:
-{self._managed_section_payload()}
+Section planning context for your scope:
+{json.dumps(section_context, ensure_ascii=False, indent=2)}
 
 {base_class_context}
 
@@ -1744,6 +1860,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
         managed_sections: Optional[List[str]] = None,
         tools: Optional[List[Callable]] = None,
         token_tracker: Optional[MASTokenTracker] = None,
+        auto_review_changed_only: bool = True,
     ):
         super().__init__(
             name=name,
@@ -1758,6 +1875,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
         )
         self.extractor = GridPositionExtractor()
         self.grid_img_path = Path(__file__).resolve().parent.parent / "assets" / "reference" / "GRID.png"
+        self.auto_review_changed_only = auto_review_changed_only
 
     @staticmethod
     def _coerce_optional_str(value: object) -> str:
@@ -1851,11 +1969,48 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
 
         return result
 
+    def _review_fingerprint(self, section_id: str, video_path: Path) -> Dict[str, object]:
+        section_idx = self.video_state.section_index(section_id)
+        code_text = self.video_state.code[section_idx] or ""
+        stat_result = video_path.stat()
+        return {
+            "video_path": str(video_path.resolve()),
+            "video_size": int(stat_result.st_size),
+            "video_mtime_ns": int(stat_result.st_mtime_ns),
+            "code_sha1": hashlib.sha1(code_text.encode("utf-8")).hexdigest(),
+        }
+
+    def _should_auto_review_section(self, section_id: str) -> bool:
+        section_idx = self.video_state.section_index(section_id)
+        video_path = self.video_state.rendered_video_path[section_idx]
+        if not video_path:
+            return False
+
+        video_path_obj = Path(video_path)
+        if not video_path_obj.exists():
+            return True
+
+        prior_review = self.video_state.video_review[section_idx]
+        if not isinstance(prior_review, dict):
+            return True
+        if prior_review.get("status") != "ok":
+            return True
+
+        stored_fingerprint = prior_review.get("review_fingerprint")
+        if not isinstance(stored_fingerprint, dict):
+            return True
+
+        current_fingerprint = self._review_fingerprint(section_id, video_path_obj)
+        return current_fingerprint != stored_fingerprint
+
     def _auto_review_rendered_sections(self) -> List[Dict[str, object]]:
         review_results: List[Dict[str, object]] = []
         for section_id in self.video_state.section_ids():
             section_idx = self.video_state.section_index(section_id)
             if not self.video_state.rendered_video_path[section_idx]:
+                continue
+            if self.auto_review_changed_only and not self._should_auto_review_section(section_id):
+                print(f"[VideoMAS][VideoReview] Skipping unchanged render for {section_id}.")
                 continue
             try:
                 review_results.append(self.review_rendered_video(section_id))
@@ -1912,10 +2067,12 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
         video_path = self.video_state.rendered_video_path[section_idx]
         if not video_path:
             return {"status": "skipped", "section_id": section_id, "reason": "No rendered video path available."}
-        if not Path(video_path).exists():
+        video_path_obj = Path(video_path)
+        if not video_path_obj.exists():
             return {"status": "failed", "section_id": section_id, "reason": f"Rendered video not found at {video_path}"}
         if not self.grid_img_path.exists():
             return {"status": "failed", "section_id": section_id, "reason": f"Grid reference image missing at {self.grid_img_path}"}
+        review_fingerprint = self._review_fingerprint(section_id, video_path_obj)
 
         position_table = self.extractor.generate_position_table(
             self.extractor.extract_grid_positions(self.video_state.code[section_idx] or "")
@@ -1947,6 +2104,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
             "status": "ok",
             "section_id": section_id,
             "video_path": video_path,
+            "review_fingerprint": review_fingerprint,
             "analysis": parsed,
         }
         if isinstance(parsed, dict):
@@ -2115,6 +2273,7 @@ class MASVideoRunner:
             managed_sections=self.video_state.section_ids(),
             tools=[],
             token_tracker=self.token_tracker,
+            auto_review_changed_only=self.cfg.auto_review_changed_only,
         )
 
         for agent in self.team_agents + [self.orchestrator_agent]:
@@ -2828,6 +2987,7 @@ if __name__ == "__main__":
         max_retries=MAX_RETRIES,
         section_parallel_workers=len(video_state.section_ids()),
         clear_logs=False,
+        auto_review_changed_only=True,
     )
 
     final_video_state = run_mas_for_video_state(
