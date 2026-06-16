@@ -1,4 +1,5 @@
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import sys
 import time
@@ -30,6 +31,7 @@ DEFAULT_MAX_REGENERATE_TRIES = 10
 DEFAULT_MAX_FEEDBACK_GEN_CODE_TRIES = 3
 DEFAULT_MAX_MLLM_FIX_BUGS_TRIES = 3
 DEFAULT_FEEDBACK_ROUNDS = 2
+DEFAULT_TOPIC_PARALLEL_WORKERS = 1
 
 # MAS-only defaults that do not have a direct single-run analogue in agent.py.
 DEFAULT_OUTLINE_DURATION_MINUTES = 5
@@ -530,6 +532,63 @@ def _resolve_mas_case_index(base_case_index: Optional[int], idx: int) -> int:
     return base_case_index + idx
 
 
+def _run_single_topic_pipeline(
+    *,
+    runner_name: str,
+    idx: int,
+    total_topics: int,
+    knowledge_point: str,
+    base_args: argparse.Namespace,
+    generation_fn: Callable[[argparse.Namespace, int], Dict[str, Any]],
+    questions_json: Path,
+    per_question_workers: int,
+) -> Dict[str, Any]:
+    print("\n" + "=" * 80)
+    print(f"[{idx + 1}/{total_topics}] Running {runner_name} pipeline for: {knowledge_point}")
+    print("=" * 80)
+
+    topic_args = _clone_args(base_args)
+    topic_args.knowledge_point = knowledge_point
+    if runner_name == "mas":
+        topic_args.case_index = _resolve_mas_case_index(getattr(base_args, "case_index", None), idx)
+
+    try:
+        generation_result = generation_fn(topic_args, idx)
+        print(f"Run outputs written to: {generation_result['output_dir']}")
+        if generation_result.get("final_video_path"):
+            print(f"Final video: {generation_result['final_video_path']}")
+
+        evaluation_result = None
+        if generation_result["success"] and generation_result.get("final_video_path"):
+            evaluation_result = _evaluate_generated_video(
+                video_path=generation_result["final_video_path"],
+                topic=knowledge_point,
+                questions_json=questions_json,
+                per_question_workers=per_question_workers,
+            )
+            print(f"Saved evaluation: {evaluation_result['output_path']}")
+        else:
+            print("Skipping evaluation because no final video was produced.")
+
+        return {
+            "runner": runner_name,
+            "topic": knowledge_point,
+            "generation": generation_result,
+            "evaluation": evaluation_result,
+            "success": bool(generation_result["success"] and evaluation_result and evaluation_result["success"]),
+        }
+    except Exception as exc:
+        print(f"❌ {runner_name} pipeline failed for '{knowledge_point}': {exc}")
+        return {
+            "runner": runner_name,
+            "topic": knowledge_point,
+            "generation": None,
+            "evaluation": None,
+            "success": False,
+            "error": str(exc),
+        }
+
+
 def _run_generation_and_evaluation_pipeline(
     *,
     runner_name: str,
@@ -538,66 +597,53 @@ def _run_generation_and_evaluation_pipeline(
     generation_fn: Callable[[argparse.Namespace, int], Dict[str, Any]],
     questions_json: Path,
     per_question_workers: int,
+    topic_parallel_workers: int = DEFAULT_TOPIC_PARALLEL_WORKERS,
 ) -> List[Dict[str, Any]]:
     if not knowledge_points:
         print(f"No knowledge points selected for the {runner_name} pipeline.")
         return []
 
-    results: List[Dict[str, Any]] = []
     total_topics = len(knowledge_points)
+    results: List[Optional[Dict[str, Any]]] = [None] * total_topics
 
-    for idx, knowledge_point in enumerate(knowledge_points):
-        print("\n" + "=" * 80)
-        print(f"[{idx + 1}/{total_topics}] Running {runner_name} pipeline for: {knowledge_point}")
-        print("=" * 80)
-
-        topic_args = _clone_args(base_args)
-        topic_args.knowledge_point = knowledge_point
-        if runner_name == "mas":
-            topic_args.case_index = _resolve_mas_case_index(getattr(base_args, "case_index", None), idx)
-
-        try:
-            generation_result = generation_fn(topic_args, idx)
-            print(f"Run outputs written to: {generation_result['output_dir']}")
-            if generation_result.get("final_video_path"):
-                print(f"Final video: {generation_result['final_video_path']}")
-
-            evaluation_result = None
-            if generation_result["success"] and generation_result.get("final_video_path"):
-                evaluation_result = _evaluate_generated_video(
-                    video_path=generation_result["final_video_path"],
-                    topic=knowledge_point,
+    if topic_parallel_workers <= 1:
+        for idx, knowledge_point in enumerate(knowledge_points):
+            results[idx] = _run_single_topic_pipeline(
+                runner_name=runner_name,
+                idx=idx,
+                total_topics=total_topics,
+                knowledge_point=knowledge_point,
+                base_args=base_args,
+                generation_fn=generation_fn,
+                questions_json=questions_json,
+                per_question_workers=per_question_workers,
+            )
+    else:
+        max_workers = min(max(1, topic_parallel_workers), total_topics)
+        print(f"Running {runner_name} pipeline with topic parallelism: {max_workers} workers")
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(
+                    _run_single_topic_pipeline,
+                    runner_name=runner_name,
+                    idx=idx,
+                    total_topics=total_topics,
+                    knowledge_point=knowledge_point,
+                    base_args=base_args,
+                    generation_fn=generation_fn,
                     questions_json=questions_json,
                     per_question_workers=per_question_workers,
-                )
-                print(f"Saved evaluation: {evaluation_result['output_path']}")
-            else:
-                print("Skipping evaluation because no final video was produced.")
-
-            pipeline_result = {
-                "runner": runner_name,
-                "topic": knowledge_point,
-                "generation": generation_result,
-                "evaluation": evaluation_result,
-                "success": bool(generation_result["success"] and evaluation_result and evaluation_result["success"]),
+                ): idx
+                for idx, knowledge_point in enumerate(knowledge_points)
             }
-            results.append(pipeline_result)
-        except Exception as exc:
-            print(f"❌ {runner_name} pipeline failed for '{knowledge_point}': {exc}")
-            results.append(
-                {
-                    "runner": runner_name,
-                    "topic": knowledge_point,
-                    "generation": None,
-                    "evaluation": None,
-                    "success": False,
-                    "error": str(exc),
-                }
-            )
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                results[idx] = future.result()
 
-    _print_batch_pipeline_summary(runner_name, results)
-    _write_batch_pipeline_summary(runner_name, results)
-    return results
+    finalized_results = [item for item in results if item is not None]
+    _print_batch_pipeline_summary(runner_name, finalized_results)
+    _write_batch_pipeline_summary(runner_name, finalized_results)
+    return finalized_results
 
 
 def run_agent_generation_and_evaluation_pipeline(
@@ -616,6 +662,7 @@ def run_agent_generation_and_evaluation_pipeline(
     max_feedback_gen_code_tries: int = DEFAULT_MAX_FEEDBACK_GEN_CODE_TRIES,
     max_mllm_fix_bugs_tries: int = DEFAULT_MAX_MLLM_FIX_BUGS_TRIES,
     feedback_rounds: int = DEFAULT_FEEDBACK_ROUNDS,
+    topic_parallel_workers: int = DEFAULT_TOPIC_PARALLEL_WORKERS,
 ) -> List[Dict[str, Any]]:
     """Run generation plus evaluation for the first N topics, or all topics when max_topics is None/-1."""
     knowledge_points = load_knowledge_points(knowledge_file=knowledge_file, max_topics=max_topics)
@@ -644,6 +691,7 @@ def run_agent_generation_and_evaluation_pipeline(
         generation_fn=_build_agent_generation_result,
         questions_json=questions_json_path,
         per_question_workers=per_question_workers,
+        topic_parallel_workers=topic_parallel_workers,
     )
 
 
@@ -669,6 +717,7 @@ def run_mas_generation_and_evaluation_pipeline(
     orchestrator_model: str = DEFAULT_OUTLINE_MODEL,
     clear_logs: bool = False,
     case_index: Optional[int] = None,
+    topic_parallel_workers: int = DEFAULT_TOPIC_PARALLEL_WORKERS,
 ) -> List[Dict[str, Any]]:
     """Run MAS generation plus evaluation for the first N topics, or all topics when max_topics is None/-1."""
     knowledge_points = load_knowledge_points(knowledge_file=knowledge_file, max_topics=max_topics)
@@ -702,6 +751,7 @@ def run_mas_generation_and_evaluation_pipeline(
         generation_fn=_build_mas_generation_result,
         questions_json=questions_json_path,
         per_question_workers=per_question_workers,
+        topic_parallel_workers=topic_parallel_workers,
     )
 
 
@@ -722,6 +772,7 @@ def _run_pipeline_from_cli(args: argparse.Namespace) -> int:
             max_feedback_gen_code_tries=args.max_feedback_gen_code_tries,
             max_mllm_fix_bugs_tries=args.max_mllm_fix_bugs_tries,
             feedback_rounds=args.feedback_rounds,
+            topic_parallel_workers=args.topic_parallel_workers,
         )
     else:
         results = run_mas_generation_and_evaluation_pipeline(
@@ -745,6 +796,7 @@ def _run_pipeline_from_cli(args: argparse.Namespace) -> int:
             orchestrator_model=args.orchestrator_model,
             clear_logs=args.clear_logs,
             case_index=args.case_index,
+            topic_parallel_workers=args.topic_parallel_workers,
         )
 
     if not results:
@@ -795,6 +847,12 @@ def build_and_parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_PER_QUESTION_WORKERS,
         help="Parallel workers used within each TQ evaluation during --run_pipeline.",
+    )
+    parser.add_argument(
+        "--topic_parallel_workers",
+        type=int,
+        default=DEFAULT_TOPIC_PARALLEL_WORKERS,
+        help="Parallel workers across knowledge topics during --run_pipeline.",
     )
     parser.add_argument(
         "--folder_prefix",
