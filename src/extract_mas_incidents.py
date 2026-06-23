@@ -42,6 +42,13 @@ MODEL1_LABELS = [
     "type_error",
 ]
 
+REPAIR_ACTION_LABELS = [
+    "fix_environment",
+    "scope_refine_repair",
+    "retry_with_timeout_or_perf_fix",
+    "full_regenerate",
+]
+
 TRAINING_CSV_FIELDS = [
     "incident_id",
     "source_type",
@@ -62,6 +69,37 @@ TRAINING_CSV_FIELDS = [
     "elapsed_seconds",
     "failing_line_number",
     "input_text",
+    "normalized_error_text",
+    "code_excerpt",
+    "repair_strategy",
+    "repair_reason",
+    "later_attempt_succeeded",
+    "resolved_later_in_run",
+    "final_section_status",
+]
+
+REPAIR_ACTION_CSV_FIELDS = [
+    "incident_id",
+    "base_incident_id",
+    "source_type",
+    "quality_tier",
+    "run_id",
+    "topic",
+    "section_id",
+    "section_title",
+    "attempt_number",
+    "phase",
+    "repair_action",
+    "repair_action_source",
+    "view_name",
+    "input_text",
+    "label_coarse",
+    "label_fine",
+    "exception_type",
+    "render_status",
+    "timed_out",
+    "elapsed_seconds",
+    "failing_line_number",
     "normalized_error_text",
     "code_excerpt",
     "repair_strategy",
@@ -350,6 +388,64 @@ def _build_model1_input_text(record: Dict[str, object]) -> str:
     ).strip()
 
 
+def _build_repair_action_input_text(
+    record: Dict[str, object],
+    *,
+    include_topic: bool = True,
+    include_exception: bool = True,
+    include_code_excerpt: bool = True,
+) -> str:
+    lines: List[str] = []
+    if include_topic:
+        lines.append(f"Topic: {record.get('topic', '')}")
+    lines.append(f"Section: {record.get('section_title', '')}")
+    if include_exception:
+        lines.append(f"Exception: {record.get('exception_type', '')}")
+    lines.append(f"Render status: {record.get('render_status', '')}")
+    lines.append(f"Timed out: {_bool_text(record.get('timed_out', False))}")
+
+    error_text = str(record.get("normalized_error_text", "") or "").strip()
+    if error_text:
+        lines.extend(["", "Error:", error_text])
+
+    if include_code_excerpt:
+        code_excerpt = str(record.get("code_excerpt", "") or "").strip()
+        if code_excerpt:
+            lines.extend(["", "Code excerpt:", code_excerpt])
+
+    return "\n".join(lines).strip()
+
+
+def _derive_repair_action(record: Dict[str, object]) -> Tuple[str, str]:
+    label_coarse = str(record.get("label_coarse") or "")
+    label_fine = str(record.get("label_fine") or "")
+    repair_strategy = str(record.get("repair_strategy") or "")
+    later_attempt_succeeded = record.get("later_attempt_succeeded")
+    resolved_later_in_run = bool(record.get("resolved_later_in_run"))
+
+    if label_coarse == "environment_error":
+        return "fix_environment", "heuristic:environment_error"
+
+    if label_coarse == "performance_or_timeout" or label_fine == "timeout" or bool(record.get("timed_out")):
+        return "retry_with_timeout_or_perf_fix", "heuristic:timeout_or_performance"
+
+    if label_coarse in {"name_error", "type_error"} and repair_strategy == "scope_refine":
+        return "scope_refine_repair", "heuristic:label_plus_scope_refine"
+
+    if label_coarse in {"name_error", "type_error"}:
+        if later_attempt_succeeded is False or not resolved_later_in_run:
+            return "full_regenerate", "heuristic:unresolved_codegen_failure"
+        return "scope_refine_repair", "heuristic:label_only"
+
+    if repair_strategy == "scope_refine":
+        return "scope_refine_repair", "heuristic:repair_strategy"
+
+    if later_attempt_succeeded is False or not resolved_later_in_run:
+        return "full_regenerate", "heuristic:unresolved_fallback"
+
+    return "scope_refine_repair", "heuristic:default"
+
+
 def _relative(path: Optional[Path], base: Path) -> str:
     if path is None:
         return ""
@@ -600,6 +696,63 @@ def _write_training_csv(path: Path, rows: Sequence[Dict[str, object]]) -> None:
             writer.writerow({field: row.get(field, "") for field in TRAINING_CSV_FIELDS})
 
 
+def _build_repair_action_rows(rows: Sequence[Dict[str, object]]) -> List[Dict[str, object]]:
+    repair_rows: List[Dict[str, object]] = []
+    for row in rows:
+        action_label, action_source = _derive_repair_action(row)
+        base_payload = {
+            "base_incident_id": row.get("incident_id", ""),
+            "source_type": row.get("source_type", ""),
+            "quality_tier": row.get("quality_tier", ""),
+            "run_id": row.get("run_id", ""),
+            "topic": row.get("topic", ""),
+            "section_id": row.get("section_id", ""),
+            "section_title": row.get("section_title", ""),
+            "attempt_number": row.get("attempt_number", ""),
+            "phase": row.get("phase", ""),
+            "repair_action": action_label,
+            "repair_action_source": action_source,
+            "label_coarse": row.get("label_coarse", ""),
+            "label_fine": row.get("label_fine", ""),
+            "exception_type": row.get("exception_type", ""),
+            "render_status": row.get("render_status", ""),
+            "timed_out": row.get("timed_out", ""),
+            "elapsed_seconds": row.get("elapsed_seconds", ""),
+            "failing_line_number": row.get("failing_line_number", ""),
+            "normalized_error_text": row.get("normalized_error_text", ""),
+            "code_excerpt": row.get("code_excerpt", ""),
+            "repair_strategy": row.get("repair_strategy", ""),
+            "repair_reason": row.get("repair_reason", ""),
+            "later_attempt_succeeded": row.get("later_attempt_succeeded", ""),
+            "resolved_later_in_run": row.get("resolved_later_in_run", ""),
+            "final_section_status": row.get("final_section_status", ""),
+        }
+
+        view_specs = [
+            ("full_context", dict(include_topic=True, include_exception=True, include_code_excerpt=True)),
+            ("masked_exception", dict(include_topic=True, include_exception=False, include_code_excerpt=True)),
+            ("error_only", dict(include_topic=False, include_exception=False, include_code_excerpt=False)),
+        ]
+        for view_name, view_kwargs in view_specs:
+            input_text = _build_repair_action_input_text(row, **view_kwargs)
+            repair_row = dict(base_payload)
+            repair_row["view_name"] = view_name
+            repair_row["input_text"] = input_text
+            suffix = hashlib.sha1(f"{row.get('incident_id')}::{view_name}".encode("utf-8")).hexdigest()[:8]
+            repair_row["incident_id"] = f"{row.get('incident_id', '')}-{suffix}"
+            repair_rows.append(repair_row)
+    return repair_rows
+
+
+def _write_repair_action_csv(path: Path, rows: Sequence[Dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=REPAIR_ACTION_CSV_FIELDS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: row.get(field, "") for field in REPAIR_ACTION_CSV_FIELDS})
+
+
 def _summarize(rows: Sequence[Dict[str, object]]) -> Dict[str, object]:
     by_source_type = Counter(str(row.get("source_type") or "") for row in rows)
     by_quality_tier = Counter(str(row.get("quality_tier") or "") for row in rows)
@@ -621,6 +774,22 @@ def _summarize(rows: Sequence[Dict[str, object]]) -> Dict[str, object]:
     }
 
 
+def _summarize_repair_actions(rows: Sequence[Dict[str, object]]) -> Dict[str, object]:
+    by_action = Counter(str(row.get("repair_action") or "") for row in rows)
+    by_action_source = Counter(str(row.get("repair_action_source") or "") for row in rows)
+    by_view = Counter(str(row.get("view_name") or "") for row in rows)
+    by_base_incident = Counter(str(row.get("base_incident_id") or "") for row in rows)
+    return {
+        "generated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "row_count": len(rows),
+        "base_incident_count": len(by_base_incident),
+        "views_per_incident": dict(by_view.most_common()),
+        "by_repair_action": dict(by_action.most_common()),
+        "by_repair_action_source": dict(by_action_source.most_common()),
+        "label_space": REPAIR_ACTION_LABELS,
+    }
+
+
 def _write_readme(path: Path, summary: Dict[str, object]) -> None:
     lines = [
         "# MAS Incident Dataset",
@@ -631,7 +800,10 @@ def _write_readme(path: Path, summary: Dict[str, object]) -> None:
         "",
         "- `all_incidents.jsonl`: Rich master dataset with metadata, labels, code excerpts, and training input text.",
         "- `incidents_train.csv`: Flattened training export for Model 1.",
+        "- `repair_actions_train.csv`: One row per incident with a derived repair-action label.",
+        "- `repair_actions_train_augmented.csv`: Multi-view repair-action export for ablation/augmentation experiments.",
         "- `summary.json`: Aggregate counts by source, label, and exception type.",
+        "- `repair_actions_summary.json`: Aggregate counts for derived repair actions and view variants.",
         "",
         "## Counts",
         "",
@@ -670,6 +842,27 @@ def _write_readme(path: Path, summary: Dict[str, object]) -> None:
     )
     for label in MODEL1_LABELS:
         lines.append(f"- `{label}`")
+
+    lines.extend(
+        [
+            "",
+            "## Repair Action Labels",
+            "",
+        ]
+    )
+    for label in REPAIR_ACTION_LABELS:
+        lines.append(f"- `{label}`")
+
+    lines.extend(
+        [
+            "",
+            "## Repair Action Augmentation Views",
+            "",
+            "- `full_context`: topic + exception + code excerpt",
+            "- `masked_exception`: hides the explicit exception field",
+            "- `error_only`: only render status/timed-out/error text",
+        ]
+    )
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -719,11 +912,21 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_jsonl(output_dir / "all_incidents.jsonl", all_incidents)
     _write_training_csv(output_dir / "incidents_train.csv", all_incidents)
+    repair_action_rows = _build_repair_action_rows(all_incidents)
+    _write_repair_action_csv(output_dir / "repair_actions_train_augmented.csv", repair_action_rows)
+    repair_action_base_rows = [row for row in repair_action_rows if row.get("view_name") == "full_context"]
+    _write_repair_action_csv(output_dir / "repair_actions_train.csv", repair_action_base_rows)
     summary = _summarize(all_incidents)
     _write_json(output_dir / "summary.json", summary)
+    _write_json(output_dir / "repair_actions_summary.json", _summarize_repair_actions(repair_action_rows))
     _write_readme(output_dir / "README.md", summary)
 
     print(f"Wrote {len(all_incidents)} incidents to {output_dir}")
+    print(f"Wrote {len(repair_action_base_rows)} repair-action rows to {output_dir / 'repair_actions_train.csv'}")
+    print(
+        f"Wrote {len(repair_action_rows)} augmented repair-action rows to "
+        f"{output_dir / 'repair_actions_train_augmented.csv'}"
+    )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 

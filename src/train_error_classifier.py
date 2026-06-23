@@ -33,6 +33,14 @@ def _default_output_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "datasets" / "mas_incidents" / "model1_linear_svm"
 
 
+def _default_repair_action_dataset_path() -> Path:
+    return Path(__file__).resolve().parent.parent / "datasets" / "mas_incidents" / "repair_actions_train.csv"
+
+
+def _default_repair_action_augmented_dataset_path() -> Path:
+    return Path(__file__).resolve().parent.parent / "datasets" / "mas_incidents" / "repair_actions_train_augmented.csv"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -72,6 +80,37 @@ def parse_args() -> argparse.Namespace:
         choices=[1, 2, 3],
         help="Upper bound of the n-gram range used by TF-IDF.",
     )
+    parser.add_argument(
+        "--label-column",
+        type=str,
+        default="label_coarse",
+        help="Column name to predict.",
+    )
+    parser.add_argument(
+        "--text-column",
+        type=str,
+        default="input_text",
+        help="Column name to use as model input.",
+    )
+    parser.add_argument(
+        "--group-column",
+        type=str,
+        default="",
+        help="Optional column name for a grouped train/test split.",
+    )
+    parser.add_argument(
+        "--preset",
+        type=str,
+        choices=["incidents", "repair_actions", "repair_actions_augmented"],
+        default="incidents",
+        help="Convenience preset for dataset/label/output defaults.",
+    )
+    parser.add_argument(
+        "--view-name",
+        type=str,
+        default="",
+        help="Optional filter for datasets that include a view_name column, e.g. full_context, masked_exception, error_only.",
+    )
     return parser.parse_args()
 
 
@@ -81,16 +120,33 @@ def _load_rows(path: Path) -> List[Dict[str, str]]:
         return [dict(row) for row in reader]
 
 
-def _validate_rows(rows: Sequence[Dict[str, str]]) -> None:
+def _validate_rows(rows: Sequence[Dict[str, str]], *, text_column: str, label_column: str) -> None:
     if not rows:
         raise ValueError("Dataset is empty.")
 
-    missing_input = sum(1 for row in rows if not (row.get("input_text") or "").strip())
-    missing_label = sum(1 for row in rows if not (row.get("label_coarse") or "").strip())
+    missing_input = sum(1 for row in rows if not (row.get(text_column) or "").strip())
+    missing_label = sum(1 for row in rows if not (row.get(label_column) or "").strip())
     if missing_input:
-        raise ValueError(f"Dataset contains {missing_input} rows with empty input_text.")
+        raise ValueError(f"Dataset contains {missing_input} rows with empty {text_column}.")
     if missing_label:
-        raise ValueError(f"Dataset contains {missing_label} rows with empty label_coarse.")
+        raise ValueError(f"Dataset contains {missing_label} rows with empty {label_column}.")
+
+
+def _apply_preset_defaults(args: argparse.Namespace) -> None:
+    if args.preset == "repair_actions":
+        if args.dataset == _default_dataset_path():
+            args.dataset = _default_repair_action_dataset_path()
+        if args.output_dir == _default_output_dir():
+            args.output_dir = _default_output_dir().with_name("repair_action_linear_svm")
+        if args.label_column == "label_coarse":
+            args.label_column = "repair_action"
+    elif args.preset == "repair_actions_augmented":
+        if args.dataset == _default_dataset_path():
+            args.dataset = _default_repair_action_augmented_dataset_path()
+        if args.output_dir == _default_output_dir():
+            args.output_dir = _default_output_dir().with_name("repair_action_augmented_linear_svm")
+        if args.label_column == "label_coarse":
+            args.label_column = "repair_action"
 
 
 def _build_pipeline(min_df: int, ngram_max: int) -> Pipeline:
@@ -162,6 +218,7 @@ def _write_predictions_csv(
 
 def main() -> None:
     args = parse_args()
+    _apply_preset_defaults(args)
     dataset_path = args.dataset.resolve()
     output_dir = args.output_dir.resolve()
 
@@ -169,9 +226,16 @@ def main() -> None:
         raise FileNotFoundError(f"Dataset not found: {dataset_path}")
 
     rows = _load_rows(dataset_path)
-    _validate_rows(rows)
+    if args.view_name:
+        rows = [row for row in rows if str(row.get("view_name") or "").strip() == args.view_name]
+        if not rows:
+            raise ValueError(
+                f"No rows matched --view-name {args.view_name!r} in dataset: {dataset_path}"
+            )
+        output_dir = output_dir.with_name(f"{output_dir.name}_{args.view_name}")
+    _validate_rows(rows, text_column=args.text_column, label_column=args.label_column)
 
-    labels = [row["label_coarse"].strip() for row in rows]
+    labels = [row[args.label_column].strip() for row in rows]
     label_counts = Counter(labels)
     if min(label_counts.values()) < 2:
         raise ValueError(
@@ -179,24 +243,65 @@ def main() -> None:
             f"{dict(label_counts)}"
         )
 
-    input_texts = [row["input_text"].strip() for row in rows]
+    input_texts = [row[args.text_column].strip() for row in rows]
     label_order = sorted(label_counts)
+    groups = [str(row.get(args.group_column) or "").strip() for row in rows] if args.group_column else None
 
-    (
-        train_texts,
-        test_texts,
-        y_train,
-        y_test,
-        train_rows,
-        test_rows,
-    ) = train_test_split(
-        input_texts,
-        labels,
-        rows,
-        test_size=args.test_size,
-        random_state=args.random_state,
-        stratify=labels,
-    )
+    if groups:
+        non_empty_groups = [group for group in groups if group]
+        if len(set(non_empty_groups)) < 2:
+            raise ValueError(f"Need at least 2 distinct non-empty groups in column '{args.group_column}'.")
+        grouped_items: Dict[str, Dict[str, object]] = {}
+        for text, label, row, group in zip(input_texts, labels, rows, groups):
+            group_key = group or f"__ungrouped__::{row.get('incident_id', len(grouped_items))}"
+            payload = grouped_items.setdefault(
+                group_key,
+                {"label_counts": Counter(), "texts": [], "rows": []},
+            )
+            payload["label_counts"][label] += 1
+            payload["texts"].append(text)
+            payload["rows"].append(row)
+
+        grouped_keys = list(grouped_items)
+        grouped_labels = [
+            grouped_items[key]["label_counts"].most_common(1)[0][0]
+            for key in grouped_keys
+        ]
+        train_group_keys, test_group_keys = train_test_split(
+            grouped_keys,
+            test_size=args.test_size,
+            random_state=args.random_state,
+            stratify=grouped_labels,
+        )
+        train_group_set = set(train_group_keys)
+        train_texts, test_texts, y_train, y_test, train_rows, test_rows = [], [], [], [], [], []
+        for key in grouped_keys:
+            target_lists = (
+                (train_texts, y_train, train_rows)
+                if key in train_group_set
+                else (test_texts, y_test, test_rows)
+            )
+            bucket = grouped_items[key]
+            for text, row in zip(bucket["texts"], bucket["rows"]):
+                target_lists[0].append(text)
+                target_lists[1].append(str(row[args.label_column]).strip())
+                target_lists[2].append(row)
+    else:
+        (
+            train_texts,
+            test_texts,
+            y_train,
+            y_test,
+            train_rows,
+            test_rows,
+        ) = train_test_split(
+            input_texts,
+            labels,
+            rows,
+            test_size=args.test_size,
+            random_state=args.random_state,
+            stratify=labels,
+        )
 
     pipeline = _build_pipeline(args.min_df, args.ngram_max)
     pipeline.fit(train_texts, y_train)
@@ -211,6 +316,11 @@ def main() -> None:
         "generated_at_utc": timestamp,
         "dataset_path": str(dataset_path),
         "output_dir": str(output_dir),
+        "preset": args.preset,
+        "view_name": args.view_name or None,
+        "label_column": args.label_column,
+        "text_column": args.text_column,
+        "group_column": args.group_column or None,
         "row_count": len(rows),
         "train_count": len(train_texts),
         "test_count": len(test_texts),
