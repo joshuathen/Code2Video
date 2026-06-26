@@ -516,6 +516,10 @@ def _response_tool_trace(response: object) -> Dict[str, object]:
     }
 
 
+def _utc_timestamp_from_epoch(epoch_seconds: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch_seconds))
+
+
 class MASAgentCallLogger:
     def __init__(self, output_path: Path):
         self.output_path = output_path
@@ -528,13 +532,21 @@ class MASAgentCallLogger:
             with self.output_path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
-    def record_response(self, agent_name: str, model: str, response: object) -> None:
+    def record_response(
+        self,
+        agent_name: str,
+        model: str,
+        response: object,
+        *,
+        turn_number: Optional[int] = None,
+    ) -> None:
         trace = _response_tool_trace(response)
         self._append(
             {
                 "event_type": "agent_response",
                 "agent": agent_name,
                 "model": model,
+                "turn_number": turn_number,
                 "usage": _extract_token_usage(response=response),
                 "function_calls": trace["function_calls"],
                 "function_responses": trace["function_responses"],
@@ -552,12 +564,14 @@ class MASAgentCallLogger:
         attempt: int,
         max_retries: int,
         retrying: bool,
+        turn_number: Optional[int] = None,
     ) -> None:
         self._append(
             {
                 "event_type": "agent_error",
                 "agent": agent_name,
                 "model": model,
+                "turn_number": turn_number,
                 "stage": stage,
                 "attempt": attempt,
                 "max_retries": max_retries,
@@ -566,6 +580,40 @@ class MASAgentCallLogger:
                 "message": str(error),
             }
         )
+
+    def record_tool_call(
+        self,
+        *,
+        agent_name: str,
+        model: str,
+        turn_number: Optional[int],
+        tool_name: str,
+        reason: str,
+        input_payload: Dict[str, object],
+        started_at: float,
+        finished_at: float,
+        status: str,
+        output_payload: object = None,
+        error: Optional[Exception] = None,
+    ) -> None:
+        event: Dict[str, object] = {
+            "event_type": "tool_call",
+            "agent": agent_name,
+            "model": model,
+            "turn_number": turn_number,
+            "tool_name": tool_name,
+            "reason": reason.strip(),
+            "input": _json_safe(input_payload),
+            "output": _json_safe(output_payload),
+            "status": status,
+            "timestamp_start": _utc_timestamp_from_epoch(started_at),
+            "timestamp_end": _utc_timestamp_from_epoch(finished_at),
+            "duration_ms": int(round((finished_at - started_at) * 1000)),
+        }
+        if error is not None:
+            event["error_type"] = error.__class__.__name__
+            event["error_message"] = str(error)
+        self._append(event)
 
 
 def _final_video_output_path(video_state: "VideoMASState") -> Optional[Path]:
@@ -1140,9 +1188,54 @@ class MASAgent:
         self.call_logger: Optional[MASAgentCallLogger] = None
         self.original_model = model
         self.team_agents: List["MASAgent"] = []
+        self.current_turn: Optional[int] = None
 
     def set_team_agents(self, team_agents: List["MASAgent"]) -> None:
         self.team_agents = team_agents
+
+    def _execute_traced_tool(
+        self,
+        *,
+        tool_name: str,
+        reason: str,
+        input_payload: Dict[str, object],
+        fn: Callable[[], Any],
+    ) -> Any:
+        started_at = time.time()
+        try:
+            result = fn()
+        except Exception as e:
+            finished_at = time.time()
+            if self.call_logger is not None:
+                self.call_logger.record_tool_call(
+                    agent_name=self.name,
+                    model=self.model,
+                    turn_number=self.current_turn,
+                    tool_name=tool_name,
+                    reason=reason,
+                    input_payload=input_payload,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    status="error",
+                    error=e,
+                )
+            raise
+
+        finished_at = time.time()
+        if self.call_logger is not None:
+            self.call_logger.record_tool_call(
+                agent_name=self.name,
+                model=self.model,
+                turn_number=self.current_turn,
+                tool_name=tool_name,
+                reason=reason,
+                input_payload=input_payload,
+                started_at=started_at,
+                finished_at=finished_at,
+                status="success",
+                output_payload=result,
+            )
+        return result
 
     def run_with_retry(self, parts, tools, max_retries):
         attempts = 0
@@ -1171,10 +1264,12 @@ class MASAgent:
                         agent_name=self.name,
                         model=self.model,
                         response=response,
+                        turn_number=self.current_turn,
                     )
                 break  # success
             except (ClientError, ServerError) as e:
                 msg = str(e)
+                msg_lower = msg.lower()
                 attempts += 1
                 retrying = attempts < (max_retries + 1)
                 if self.call_logger is not None:
@@ -1186,11 +1281,22 @@ class MASAgent:
                         attempt=attempts,
                         max_retries=max_retries,
                         retrying=retrying,
+                        turn_number=self.current_turn,
                     )
 
                 if attempts >= max_retries + 1:
                     raise
-                elif "RESOURCE_EXHAUSTED" in msg or  "UNAVAILABLE" in msg or "INTERNAL" in msg:
+                elif (
+                    "RESOURCE_EXHAUSTED" in msg
+                    or "UNAVAILABLE" in msg
+                    or "INTERNAL" in msg
+                    or "502" in msg
+                    or "503" in msg
+                    or "504" in msg
+                    or "bad gateway" in msg_lower
+                    or "service unavailable" in msg_lower
+                    or "gateway timeout" in msg_lower
+                ):
                     if model_index != -1 and attempts > 1:
                         model_index = (model_index + 1) % len(alternative_models)
                         self.model = alternative_models[model_index]
@@ -1212,6 +1318,7 @@ class MASAgent:
                         attempt=attempts,
                         max_retries=max_retries,
                         retrying=retrying,
+                        turn_number=self.current_turn,
                     )
 
                 if attempts > max_retries:
@@ -1244,6 +1351,7 @@ class MASAgent:
                             attempt=attempts + 1,
                             max_retries=max_retries,
                             retrying=False,
+                            turn_number=self.current_turn,
                         )
                     raise
 
@@ -1258,6 +1366,7 @@ class MASAgent:
                         attempt=attempts,
                         max_retries=max_retries,
                         retrying=retrying,
+                        turn_number=self.current_turn,
                     )
                 if attempts > max_retries:
                     raise
@@ -1487,114 +1596,171 @@ class VideoTeamBaseAgent(MASAgent):
             issues = [x for x in issues if x.isActive]
         return issues
 
-    def add_issue(self, section_id: str, toAgent: str, description: str) -> int:
-        if not isinstance(description, str) or not description.strip():
-            raise ValueError("Issue description must be a non-empty string.")
+    def add_issue(self, section_id: str, toAgent: str, description: str, reason: str = "") -> int:
+        def _do_add_issue() -> int:
+            if not isinstance(description, str) or not description.strip():
+                raise ValueError("Issue description must be a non-empty string.")
 
-        self._validate_section_access(section_id)
+            self._validate_section_access(section_id)
 
-        valid_agent_names = {agent.name for agent in self.team_agents}
-        if toAgent not in valid_agent_names:
-            raise ValueError(f"Agent '{toAgent}' does not exist. Valid agents: {sorted(valid_agent_names)}")
+            valid_agent_names = {agent.name for agent in self.team_agents}
+            if toAgent not in valid_agent_names:
+                raise ValueError(f"Agent '{toAgent}' does not exist. Valid agents: {sorted(valid_agent_names)}")
 
-        issue = Issue(
-            id=self._next_issue_id(),
-            fromAgent=self.name,
-            toAgent=toAgent,
-            description=description.strip(),
-            isActive=True,
-            section_id=section_id,
+            issue = Issue(
+                id=self._next_issue_id(),
+                fromAgent=self.name,
+                toAgent=toAgent,
+                description=description.strip(),
+                isActive=True,
+                section_id=section_id,
+            )
+            self.video_state.issues.append(issue)
+            return issue.id
+
+        return self._execute_traced_tool(
+            tool_name="add_issue",
+            reason=reason,
+            input_payload={
+                "section_id": section_id,
+                "toAgent": toAgent,
+                "description": description,
+            },
+            fn=_do_add_issue,
         )
-        self.video_state.issues.append(issue)
-        return issue.id
 
     def update_issue(
         self,
         issue_id: int,
         under_review: Optional[bool] = None,
         resolution_note: Optional[str] = None,
+        reason: str = "",
     ) -> None:
-        if under_review is None and resolution_note is None:
-            raise ValueError("At least one field must be updated: under_review or resolution_note.")
-        if under_review is not None and not isinstance(under_review, bool):
-            raise ValueError("under_review must be a boolean when provided.")
-        if resolution_note is not None and (not isinstance(resolution_note, str) or not resolution_note.strip()):
-            raise ValueError("resolution_note must be a non-empty string when provided.")
+        def _do_update_issue() -> None:
+            if under_review is None and resolution_note is None:
+                raise ValueError("At least one field must be updated: under_review or resolution_note.")
+            if under_review is not None and not isinstance(under_review, bool):
+                raise ValueError("under_review must be a boolean when provided.")
+            if resolution_note is not None and (not isinstance(resolution_note, str) or not resolution_note.strip()):
+                raise ValueError("resolution_note must be a non-empty string when provided.")
 
-        target_issue = self._find_issue(issue_id)
-        if target_issue.section_id:
-            self._validate_section_access(target_issue.section_id)
+            target_issue = self._find_issue(issue_id)
+            if target_issue.section_id:
+                self._validate_section_access(target_issue.section_id)
 
-        if under_review is not None:
-            target_issue.under_review = under_review
-        if resolution_note is not None:
-            target_issue.resolution_note = resolution_note.strip()
+            if under_review is not None:
+                target_issue.under_review = under_review
+            if resolution_note is not None:
+                target_issue.resolution_note = resolution_note.strip()
 
-    def replace_lecture_lines(self, section_id: str, lecture_lines: List[str]) -> Dict[str, object]:
-        section_idx = self._validate_section_access(section_id)
-        if not isinstance(lecture_lines, list):
-            raise ValueError("lecture_lines must be a list of strings.")
+        return self._execute_traced_tool(
+            tool_name="update_issue",
+            reason=reason,
+            input_payload={
+                "issue_id": issue_id,
+                "under_review": under_review,
+                "resolution_note": resolution_note,
+            },
+            fn=_do_update_issue,
+        )
 
-        cleaned_lines: List[str] = []
-        for line in lecture_lines:
-            if not isinstance(line, str):
-                raise ValueError("Every lecture line must be a string.")
-            normalized = line.strip()
-            if not normalized:
-                raise ValueError("Lecture lines cannot contain empty strings.")
-            cleaned_lines.append(normalized)
+    def replace_lecture_lines(
+        self,
+        section_id: str,
+        lecture_lines: List[str],
+        reason: str = "",
+    ) -> Dict[str, object]:
+        def _do_replace_lecture_lines() -> Dict[str, object]:
+            section_idx = self._validate_section_access(section_id)
+            if not isinstance(lecture_lines, list):
+                raise ValueError("lecture_lines must be a list of strings.")
 
-        self.video_state.storyboard[section_idx].lecture_lines = cleaned_lines
-        return {
-            "status": "ok",
-            "section_id": section_id,
-            "lecture_lines": cleaned_lines,
-            "count": len(cleaned_lines),
-        }
-
-    def replace_animations(self, section_id: str, animations: List[str]) -> Dict[str, object]:
-        section_idx = self._validate_section_access(section_id)
-        if not isinstance(animations, list):
-            raise ValueError("animations must be a list of strings.")
-
-        existing_asset_tags = {
-            tag
-            for current_animation in self.video_state.storyboard[section_idx].animations
-            for tag in _extract_asset_tags(current_animation)
-        }
-        cleaned_animations: List[str] = []
-        removed_asset_tags: List[str] = []
-        for animation in animations:
-            if not isinstance(animation, str):
-                raise ValueError("Every animation must be a string.")
-            normalized = animation.strip()
-            if not normalized:
-                raise ValueError("Animations cannot contain empty strings.")
-            if self.name == ANIMATION_PLANNER:
-                normalized, stripped_tags = _strip_disallowed_asset_tags(normalized, existing_asset_tags)
-                if stripped_tags:
-                    removed_asset_tags.extend(stripped_tags)
+            cleaned_lines: List[str] = []
+            for line in lecture_lines:
+                if not isinstance(line, str):
+                    raise ValueError("Every lecture line must be a string.")
+                normalized = line.strip()
                 if not normalized:
-                    raise ValueError(
-                        "Animations cannot consist only of new [Asset: ...] tags. "
-                        "Only the built-in asset enhancement step may add new asset references."
-                    )
-            cleaned_animations.append(normalized)
+                    raise ValueError("Lecture lines cannot contain empty strings.")
+                cleaned_lines.append(normalized)
 
-        self.video_state.storyboard[section_idx].animations = cleaned_animations
-        result: Dict[str, object] = {
-            "status": "ok",
-            "section_id": section_id,
-            "animations": cleaned_animations,
-            "count": len(cleaned_animations),
-        }
-        if removed_asset_tags:
-            result["asset_tags_removed"] = sorted(set(removed_asset_tags))
-            result["warning"] = (
-                "New [Asset: ...] references were removed. "
-                "Only the built-in asset enhancement step may introduce asset tags."
-            )
-        return result
+            self.video_state.storyboard[section_idx].lecture_lines = cleaned_lines
+            return {
+                "status": "ok",
+                "section_id": section_id,
+                "lecture_lines": cleaned_lines,
+                "count": len(cleaned_lines),
+            }
+
+        return self._execute_traced_tool(
+            tool_name="replace_lecture_lines",
+            reason=reason,
+            input_payload={
+                "section_id": section_id,
+                "lecture_lines": lecture_lines,
+            },
+            fn=_do_replace_lecture_lines,
+        )
+
+    def replace_animations(
+        self,
+        section_id: str,
+        animations: List[str],
+        reason: str = "",
+    ) -> Dict[str, object]:
+        def _do_replace_animations() -> Dict[str, object]:
+            section_idx = self._validate_section_access(section_id)
+            if not isinstance(animations, list):
+                raise ValueError("animations must be a list of strings.")
+
+            existing_asset_tags = {
+                tag
+                for current_animation in self.video_state.storyboard[section_idx].animations
+                for tag in _extract_asset_tags(current_animation)
+            }
+            cleaned_animations: List[str] = []
+            removed_asset_tags: List[str] = []
+            for animation in animations:
+                if not isinstance(animation, str):
+                    raise ValueError("Every animation must be a string.")
+                normalized = animation.strip()
+                if not normalized:
+                    raise ValueError("Animations cannot contain empty strings.")
+                if self.name == ANIMATION_PLANNER:
+                    normalized, stripped_tags = _strip_disallowed_asset_tags(normalized, existing_asset_tags)
+                    if stripped_tags:
+                        removed_asset_tags.extend(stripped_tags)
+                    if not normalized:
+                        raise ValueError(
+                            "Animations cannot consist only of new [Asset: ...] tags. "
+                            "Only the built-in asset enhancement step may add new asset references."
+                        )
+                cleaned_animations.append(normalized)
+
+            self.video_state.storyboard[section_idx].animations = cleaned_animations
+            result: Dict[str, object] = {
+                "status": "ok",
+                "section_id": section_id,
+                "animations": cleaned_animations,
+                "count": len(cleaned_animations),
+            }
+            if removed_asset_tags:
+                result["asset_tags_removed"] = sorted(set(removed_asset_tags))
+                result["warning"] = (
+                    "New [Asset: ...] references were removed. "
+                    "Only the built-in asset enhancement step may introduce asset tags."
+                )
+            return result
+
+        return self._execute_traced_tool(
+            tool_name="replace_animations",
+            reason=reason,
+            input_payload={
+                "section_id": section_id,
+                "animations": animations,
+            },
+            fn=_do_replace_animations,
+        )
 
     def replace_code_for_section(self, section_id: str, code: str) -> Dict[str, object]:
         section_idx = self._validate_section_access(section_id)
@@ -1619,13 +1785,21 @@ class VideoTeamBaseAgent(MASAgent):
             "line_count": len(normalized.splitlines()),
         }
 
-    def replace_code(self, code: str) -> Dict[str, object]:
-        if len(self.managed_sections) != 1:
-            raise ValueError(
-                "replace_code(code) is only available for agents assigned to exactly one section. "
-                "Use replace_code_for_section(section_id, code) otherwise."
-            )
-        return self.replace_code_for_section(self.managed_sections[0], code)
+    def replace_code(self, code: str, reason: str = "") -> Dict[str, object]:
+        def _do_replace_code() -> Dict[str, object]:
+            if len(self.managed_sections) != 1:
+                raise ValueError(
+                    "replace_code(code) is only available for agents assigned to exactly one section. "
+                    "Use replace_code_for_section(section_id, code) otherwise."
+                )
+            return self.replace_code_for_section(self.managed_sections[0], code)
+
+        return self._execute_traced_tool(
+            tool_name="replace_code",
+            reason=reason,
+            input_payload={"code": code},
+            fn=_do_replace_code,
+        )
 
     def _managed_section_payload(
         self,
@@ -1728,6 +1902,7 @@ MAS-specific instructions:
 9. Prefer persistent mobjects plus `add_updater(...)`/`ValueTracker` for animated movement. Avoid `always_redraw(...)` for heavyweight or text-like objects.
 10. Do NOT create `SVGMobject`, `Text`, `DecimalNumber`, `MathTex`, `Tex`, `NumberLine`, or other expensive mobjects inside `always_redraw(...)`. Load/build them once, then update position/value/geometry in place.
 11. If you answer in plain text instead of a tool call, return only the complete Python code for this section.
+12. Whenever you call a tool, always include `reason` as one short concrete sentence explaining why you are taking that action now.
 
 Original Code2Video Stage-3 prompt (follow this fully):
 {stage3_prompt}
@@ -1747,7 +1922,10 @@ Original Code2Video Stage-3 prompt (follow this fully):
         if not fallback_code:
             return False
 
-        self.replace_code(fallback_code)
+        self.replace_code(
+            fallback_code,
+            reason="Apply code from the model's plain-text response because no tool call updated the section.",
+        )
         updated_code = self.video_state.code[section_idx] or ""
         if not updated_code.strip():
             return False
@@ -1835,6 +2013,7 @@ Instructions:
 6. You do NOT see the global issue list; only your assigned issues are visible.
 7. If blocked, add targeted cross-agent issues via add_issue(section_id, toAgent, description).
 8. Any issue you create for another agent must be self-contained: include the concrete problem, relevant local context, and the action you want that agent to take.
+9. Whenever you call a tool, always include `reason` as one short concrete sentence explaining why you are taking that action now.
 
 Guidelines:
 {self.guidelines}
@@ -1940,7 +2119,12 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
                     break
 
             if matched_issue is None:
-                issue_id = self.add_issue(section_id=section_id, toAgent=coder_name, description=description)
+                issue_id = self.add_issue(
+                    section_id=section_id,
+                    toAgent=coder_name,
+                    description=description,
+                    reason="Create a coder issue from automatic video review feedback.",
+                )
                 result["created_issue_ids"].append(issue_id)
                 return
 
@@ -2013,7 +2197,12 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
                 print(f"[VideoMAS][VideoReview] Skipping unchanged render for {section_id}.")
                 continue
             try:
-                review_results.append(self.review_rendered_video(section_id))
+                review_results.append(
+                    self.review_rendered_video(
+                        section_id,
+                        reason="Run the automatic rendered-video review for this section in the current orchestrator turn.",
+                    )
+                )
             except Exception as e:
                 review_results.append(
                     {
@@ -2024,19 +2213,27 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
                 )
         return review_results
 
-    def mark_task_complete(self, issue_id: int) -> Dict[str, object]:
-        if not isinstance(issue_id, int):
-            raise ValueError("issue_id must be an integer.")
-        target_issue = self._find_issue(issue_id)
-        target_issue.resolved = True
-        target_issue.isActive = False
-        target_issue.under_review = False
-        return {
-            "status": "ok",
-            "issue_id": target_issue.id,
-            "resolved": target_issue.resolved,
-            "isActive": target_issue.isActive,
-        }
+    def mark_task_complete(self, issue_id: int, reason: str = "") -> Dict[str, object]:
+        def _do_mark_task_complete() -> Dict[str, object]:
+            if not isinstance(issue_id, int):
+                raise ValueError("issue_id must be an integer.")
+            target_issue = self._find_issue(issue_id)
+            target_issue.resolved = True
+            target_issue.isActive = False
+            target_issue.under_review = False
+            return {
+                "status": "ok",
+                "issue_id": target_issue.id,
+                "resolved": target_issue.resolved,
+                "isActive": target_issue.isActive,
+            }
+
+        return self._execute_traced_tool(
+            tool_name="mark_task_complete",
+            reason=reason,
+            input_payload={"issue_id": issue_id},
+            fn=_do_mark_task_complete,
+        )
 
     def update_issue(
         self,
@@ -2044,73 +2241,95 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
         under_review: Optional[bool] = None,
         resolution_note: Optional[str] = None,
         isActive: Optional[bool] = None,
+        reason: str = "",
     ) -> None:
-        if under_review is None and resolution_note is None and isActive is None:
-            raise ValueError("At least one field must be updated: under_review, resolution_note, or isActive.")
-        if under_review is not None and not isinstance(under_review, bool):
-            raise ValueError("under_review must be a boolean when provided.")
-        if resolution_note is not None and (not isinstance(resolution_note, str) or not resolution_note.strip()):
-            raise ValueError("resolution_note must be a non-empty string when provided.")
-        if isActive is not None and not isinstance(isActive, bool):
-            raise ValueError("isActive must be a boolean when provided.")
+        def _do_update_issue() -> None:
+            if under_review is None and resolution_note is None and isActive is None:
+                raise ValueError("At least one field must be updated: under_review, resolution_note, or isActive.")
+            if under_review is not None and not isinstance(under_review, bool):
+                raise ValueError("under_review must be a boolean when provided.")
+            if resolution_note is not None and (not isinstance(resolution_note, str) or not resolution_note.strip()):
+                raise ValueError("resolution_note must be a non-empty string when provided.")
+            if isActive is not None and not isinstance(isActive, bool):
+                raise ValueError("isActive must be a boolean when provided.")
 
-        target_issue = self._find_issue(issue_id)
-        if under_review is not None:
-            target_issue.under_review = under_review
-        if resolution_note is not None:
-            target_issue.resolution_note = resolution_note.strip()
-        if isActive is not None:
-            target_issue.isActive = isActive
+            target_issue = self._find_issue(issue_id)
+            if under_review is not None:
+                target_issue.under_review = under_review
+            if resolution_note is not None:
+                target_issue.resolution_note = resolution_note.strip()
+            if isActive is not None:
+                target_issue.isActive = isActive
 
-    def review_rendered_video(self, section_id: str) -> Dict[str, object]:
-        section_idx = self._validate_section_access(section_id)
-        video_path = self.video_state.rendered_video_path[section_idx]
-        if not video_path:
-            return {"status": "skipped", "section_id": section_id, "reason": "No rendered video path available."}
-        video_path_obj = Path(video_path)
-        if not video_path_obj.exists():
-            return {"status": "failed", "section_id": section_id, "reason": f"Rendered video not found at {video_path}"}
-        if not self.grid_img_path.exists():
-            return {"status": "failed", "section_id": section_id, "reason": f"Grid reference image missing at {self.grid_img_path}"}
-        review_fingerprint = self._review_fingerprint(section_id, video_path_obj)
-
-        position_table = self.extractor.generate_position_table(
-            self.extractor.extract_grid_positions(self.video_state.code[section_idx] or "")
-        )
-        prompt = get_prompt4_layout_feedback(
-            section=self.video_state.storyboard[section_idx],
-            position_table=position_table,
+        return self._execute_traced_tool(
+            tool_name="update_issue",
+            reason=reason,
+            input_payload={
+                "issue_id": issue_id,
+                "under_review": under_review,
+                "resolution_note": resolution_note,
+                "isActive": isActive,
+            },
+            fn=_do_update_issue,
         )
 
-        response, usage = request_gemini_video_img_token(
-            prompt=prompt,
-            video_path=video_path,
-            image_path=str(self.grid_img_path),
-        )
-        if self.token_tracker is not None:
-            self.token_tracker.record(
-                source=f"video_review:{section_id}",
-                response=response,
-                usage=usage,
+    def review_rendered_video(self, section_id: str, reason: str = "") -> Dict[str, object]:
+        def _do_review_rendered_video() -> Dict[str, object]:
+            section_idx = self._validate_section_access(section_id)
+            video_path = self.video_state.rendered_video_path[section_idx]
+            if not video_path:
+                return {"status": "skipped", "section_id": section_id, "reason": "No rendered video path available."}
+            video_path_obj = Path(video_path)
+            if not video_path_obj.exists():
+                return {"status": "failed", "section_id": section_id, "reason": f"Rendered video not found at {video_path}"}
+            if not self.grid_img_path.exists():
+                return {"status": "failed", "section_id": section_id, "reason": f"Grid reference image missing at {self.grid_img_path}"}
+            review_fingerprint = self._review_fingerprint(section_id, video_path_obj)
+
+            position_table = self.extractor.generate_position_table(
+                self.extractor.extract_grid_positions(self.video_state.code[section_idx] or "")
             )
-        raw = extract_answer_from_response(response)
-        parsed: Dict[str, object]
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            parsed = {"raw_response": raw}
+            prompt = get_prompt4_layout_feedback(
+                section=self.video_state.storyboard[section_idx],
+                position_table=position_table,
+            )
 
-        result = {
-            "status": "ok",
-            "section_id": section_id,
-            "video_path": video_path,
-            "review_fingerprint": review_fingerprint,
-            "analysis": parsed,
-        }
-        if isinstance(parsed, dict):
-            result.update(self._sync_video_feedback_issues(section_id, parsed))
-        self.video_state.video_review[section_idx] = result
-        return result
+            response, usage = request_gemini_video_img_token(
+                prompt=prompt,
+                video_path=video_path,
+                image_path=str(self.grid_img_path),
+            )
+            if self.token_tracker is not None:
+                self.token_tracker.record(
+                    source=f"video_review:{section_id}",
+                    response=response,
+                    usage=usage,
+                )
+            raw = extract_answer_from_response(response)
+            parsed: Dict[str, object]
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                parsed = {"raw_response": raw}
+
+            result = {
+                "status": "ok",
+                "section_id": section_id,
+                "video_path": video_path,
+                "review_fingerprint": review_fingerprint,
+                "analysis": parsed,
+            }
+            if isinstance(parsed, dict):
+                result.update(self._sync_video_feedback_issues(section_id, parsed))
+            self.video_state.video_review[section_idx] = result
+            return result
+
+        return self._execute_traced_tool(
+            tool_name="review_rendered_video",
+            reason=reason,
+            input_payload={"section_id": section_id},
+            fn=_do_review_rendered_video,
+        )
 
     def run(self, max_retries: int = 3) -> str:
         tools = [self.mark_task_complete, self.add_issue, self.update_issue, self.review_rendered_video]
@@ -2155,6 +2374,7 @@ Instructions:
 7. Add only high-impact new issues with add_issue(section_id, toAgent, description).
 8. Route coding issues to the correct dedicated coder (Coder1/Coder2/... based on coder assignments).
 9. Deactivate duplicates/out-of-scope issues with update_issue(..., isActive=False).
+10. Whenever you call a tool, always include `reason` as one short concrete sentence explaining why you are taking that action now.
 
 Guidelines:
 {self.guidelines}
@@ -2279,6 +2499,10 @@ class MASVideoRunner:
         for agent in self.team_agents + [self.orchestrator_agent]:
             agent.set_team_agents(self.team_agents)
             agent.call_logger = self.call_logger
+
+    def _set_current_turn_for_agents(self, turn_idx: int) -> None:
+        for agent in self.team_agents + [self.orchestrator_agent]:
+            agent.current_turn = turn_idx
 
     def _sync_token_usage(self) -> None:
         self.video_state.token_usage = self.token_tracker.snapshot()
@@ -2843,6 +3067,7 @@ class MASVideoRunner:
         while self.video_state.unresolved_issues() and self.video_state.turns_run < self.cfg.max_turns:
             turn_idx = self.video_state.turns_run + 1
             print(f"[VideoMAS] === Turn {turn_idx} ===")
+            self._set_current_turn_for_agents(turn_idx)
 
             prior_code_by_section = {
                 section_id: self.video_state.code[self.video_state.section_index(section_id)] or ""
