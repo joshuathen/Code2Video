@@ -23,7 +23,7 @@ from utils import replace_base_class
 from utils import topic_to_safe_name
 
 try:
-    from prompts import get_prompt1_outline, get_prompt3_code, get_prompt4_layout_feedback, get_regenerate_note
+    from prompts import get_prompt1_outline, get_prompt3_code_mas, get_prompt4_layout_feedback, get_regenerate_note
 except ModuleNotFoundError:
     # Allow running `python src/mas.py` without manually setting PYTHONPATH.
     import sys
@@ -31,7 +31,7 @@ except ModuleNotFoundError:
     _repo_root = Path(__file__).resolve().parent.parent
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
-    from prompts import get_prompt1_outline, get_prompt3_code, get_prompt4_layout_feedback, get_regenerate_note
+    from prompts import get_prompt1_outline, get_prompt3_code_mas, get_prompt4_layout_feedback, get_regenerate_note
 
 from google.genai import types, Client
 from google.genai.errors import ClientError, ServerError
@@ -76,6 +76,7 @@ STAGE2_STORYBOARD_REQUIREMENTS = """
 - For key sections, use richer Manim-native visuals when helpful, but do not introduce external assets or [Asset: ...] tags.
 - Must keep each lecture line brief [NO MORE THAN 10 WORDS FOR ONE LINE].
 - Animation steps must closely correspond to lecture points.
+- If lecture lines are missing or still being revised, draft animation steps from the section outline, title, and example anyway so the team can keep moving. Refine the animations later once the final lecture lines are available.
 - Do not apply any animation to lecture lines except for changing the color of corresponding line when its related animation is presented.
 
 ### Visual Design
@@ -92,6 +93,7 @@ STAGE2_STORYBOARD_REQUIREMENTS = """
 - Avoid coordinate axes unless absolutely necessary.
 - Focus animations on visualizing concepts that are difficult to grasp from lecture lines alone.
 - Ensure that all animations are easy to understand.
+- Do not block waiting for perfect lecture lines when the section outline already provides enough meaning to draft codable animation steps.
 - Do not introduce new external elements or invent new [Asset: ...] references on your own. Only the built-in asset enhancement step may add new asset tags.
 - If existing [Asset: ...] references are present in the storyboard, preserve them in the animation descriptions and do not remove them.
 """.strip()
@@ -1570,6 +1572,118 @@ class VideoTeamBaseAgent(MASAgent):
         )
         self.video_state = video_state
         self.managed_sections = managed_sections or self.video_state.section_ids()
+        self.tools.extend(
+            [
+                self.get_topic,
+                self.get_team_members,
+                self.get_coder_assignments,
+                self.get_section_outline,
+                self.get_section_storyboard,
+                self.get_render_context,
+                self.get_code,
+                self.get_my_active_issues,
+                self.get_all_active_issues,
+                self.get_my_under_review_issues,
+                self.get_all_under_review_issues,
+            ]
+        )
+
+    def _build_read_tool_error_payload(
+        self,
+        *,
+        tool_name: str,
+        input_payload: Dict[str, object],
+        error: Exception,
+    ) -> Dict[str, object]:
+        error_code = "internal_error"
+        retryable = False
+        suggestion = "Inspect the error details before retrying."
+        message = str(error) or error.__class__.__name__
+
+        if isinstance(error, ValueError):
+            retryable = True
+            if "Unknown section_id" in message:
+                error_code = "invalid_section_id"
+                suggestion = "Retry with one of the valid section ids listed in the error payload."
+            elif "section_id must be" in message or "cannot be empty" in message:
+                error_code = "invalid_argument"
+                suggestion = "Retry with a non-empty section_id string, or omit section_id to fetch all sections."
+            else:
+                error_code = "invalid_request"
+                suggestion = "Correct the request arguments and retry."
+        elif isinstance(error, TypeError):
+            error_code = "invalid_argument_type"
+            retryable = True
+            suggestion = "Retry with arguments of the expected type."
+        elif isinstance(error, KeyError):
+            error_code = "missing_state_key"
+            suggestion = "The shared state is missing expected data. Retry only if the state may have changed."
+        elif isinstance(error, IndexError):
+            error_code = "state_index_error"
+            suggestion = "The shared state is inconsistent for this lookup. Retry only if the state may have refreshed."
+
+        payload: Dict[str, object] = {
+            "ok": False,
+            "tool_name": tool_name,
+            "error": {
+                "code": error_code,
+                "type": error.__class__.__name__,
+                "message": message,
+                "retryable": retryable,
+                "suggestion": suggestion,
+            },
+        }
+
+        if "section_id" in input_payload:
+            payload["requested_section_id"] = input_payload.get("section_id")
+            payload["valid_section_ids"] = self.video_state.section_ids()
+
+        return payload
+
+    def _execute_traced_read_tool(
+        self,
+        *,
+        tool_name: str,
+        reason: str,
+        input_payload: Dict[str, object],
+        fn: Callable[[], Dict[str, object]],
+    ) -> Dict[str, object]:
+        started_at = time.time()
+        try:
+            result = fn()
+            if not isinstance(result, dict):
+                result = {"result": result}
+            if "ok" not in result:
+                result = {"ok": True, **result}
+            status = "success"
+            error: Optional[Exception] = None
+            output_payload: Dict[str, object] = result
+        except Exception as e:
+            result = self._build_read_tool_error_payload(
+                tool_name=tool_name,
+                input_payload=input_payload,
+                error=e,
+            )
+            status = "handled_error"
+            error = e
+            output_payload = result
+
+        finished_at = time.time()
+        if self.call_logger is not None:
+            self.call_logger.record_tool_call(
+                agent_name=self.name,
+                model=self.model,
+                turn_number=self.current_turn,
+                tool_name=tool_name,
+                reason=reason,
+                input_payload=input_payload,
+                started_at=started_at,
+                finished_at=finished_at,
+                status=status,
+                output_payload=output_payload,
+                error=error,
+            )
+        return output_payload
 
     def _validate_section_access(self, section_id: str) -> int:
         if section_id not in self.video_state.section_id_to_index:
@@ -1595,6 +1709,365 @@ class VideoTeamBaseAgent(MASAgent):
         if active_only:
             issues = [x for x in issues if x.isActive]
         return issues
+
+    def _resolve_query_section_ids(self, section_id: Optional[str] = None) -> List[str]:
+        if section_id is None:
+            return self.video_state.section_ids()
+        if not isinstance(section_id, str):
+            raise TypeError(f"section_id must be a string when provided, got {type(section_id).__name__}.")
+        normalized = section_id.strip()
+        if not normalized:
+            raise ValueError("section_id cannot be empty. Omit it to fetch all sections.")
+        self.video_state.section_index(normalized)
+        return [normalized]
+
+    def _serialize_team_member(self, agent: "MASAgent") -> Dict[str, object]:
+        return {
+            "name": agent.name,
+            "role": agent.role,
+        }
+
+    def _serialize_issue(self, issue: Issue) -> Dict[str, object]:
+        return asdict(issue)
+
+    def _render_context_for_section(self, section_id: str) -> Dict[str, object]:
+        section_idx = self.video_state.section_index(section_id)
+        return {
+            "status": self.video_state.render_status[section_idx],
+            "error": self.video_state.render_error[section_idx],
+            "has_rendered_video": bool(self.video_state.rendered_video_path[section_idx]),
+        }
+
+    def get_topic(self, reason: str = "") -> Dict[str, object]:
+        """Get the shared video topic and intended audience.
+
+        Use this to confirm the teaching goal before writing narration,
+        planning visuals, or editing code.
+
+        Returns:
+            dict: On success, returns `ok=True` plus the current topic and
+            target audience. On failure, returns `ok=False` with structured
+            error details.
+        """
+
+        def _do_get_topic() -> Dict[str, object]:
+            return {
+                "topic": self.video_state.topic,
+                "target_audience": self.video_state.target_audience,
+            }
+
+        return self._execute_traced_read_tool(
+            tool_name="get_topic",
+            reason=reason,
+            input_payload={},
+            fn=_do_get_topic,
+        )
+
+    def get_team_members(self, reason: str = "") -> Dict[str, object]:
+        """Get the current MAS team roster.
+
+        Returns the names and role summaries for every agent participating in
+        the current run. This is useful when routing issues or checking who is
+        responsible for a type of task.
+
+        Returns:
+            dict: On success, returns `ok=True` plus the team roster. On
+            failure, returns `ok=False` with structured error details.
+        """
+
+        def _do_get_team_members() -> Dict[str, object]:
+            team_members = [self._serialize_team_member(agent) for agent in self.team_agents]
+            return {
+                "team_members": team_members,
+                "count": len(team_members),
+            }
+
+        return self._execute_traced_read_tool(
+            tool_name="get_team_members",
+            reason=reason,
+            input_payload={},
+            fn=_do_get_team_members,
+        )
+
+    def get_coder_assignments(self, reason: str = "") -> Dict[str, object]:
+        """Get the section-to-coder ownership map.
+
+        Use this when you need to route a coding issue to the right worker for
+        a given section.
+
+        Returns:
+            dict: On success, returns `ok=True` plus the current mapping from
+            section_id to coder name. On failure, returns `ok=False` with
+            structured error details.
+        """
+
+        def _do_get_coder_assignments() -> Dict[str, object]:
+            assignments = dict(self.video_state.coder_assignments)
+            return {
+                "coder_assignments": assignments,
+                "count": len(assignments),
+            }
+
+        return self._execute_traced_read_tool(
+            tool_name="get_coder_assignments",
+            reason=reason,
+            input_payload={},
+            fn=_do_get_coder_assignments,
+        )
+
+    def get_section_outline(self, section_id: Optional[str] = None, reason: str = "") -> Dict[str, object]:
+        """Get outline-level data for one section or all sections.
+
+        Args:
+            section_id: Optional section identifier such as "section_2". When
+                omitted, returns outlines for every section in the video.
+
+        Returns:
+            dict: On success, returns `ok=True` plus outline data for the
+            requested section, or a mapping of all outlines when no section_id
+            is provided. On invalid input, returns `ok=False` with error
+            details and valid section ids so the caller can retry cleanly.
+        """
+
+        def _do_get_section_outline() -> Dict[str, object]:
+            section_ids = self._resolve_query_section_ids(section_id)
+            if section_id is not None:
+                resolved_section_id = section_ids[0]
+                return {
+                    "section_id": resolved_section_id,
+                    "outline": self.video_state.section_outline(resolved_section_id),
+                }
+
+            outlines = {sid: self.video_state.section_outline(sid) for sid in section_ids}
+            return {
+                "outlines": outlines,
+                "count": len(outlines),
+            }
+
+        return self._execute_traced_read_tool(
+            tool_name="get_section_outline",
+            reason=reason,
+            input_payload={"section_id": section_id},
+            fn=_do_get_section_outline,
+        )
+
+    def get_section_storyboard(self, section_id: Optional[str] = None, reason: str = "") -> Dict[str, object]:
+        """Get storyboard data for one section or all sections.
+
+        Args:
+            section_id: Optional section identifier. When omitted, returns the
+                current storyboard for every section.
+
+        Returns:
+            dict: On success, returns `ok=True` plus storyboard data for the
+            requested section, or a mapping of all storyboards when no
+            section_id is provided. On invalid input, returns `ok=False` with
+            error details and valid section ids.
+        """
+
+        def _do_get_section_storyboard() -> Dict[str, object]:
+            section_ids = self._resolve_query_section_ids(section_id)
+            if section_id is not None:
+                resolved_section_id = section_ids[0]
+                return {
+                    "section_id": resolved_section_id,
+                    "storyboard": asdict(
+                        self.video_state.storyboard[self.video_state.section_index(resolved_section_id)]
+                    ),
+                }
+
+            storyboards = {
+                sid: asdict(self.video_state.storyboard[self.video_state.section_index(sid)])
+                for sid in section_ids
+            }
+            return {
+                "storyboards": storyboards,
+                "count": len(storyboards),
+            }
+
+        return self._execute_traced_read_tool(
+            tool_name="get_section_storyboard",
+            reason=reason,
+            input_payload={"section_id": section_id},
+            fn=_do_get_section_storyboard,
+        )
+
+    def get_render_context(self, section_id: Optional[str] = None, reason: str = "") -> Dict[str, object]:
+        """Get current render state for one section or all sections.
+
+        The render context includes the latest stored render status, the latest
+        stored error text, and whether a rendered video currently exists.
+
+        Args:
+            section_id: Optional section identifier. When omitted, returns the
+                render context for every section.
+
+        Returns:
+            dict: On success, returns `ok=True` plus render context for the
+            requested section, or a mapping of all render contexts when no
+            section_id is provided. On invalid input, returns `ok=False` with
+            error details and valid section ids.
+        """
+
+        def _do_get_render_context() -> Dict[str, object]:
+            section_ids = self._resolve_query_section_ids(section_id)
+            if section_id is not None:
+                resolved_section_id = section_ids[0]
+                return {
+                    "section_id": resolved_section_id,
+                    "render_context": self._render_context_for_section(resolved_section_id),
+                }
+
+            render_context = {sid: self._render_context_for_section(sid) for sid in section_ids}
+            return {
+                "render_context": render_context,
+                "count": len(render_context),
+            }
+
+        return self._execute_traced_read_tool(
+            tool_name="get_render_context",
+            reason=reason,
+            input_payload={"section_id": section_id},
+            fn=_do_get_render_context,
+        )
+
+    def get_code(self, section_id: Optional[str] = None, reason: str = "") -> Dict[str, object]:
+        """Get the latest stored code for one section or all sections.
+
+        Args:
+            section_id: Optional section identifier. When omitted, returns code
+                for every section.
+
+        Returns:
+            dict: On success, returns `ok=True` plus code for the requested
+            section, or a mapping of all section code blocks when no
+            section_id is provided. On invalid input, returns `ok=False` with
+            error details and valid section ids.
+        """
+
+        def _do_get_code() -> Dict[str, object]:
+            section_ids = self._resolve_query_section_ids(section_id)
+            if section_id is not None:
+                resolved_section_id = section_ids[0]
+                code = self.video_state.code_for(resolved_section_id)
+                return {
+                    "section_id": resolved_section_id,
+                    "code": code,
+                    "line_count": len(code.splitlines()) if code else 0,
+                }
+
+            code_by_section = {sid: self.video_state.code_for(sid) for sid in section_ids}
+            return {
+                "code_by_section": code_by_section,
+                "count": len(code_by_section),
+            }
+
+        return self._execute_traced_read_tool(
+            tool_name="get_code",
+            reason=reason,
+            input_payload={"section_id": section_id},
+            fn=_do_get_code,
+        )
+
+    def get_my_active_issues(self, reason: str = "") -> Dict[str, object]:
+        """Get active unresolved issues assigned to the current agent.
+
+        Returns:
+            dict: On success, returns `ok=True` plus the active issues owned by
+            this agent. On failure, returns `ok=False` with structured error
+            details.
+        """
+
+        def _do_get_my_active_issues() -> Dict[str, object]:
+            issues = [self._serialize_issue(issue) for issue in self._issues_for_me(active_only=True)]
+            return {
+                "issues": issues,
+                "count": len(issues),
+            }
+
+        return self._execute_traced_read_tool(
+            tool_name="get_my_active_issues",
+            reason=reason,
+            input_payload={},
+            fn=_do_get_my_active_issues,
+        )
+
+    def get_all_active_issues(self, reason: str = "") -> Dict[str, object]:
+        """Get all active unresolved issues across the full MAS run.
+
+        Returns:
+            dict: On success, returns `ok=True` plus every active issue in
+            shared state. On failure, returns `ok=False` with structured error
+            details.
+        """
+
+        def _do_get_all_active_issues() -> Dict[str, object]:
+            issues = [self._serialize_issue(issue) for issue in self.video_state.active_issues()]
+            return {
+                "issues": issues,
+                "count": len(issues),
+            }
+
+        return self._execute_traced_read_tool(
+            tool_name="get_all_active_issues",
+            reason=reason,
+            input_payload={},
+            fn=_do_get_all_active_issues,
+        )
+
+    def get_my_under_review_issues(self, reason: str = "") -> Dict[str, object]:
+        """Get unresolved under-review issues assigned to the current agent.
+
+        Returns:
+            dict: On success, returns `ok=True` plus the unresolved
+            under-review issues owned by this agent. On failure, returns
+            `ok=False` with structured error details.
+        """
+
+        def _do_get_my_under_review_issues() -> Dict[str, object]:
+            issues = [
+                self._serialize_issue(issue)
+                for issue in self.video_state.issues
+                if issue.toAgent == self.name and issue.under_review and not issue.resolved
+            ]
+            return {
+                "issues": issues,
+                "count": len(issues),
+            }
+
+        return self._execute_traced_read_tool(
+            tool_name="get_my_under_review_issues",
+            reason=reason,
+            input_payload={},
+            fn=_do_get_my_under_review_issues,
+        )
+
+    def get_all_under_review_issues(self, reason: str = "") -> Dict[str, object]:
+        """Get all unresolved under-review issues across the MAS run.
+
+        Returns:
+            dict: On success, returns `ok=True` plus every unresolved
+            under-review issue. On failure, returns `ok=False` with
+            structured error details.
+        """
+
+        def _do_get_all_under_review_issues() -> Dict[str, object]:
+            issues = [
+                self._serialize_issue(issue)
+                for issue in self.video_state.issues
+                if issue.under_review and not issue.resolved
+            ]
+            return {
+                "issues": issues,
+                "count": len(issues),
+            }
+
+        return self._execute_traced_read_tool(
+            tool_name="get_all_under_review_issues",
+            reason=reason,
+            input_payload={},
+            fn=_do_get_all_under_review_issues,
+        )
 
     def add_issue(self, section_id: str, toAgent: str, description: str, reason: str = "") -> int:
         def _do_add_issue() -> int:
@@ -1801,38 +2274,9 @@ class VideoTeamBaseAgent(MASAgent):
             fn=_do_replace_code,
         )
 
-    def _managed_section_payload(
-        self,
-        *,
-        include_outline: bool = True,
-        include_storyboard: bool = True,
-        include_code: bool = False,
-        include_render_context: bool = True,
-    ) -> Dict[str, Dict[str, object]]:
-        payload: Dict[str, Dict[str, object]] = {}
-        for section_id in self.managed_sections:
-            section_idx = self.video_state.section_index(section_id)
-            section_payload: Dict[str, object] = {}
-            if include_outline:
-                section_payload["highLevel"] = self.video_state.section_outline(section_id)
-            if include_storyboard:
-                section_payload["section"] = asdict(self.video_state.storyboard[section_idx])
-            if include_code:
-                section_payload["code"] = self.video_state.code[section_idx]
-            if include_render_context:
-                section_payload["render"] = {
-                    "status": self.video_state.render_status[section_idx],
-                    "error": self.video_state.render_error[section_idx],
-                    "has_rendered_video": bool(self.video_state.rendered_video_path[section_idx]),
-                }
-            payload[section_id] = section_payload
-        return payload
-
     def _build_coder_generation_prompt(
         self,
         *,
-        agent_lines: str,
-        my_active_issues: List[Issue],
         codegen_attempt: int,
         max_codegen_attempts: int,
         failure_context: str,
@@ -1840,13 +2284,6 @@ class VideoTeamBaseAgent(MASAgent):
         section_id = self.managed_sections[0]
         section_idx = self.video_state.section_index(section_id)
         section = self.video_state.storyboard[section_idx]
-        section_context = self._managed_section_payload(
-            include_outline=True,
-            include_storyboard=False,
-            include_code=False,
-            include_render_context=True,
-        )[section_id]
-        current_code = self.video_state.code[section_idx] or ""
         regenerate_note = ""
         if codegen_attempt > 1:
             regenerate_note = get_regenerate_note(
@@ -1854,55 +2291,40 @@ class VideoTeamBaseAgent(MASAgent):
                 MAX_REGENERATE_TRIES=max_codegen_attempts,
             )
 
-        stage3_prompt = get_prompt3_code(
+        stage3_prompt = get_prompt3_code_mas(
             regenerate_note=regenerate_note,
             section=section,
             base_class=TEACHING_SCENE_BASE_CLASS,
         )
-        failure_block = failure_context.strip() or "None"
-        current_code_block = current_code if current_code.strip() else "# No existing code yet."
+        failure_instruction = ""
+        if failure_context.strip():
+            failure_instruction = (
+                f"\nFailure hint for this retry: {failure_context.strip()}\n"
+                "Treat it as a hint only and use read tools to inspect the latest shared state before editing.\n"
+            )
 
         return f"""You are {self.name} in a single shared MAS team building one multi-section video.
-
-Topic: {self.video_state.topic}
-Target audience: {self.video_state.target_audience}
-
-Team members:
-{agent_lines}
-
-Coder assignments by section:
-{self.video_state.coder_assignments}
 
 You are assigned to exactly one section:
 {section_id}
 
-Current section context:
-{json.dumps(section_context, ensure_ascii=False, indent=2)}
-
-Current code for this section:
-```python
-{current_code_block}
-```
-
-Active issues assigned to you:
-{my_active_issues}
-
-Latest render/debug failure context:
-{failure_block}
+{failure_instruction}
 
 MAS-specific instructions:
-1. Resolve your assigned active issues first.
-2. Use replace_code(code) to update your assigned section.
-3. Mark each attempted issue with update_issue(issue_id, under_review=True, resolution_note=...).
-4. Keep changes section-specific and avoid editing sections outside your assignment.
-5. Preserve any existing [Asset: ...] references in animations and use them in code.
-6. If blocked, add targeted cross-agent issues via add_issue(section_id, toAgent, description).
-7. Any issue you create for another agent must be self-contained: include the concrete problem, relevant local context, and the action you want that agent to take.
-8. Keep render performance within the MAS runtime budget: your section must render comfortably under the 180-second `manim -ql` timeout.
-9. Prefer persistent mobjects plus `add_updater(...)`/`ValueTracker` for animated movement. Avoid `always_redraw(...)` for heavyweight or text-like objects.
-10. Do NOT create `SVGMobject`, `Text`, `DecimalNumber`, `MathTex`, `Tex`, `NumberLine`, or other expensive mobjects inside `always_redraw(...)`. Load/build them once, then update position/value/geometry in place.
-11. If you answer in plain text instead of a tool call, return only the complete Python code for this section.
-12. Whenever you call a tool, always include `reason` as one short concrete sentence explaining why you are taking that action now.
+1. Use read tools to inspect current shared state before writing or revising code. In particular, fetch the latest topic, team, coder assignments, section outline/storyboard, render context, current code, and issues instead of assuming prompt state is current.
+2. Resolve your assigned active issues first.
+3. Use replace_code(code) to update your assigned section.
+4. Mark each attempted issue with update_issue(issue_id, under_review=True, resolution_note=...).
+5. Keep changes section-specific and avoid editing sections outside your assignment.
+6. Preserve any existing [Asset: ...] references in animations and use them in code.
+7. If blocked, add targeted cross-agent issues via add_issue(section_id, toAgent, description).
+8. Any issue you create for another agent must be self-contained: include the concrete problem, relevant local context, and the action you want that agent to take.
+9. Keep render performance within the MAS runtime budget: your section must render comfortably under the 180-second `manim -ql` timeout.
+10. Prefer persistent mobjects plus `add_updater(...)`/`ValueTracker` for animated movement. Avoid `always_redraw(...)` for heavyweight or text-like objects.
+11. Do NOT create `SVGMobject`, `Text`, `DecimalNumber`, `MathTex`, `Tex`, `NumberLine`, or other expensive mobjects inside `always_redraw(...)`. Load/build them once, then update position/value/geometry in place.
+12. If you answer in plain text instead of a tool call, return only the complete Python code for this section.
+13. Whenever you call a tool, always include `reason` as one short concrete sentence explaining why you are taking that action now.
+14. If a read tool returns `ok: false`, inspect the error payload, correct the arguments, and retry the read tool call when appropriate.
 
 Original Code2Video Stage-3 prompt (follow this fully):
 {stage3_prompt}
@@ -1948,9 +2370,6 @@ Original Code2Video Stage-3 prompt (follow this fully):
             section_idx = self.video_state.section_index(self.managed_sections[0])
             previous_code = self.video_state.code[section_idx] or ""
 
-        agent_lines = "\n".join(f"- {agent.name}: {agent.role}" for agent in self.team_agents)
-        my_active_issues = self._issues_for_me(active_only=True)
-
         if self.name == SCRIPT_WRITER:
             edit_instruction = (
                 "Use replace_lecture_lines(section_id, lecture_lines) to update narration for any section. "
@@ -1961,13 +2380,12 @@ Original Code2Video Stage-3 prompt (follow this fully):
             edit_instruction = (
                 "Use replace_animations(section_id, animations) to update animation steps for any section. "
                 "Preserve any existing [Asset: ...] references unless an issue explicitly tells you to replace them. "
-                "Do not add new [Asset: ...] references yourself; only the built-in asset enhancer may introduce them."
+                "Do not add new [Asset: ...] references yourself; only the built-in asset enhancer may introduce them. "
+                "If lecture lines are missing or incomplete, still draft the animations now from the section outline, title, and example instead of blocking; you can refine them in a later turn once lecture lines settle."
             )
             base_class_context = ""
         else:
             prompt = self._build_coder_generation_prompt(
-                agent_lines=agent_lines,
-                my_active_issues=my_active_issues,
                 codegen_attempt=codegen_attempt,
                 max_codegen_attempts=max_codegen_attempts,
                 failure_context=failure_context,
@@ -1979,41 +2397,24 @@ Original Code2Video Stage-3 prompt (follow this fully):
                 return [response.usage_metadata, self.model, self.name]
             return None
 
-        section_context = self._managed_section_payload(
-            include_outline=True,
-            include_storyboard=True,
-            include_code=False,
-            include_render_context=False,
-        )
         prompt = f"""You are {self.name} in a single shared MAS team building one multi-section video.
-
-Topic: {self.video_state.topic}
-Target audience: {self.video_state.target_audience}
-
-Team members:
-{agent_lines}
 
 Sections you are allowed to edit:
 {self.managed_sections}
 
-Section planning context for your scope:
-{json.dumps(section_context, ensure_ascii=False, indent=2)}
-
 {base_class_context}
 
-Active issues assigned to you:
-{my_active_issues}
-
 Instructions:
-1. Resolve your assigned active issues first.
-2. Mark each attempted issue with update_issue(issue_id, under_review=True, resolution_note=...).
-3. Keep changes section-specific and avoid editing sections outside your assignment.
-4. If your section snapshot or issues contain existing [Asset: ...] references, preserve them. Coders must use them in code, and non-coder agents must not remove them unless explicitly instructed.
-5. {edit_instruction}
-6. You do NOT see the global issue list; only your assigned issues are visible.
+1. Use read tools to inspect current shared state before making edits. Fetch topic, team, coder assignments, section outline/storyboard, render context, code, and issues instead of relying on prompt snapshots.
+2. Resolve your assigned active issues first.
+3. Mark each attempted issue with update_issue(issue_id, under_review=True, resolution_note=...).
+4. Keep changes section-specific and avoid editing sections outside your assignment.
+5. If your section data or issues contain existing [Asset: ...] references, preserve them. Coders must use them in code, and non-coder agents must not remove them unless explicitly instructed.
+6. {edit_instruction}
 7. If blocked, add targeted cross-agent issues via add_issue(section_id, toAgent, description).
 8. Any issue you create for another agent must be self-contained: include the concrete problem, relevant local context, and the action you want that agent to take.
 9. Whenever you call a tool, always include `reason` as one short concrete sentence explaining why you are taking that action now.
+10. If a read tool returns `ok: false`, inspect the error payload, correct the arguments, and retry the read tool call when appropriate.
 
 Guidelines:
 {self.guidelines}
@@ -2335,46 +2736,27 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
         tools = [self.mark_task_complete, self.add_issue, self.update_issue, self.review_rendered_video]
         tools.extend(self.tools)
 
-        agent_lines = "\n".join(f"- {agent.name}: {agent.role}" for agent in self.team_agents)
-        under_review = [x for x in self.video_state.issues if x.under_review and not x.resolved]
         auto_review_results = self._auto_review_rendered_sections()
 
         prompt = f"""You are {self.name}, the orchestrator for one shared MAS team producing all sections of a video.
 
-Topic: {self.video_state.topic}
-Target audience: {self.video_state.target_audience}
-
-Team roster:
-{agent_lines}
-
-Coder assignments:
-{self.video_state.coder_assignments}
-
-Section summaries:
-{self.video_state.section_summaries()}
-
-Issues currently under review:
-{under_review}
-
 Automatic video review results this turn:
 {auto_review_results}
 
-All active issues:
-{self.video_state.active_issues()}
-
 Instructions:
-1. Review issue resolutions under review and either:
+1. Use read tools to inspect the latest shared state before making coordination decisions. Fetch topic, team, coder assignments, section outline/storyboard, render context, code, and issues instead of relying on prompt snapshots.
+2. Review issue resolutions under review and either:
    - mark_task_complete(issue_id), or
    - update_issue(issue_id, under_review=False, resolution_note=..., isActive=True/False).
-2. Automatic video review has already run for sections with rendered videos, and corresponding coder issues may already be created.
-3. Call review_rendered_video(section_id) only when you need an additional re-check (for example after major changes in code/render).
-4. Workers do NOT see the global issue list; they only see issues assigned to them.
-5. Therefore every issue you create must be self-contained. Include the concrete problem, the relevant section context, any dependency or upstream reason, and the exact action expected from that recipient. Do not assume they can infer missing context from other issues.
+3. Automatic video review has already run for sections with rendered videos, and corresponding coder issues may already be created.
+4. Call review_rendered_video(section_id) only when you need an additional re-check (for example after major changes in code/render).
+5. Every issue you create should still be self-contained. Include the concrete problem, the relevant section context, any dependency or upstream reason, and the exact action expected from that recipient.
 6. If an existing worker-facing issue is too vague to stand alone, create a new richer replacement issue and deactivate the stale or redundant one.
 7. Add only high-impact new issues with add_issue(section_id, toAgent, description).
 8. Route coding issues to the correct dedicated coder (Coder1/Coder2/... based on coder assignments).
 9. Deactivate duplicates/out-of-scope issues with update_issue(..., isActive=False).
 10. Whenever you call a tool, always include `reason` as one short concrete sentence explaining why you are taking that action now.
+11. If a read tool returns `ok: false`, inspect the error payload, correct the arguments, and retry the read tool call when appropriate.
 
 Guidelines:
 {self.guidelines}

@@ -1,7 +1,14 @@
 import os
 
 
-def get_prompt3_code(regenerate_note, section, base_class):
+def _get_prompt3_code_with_content(
+    regenerate_note,
+    section,
+    base_class,
+    section_content_block,
+    setup_layout_title,
+    setup_layout_lines,
+):
     return f"""
 You are an expert Manim animator using Manim Community Edition v0.19.0. 
 Please generate a high-quality Manim class based on the following teaching script.
@@ -31,10 +38,7 @@ lecture |  A1  A2  A3  A4  A5  A6
 - Area example: self.place_in_area(obj, 'A1', 'C3', scale_factor=0.7)
 - NEVER use .to_edge(), .move_to(), or manual positioning!
 
-4. TEACHING CONTENT:
-- Title: {section.title}
-- Lecture Lines: {section.lecture_lines}
-- Animation Description: {'; '.join(section.animations)}
+{section_content_block}
 
 5. STRUCTURE FOR CODE:
 Use the following comment format to indicate which block corresponds to which line:
@@ -49,7 +53,7 @@ from manim import *
 
 class {section.id.title().replace('_', '')}Scene(TeachingScene):
     def construct(self):
-        self.setup_layout("{section.title}", {section.lecture_lines})
+        self.setup_layout({setup_layout_title}, {setup_layout_lines})
         
         # rest of animation code
         # === Animation for Lecture Line 1 ===
@@ -66,6 +70,40 @@ class {section.id.title().replace('_', '')}Scene(TeachingScene):
 - Assets: If provided, MUST use the elements in the Animation Description formatted as [Asset: XXX/XXX.png] (abstract path).
 - Simplicity: Avoid 3D functions, complex panels, or external dependencies except for filenames in Animation Description.
 """
+
+
+def get_prompt3_code(regenerate_note, section, base_class):
+    section_content_block = f"""
+4. TEACHING CONTENT:
+- Title: {section.title}
+- Lecture Lines: {section.lecture_lines}
+- Animation Description: {'; '.join(section.animations)}
+"""
+    return _get_prompt3_code_with_content(
+        regenerate_note=regenerate_note,
+        section=section,
+        base_class=base_class,
+        section_content_block=section_content_block,
+        setup_layout_title=repr(section.title),
+        setup_layout_lines=repr(section.lecture_lines),
+    )
+
+
+def get_prompt3_code_mas(regenerate_note, section, base_class):
+    section_content_block = f"""
+4. TEACHING CONTENT:
+- You are working on section id: {section.id}
+- Use the available read tools to fetch the current outline, storyboard, render context, code, and issues before you write code.
+- Do not assume the prompt contains the latest lecture lines or animation descriptions; retrieve them from shared state.
+"""
+    return _get_prompt3_code_with_content(
+        regenerate_note=regenerate_note,
+        section=section,
+        base_class=base_class,
+        section_content_block=section_content_block,
+        setup_layout_title='"SECTION_TITLE_HERE"',
+        setup_layout_lines='["LECTURE_LINE_1", "LECTURE_LINE_2"]',
+    )
 
 
 def get_regenerate_note(attempt, MAX_REGENERATE_TRIES):
