@@ -468,6 +468,10 @@ def _build_mas_generation_result(args: argparse.Namespace, idx: int) -> Dict[str
         case_index=args.case_index,
         auto_review_changed_only=True,
         iconfinder_api_key=_load_iconfinder_api_key(),
+        inject_lessons_into_prompts=args.inject_lessons_into_prompts,
+        lesson_library_path=args.lesson_library_path,
+        top_general_lessons=args.top_general_lessons,
+        top_specialized_lessons=args.top_specialized_lessons,
     )
 
     final_video_state = run_mas_for_video_state(
@@ -718,6 +722,10 @@ def run_mas_generation_and_evaluation_pipeline(
     clear_logs: bool = False,
     case_index: Optional[int] = None,
     topic_parallel_workers: int = DEFAULT_TOPIC_PARALLEL_WORKERS,
+    inject_lessons_into_prompts: bool = False,
+    lesson_library_path: Optional[str] = None,
+    top_general_lessons: int = 10,
+    top_specialized_lessons: int = 10,
 ) -> List[Dict[str, Any]]:
     """Run MAS generation plus evaluation for the first N topics, or all topics when max_topics is None/-1."""
     knowledge_points = load_knowledge_points(knowledge_file=knowledge_file, max_topics=max_topics)
@@ -741,6 +749,10 @@ def run_mas_generation_and_evaluation_pipeline(
         orchestrator_model=orchestrator_model,
         clear_logs=clear_logs,
         case_index=case_index,
+        inject_lessons_into_prompts=inject_lessons_into_prompts,
+        lesson_library_path=lesson_library_path,
+        top_general_lessons=top_general_lessons,
+        top_specialized_lessons=top_specialized_lessons,
     )
     _resolve_mas_pipeline_output_root(base_args)
 
@@ -797,6 +809,10 @@ def _run_pipeline_from_cli(args: argparse.Namespace) -> int:
             clear_logs=args.clear_logs,
             case_index=args.case_index,
             topic_parallel_workers=args.topic_parallel_workers,
+            inject_lessons_into_prompts=args.inject_lessons_into_prompts,
+            lesson_library_path=args.lesson_library_path,
+            top_general_lessons=args.top_general_lessons,
+            top_specialized_lessons=args.top_specialized_lessons,
         )
 
     if not results:
@@ -904,6 +920,15 @@ def build_and_parse_args() -> argparse.Namespace:
     parser.add_argument("--section_parallel_workers", type=int, default=None)
     parser.add_argument("--worker_model", type=str, default=DEFAULT_OUTLINE_MODEL)
     parser.add_argument("--orchestrator_model", type=str, default=DEFAULT_OUTLINE_MODEL)
+    _add_bool_flag(parser, "inject_lessons_into_prompts", False)
+    parser.add_argument(
+        "--lesson_library_path",
+        type=str,
+        default=None,
+        help="Optional path to lesson_library.json or a pipeline directory containing it. Defaults to the latest pipeline library under mas_logs when lesson injection is enabled.",
+    )
+    parser.add_argument("--top_general_lessons", type=int, default=10)
+    parser.add_argument("--top_specialized_lessons", type=int, default=10)
     parser.add_argument("--clear_logs", action="store_true", default=False)
     parser.add_argument("--case_index", type=int, default=None)
 

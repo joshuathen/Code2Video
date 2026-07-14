@@ -426,7 +426,7 @@ def request_gemini(prompt, log_id=None, max_tokens=8000, max_retries=3, model_na
             time.sleep(delay)
 
 
-def request_gemini_token(prompt, log_id=None, max_tokens=8000, max_retries=3):
+def request_gemini_token(prompt, log_id=None, max_tokens=8000, max_retries=3, response_format=None, model_name=None):
     """
     Makes a request to the gemini-2.5-pro-preview-03-25 model with retry functionality.
 
@@ -440,7 +440,7 @@ def request_gemini_token(prompt, log_id=None, max_tokens=8000, max_retries=3):
         dict: The model's response
     """
 
-    model_name = cfg("gemini", "model")
+    model_name = _resolve_gemini_model(model_name)
 
     client = build_gemini_client()
 
@@ -454,12 +454,16 @@ def request_gemini_token(prompt, log_id=None, max_tokens=8000, max_retries=3):
     retry_count = 0
     while retry_count < max_retries:
         try:
-            completion = client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                extra_headers=extra_headers,
-            )
+            request_kwargs = {
+                "model": model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "extra_headers": extra_headers,
+            }
+            if response_format is not None:
+                request_kwargs["response_format"] = response_format
+
+            completion = client.chat.completions.create(**request_kwargs)
 
             if completion.usage:
                 usage_info["prompt_tokens"] = completion.usage.prompt_tokens

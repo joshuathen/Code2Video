@@ -207,6 +207,162 @@ def _clean_asset_tag_spacing(text: str) -> str:
     return cleaned.strip()
 
 
+def _normalize_role_label(label: Optional[str]) -> Optional[str]:
+    if label is None:
+        return None
+    normalized = str(label).strip()
+    if normalized == "OrchestratorAgent":
+        return ORCHESTRATOR
+    normalized = re.sub(r"\d+$", "", normalized)
+    return normalized or None
+
+
+def _lesson_sort_key(payload: Dict[str, Any]) -> Tuple[float, float, float, str]:
+    return (
+        -float(payload.get("confidence", 0.0) or 0.0),
+        -float(payload.get("weighted_support", 0.0) or 0.0),
+        -float(payload.get("support_count", 0.0) or 0.0),
+        str(payload.get("lesson_id") or ""),
+    )
+
+
+def _resolve_latest_lesson_library_path(logs_root: Path) -> Optional[Path]:
+    if not logs_root.exists():
+        return None
+
+    candidates: List[Tuple[float, Path]] = []
+    for lesson_path in logs_root.glob("pipeline_*/lesson_library.json"):
+        try:
+            stat = lesson_path.stat()
+        except OSError:
+            continue
+        candidates.append((stat.st_mtime, lesson_path))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0][1]
+
+
+def _resolve_lesson_library_path(path_value: Optional[str]) -> Optional[Path]:
+    if not path_value:
+        return _resolve_latest_lesson_library_path(Path(__file__).resolve().parent.parent / "mas_logs")
+
+    candidate = Path(path_value).expanduser()
+    if not candidate.is_absolute():
+        candidate = (Path(__file__).resolve().parent.parent / candidate).resolve()
+    else:
+        candidate = candidate.resolve()
+
+    if candidate.is_dir():
+        direct_candidate = candidate / "lesson_library.json"
+        if direct_candidate.exists():
+            return direct_candidate
+        nested_candidate = _resolve_latest_lesson_library_path(candidate)
+        if nested_candidate is not None:
+            return nested_candidate
+        return None
+
+    if candidate.exists():
+        return candidate
+    return None
+
+
+def _load_ranked_lessons_for_prompt(lesson_library_path: Optional[Path]) -> Dict[str, Any]:
+    empty_payload: Dict[str, Any] = {"general": [], "by_role": {}}
+    if lesson_library_path is None or not lesson_library_path.exists():
+        return empty_payload
+
+    try:
+        payload = json.loads(lesson_library_path.read_text(encoding="utf-8"))
+    except Exception:
+        return empty_payload
+
+    lessons_raw = payload.get("lessons", payload) if isinstance(payload, dict) else payload
+    if isinstance(lessons_raw, dict):
+        lesson_items = list(lessons_raw.values())
+    elif isinstance(lessons_raw, list):
+        lesson_items = list(lessons_raw)
+    else:
+        return empty_payload
+
+    general_lessons: List[Dict[str, Any]] = []
+    by_role: Dict[str, List[Dict[str, Any]]] = {}
+
+    for lesson in lesson_items:
+        if not isinstance(lesson, dict):
+            continue
+        if str(lesson.get("status") or "active") != "active":
+            continue
+
+        instruction = str(lesson.get("instruction") or "").strip()
+        if not instruction:
+            continue
+
+        scope = lesson.get("scope") or {}
+        if not isinstance(scope, dict):
+            scope = {}
+        level = str(scope.get("level") or "").strip()
+        roles = [_normalize_role_label(role) for role in (scope.get("roles") or [])]
+        roles = [role for role in roles if role]
+
+        normalized_lesson = {
+            "lesson_id": lesson.get("lesson_id"),
+            "instruction": instruction,
+            "confidence": float(lesson.get("confidence", 0.0) or 0.0),
+            "weighted_support": float(lesson.get("weighted_support", 0.0) or 0.0),
+            "support_count": int(lesson.get("support_count", 0) or 0),
+        }
+
+        if level == "general":
+            general_lessons.append(normalized_lesson)
+        elif level == "role_specific":
+            for role in roles:
+                by_role.setdefault(role, []).append(normalized_lesson)
+
+    general_lessons.sort(key=_lesson_sort_key)
+    for role_lessons in by_role.values():
+        role_lessons.sort(key=_lesson_sort_key)
+
+    return {"general": general_lessons, "by_role": by_role}
+
+
+def _format_lessons_for_prompt(
+    *,
+    agent_role: Optional[str],
+    lesson_payload: Dict[str, Any],
+    top_general_k: int,
+    top_specialized_k: int,
+) -> str:
+    general_lessons = list((lesson_payload or {}).get("general") or [])[: max(0, top_general_k)]
+    specialized_lessons = list(((lesson_payload or {}).get("by_role") or {}).get(agent_role or "", []))[
+        : max(0, top_specialized_k)
+    ]
+
+    if not general_lessons and not specialized_lessons:
+        return ""
+
+    lines = [
+        "Reusable lesson library guidance for this run:",
+        "Treat these as high-priority heuristics, but still verify the current shared state with read tools before acting.",
+    ]
+    if general_lessons:
+        lines.append("General lessons:")
+        for idx, lesson in enumerate(general_lessons, start=1):
+            lines.append(
+                f"{idx}. [{lesson.get('lesson_id') or 'GEN'} | conf={lesson.get('confidence', 0.0):.3f}] "
+                f"{lesson['instruction']}"
+            )
+    if specialized_lessons:
+        lines.append(f"{agent_role}-specific lessons:")
+        for idx, lesson in enumerate(specialized_lessons, start=1):
+            lines.append(
+                f"{idx}. [{lesson.get('lesson_id') or agent_role} | conf={lesson.get('confidence', 0.0):.3f}] "
+                f"{lesson['instruction']}"
+            )
+    return "\n".join(lines)
+
+
 def _resolve_code_asset_paths(code: str, assets_dir: Path) -> str:
     resolved_assets_dir = assets_dir.resolve()
 
@@ -1400,6 +1556,10 @@ class MASRunConfig:
     storyboard_asset_enhancement_turn: int = 2
     auto_review_changed_only: bool = True
     iconfinder_api_key: str = ""
+    inject_lessons_into_prompts: bool = False
+    lesson_library_path: Optional[str] = None
+    top_general_lessons: int = 10
+    top_specialized_lessons: int = 10
 
 
 def generate_outline_with_code2video_stage1(
@@ -1555,6 +1715,7 @@ class VideoTeamBaseAgent(MASAgent):
         managed_sections: Optional[List[str]] = None,
         tools: Optional[List[Callable]] = None,
         token_tracker: Optional[MASTokenTracker] = None,
+        lesson_prompt_text: str = "",
     ):
         super().__init__(
             name=name,
@@ -1567,6 +1728,7 @@ class VideoTeamBaseAgent(MASAgent):
         )
         self.video_state = video_state
         self.managed_sections = managed_sections or self.video_state.section_ids()
+        self.lesson_prompt_text = lesson_prompt_text.strip()
         self.tools.extend(
             [
                 self.get_topic,
@@ -2276,6 +2438,7 @@ class VideoTeamBaseAgent(MASAgent):
                 f"\nFailure hint for this retry: {failure_context.strip()}\n"
                 "Treat it as a hint only and use read tools to inspect the latest shared state before editing.\n"
             )
+        lesson_block = f"\n{self.lesson_prompt_text}\n" if self.lesson_prompt_text else ""
 
         return f"""You are {self.name} in a single shared MAS team building one multi-section video.
 
@@ -2283,6 +2446,7 @@ You are assigned to exactly one section:
 {section_id}
 
 {failure_instruction}
+{lesson_block}
 
 MAS-specific instructions:
 1. Use read tools to inspect current shared state before writing or revising code. In particular, fetch the latest topic, team, coder assignments, section outline/storyboard, render context, current code, and issues instead of assuming prompt state is current.
@@ -2369,12 +2533,14 @@ Original Code2Video Stage-3 prompt (follow this fully):
                 return [response.usage_metadata, self.model, self.name]
             return None
 
+        lesson_block = f"\n{self.lesson_prompt_text}\n" if self.lesson_prompt_text else ""
         prompt = f"""You are {self.name} in a single shared MAS team building one multi-section video.
 
 Sections you are allowed to edit:
 {self.managed_sections}
 
 {base_class_context}
+{lesson_block}
 
 Instructions:
 1. Use read tools to inspect current shared state before making edits. Fetch topic, team, coder assignments, section outline/storyboard, render context, code, and issues instead of relying on prompt snapshots.
@@ -2411,6 +2577,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
         managed_sections: Optional[List[str]] = None,
         tools: Optional[List[Callable]] = None,
         token_tracker: Optional[MASTokenTracker] = None,
+        lesson_prompt_text: str = "",
         auto_review_changed_only: bool = True,
     ):
         super().__init__(
@@ -2423,6 +2590,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
             managed_sections=managed_sections,
             tools=tools,
             token_tracker=token_tracker,
+            lesson_prompt_text=lesson_prompt_text,
         )
         self.extractor = GridPositionExtractor()
         self.grid_img_path = Path(__file__).resolve().parent.parent / "assets" / "reference" / "GRID.png"
@@ -2700,11 +2868,13 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
         tools.extend(self.tools)
 
         auto_review_results = self._auto_review_rendered_sections()
+        lesson_block = f"\n{self.lesson_prompt_text}\n" if self.lesson_prompt_text else ""
 
         prompt = f"""You are {self.name}, the orchestrator for one shared MAS team producing all sections of a video.
 
 Automatic video review results this turn:
 {auto_review_results}
+{lesson_block}
 
 Instructions:
 1. Use read tools to inspect the latest shared state before making coordination decisions. Fetch topic, team, coder assignments, section outline/storyboard, render context, code, and issues instead of relying on prompt snapshots.
@@ -2755,6 +2925,14 @@ class MASVideoRunner:
         self.assets_dir.mkdir(parents=True, exist_ok=True)
         self.iconfinder_api_key = self.cfg.iconfinder_api_key or _load_iconfinder_api_key()
         self.pre_asset_storyboard_payload: Optional[Dict[str, object]] = None
+        self.lesson_library_path = _resolve_lesson_library_path(self.cfg.lesson_library_path)
+        self.prompt_lessons: Dict[str, Any] = {"general": [], "by_role": {}}
+        if self.cfg.inject_lessons_into_prompts:
+            self.prompt_lessons = _load_ranked_lessons_for_prompt(self.lesson_library_path)
+            library_label = str(self.lesson_library_path) if self.lesson_library_path is not None else "none"
+            print(f"[VideoMAS] Prompt lesson injection enabled. Lesson library: {library_label}")
+            if not self.prompt_lessons["general"] and not self.prompt_lessons["by_role"]:
+                print("[VideoMAS] No active lessons found for prompt injection.")
 
         self._sync_token_usage()
 
@@ -2786,6 +2964,12 @@ class MASVideoRunner:
             managed_sections=self.video_state.section_ids(),
             tools=[],
             token_tracker=self.token_tracker,
+            lesson_prompt_text=_format_lessons_for_prompt(
+                agent_role=SCRIPT_WRITER,
+                lesson_payload=self.prompt_lessons,
+                top_general_k=self.cfg.top_general_lessons,
+                top_specialized_k=self.cfg.top_specialized_lessons,
+            ),
         )
         self.script_writer_agent.tools.append(self.script_writer_agent.replace_lecture_lines)
 
@@ -2799,6 +2983,12 @@ class MASVideoRunner:
             managed_sections=self.video_state.section_ids(),
             tools=[],
             token_tracker=self.token_tracker,
+            lesson_prompt_text=_format_lessons_for_prompt(
+                agent_role=ANIMATION_PLANNER,
+                lesson_payload=self.prompt_lessons,
+                top_general_k=self.cfg.top_general_lessons,
+                top_specialized_k=self.cfg.top_specialized_lessons,
+            ),
         )
         self.animation_planner_agent.tools.append(self.animation_planner_agent.replace_animations)
 
@@ -2816,6 +3006,12 @@ class MASVideoRunner:
                 managed_sections=[section_id],
                 tools=[],
                 token_tracker=self.token_tracker,
+                lesson_prompt_text=_format_lessons_for_prompt(
+                    agent_role=CODER,
+                    lesson_payload=self.prompt_lessons,
+                    top_general_k=self.cfg.top_general_lessons,
+                    top_specialized_k=self.cfg.top_specialized_lessons,
+                ),
             )
             coder_agent.tools.append(coder_agent.replace_code)
             self.coder_agents.append(coder_agent)
@@ -2838,6 +3034,12 @@ class MASVideoRunner:
             tools=[],
             token_tracker=self.token_tracker,
             auto_review_changed_only=self.cfg.auto_review_changed_only,
+            lesson_prompt_text=_format_lessons_for_prompt(
+                agent_role=ORCHESTRATOR,
+                lesson_payload=self.prompt_lessons,
+                top_general_k=self.cfg.top_general_lessons,
+                top_specialized_k=self.cfg.top_specialized_lessons,
+            ),
         )
 
         for agent in self.team_agents + [self.orchestrator_agent]:
