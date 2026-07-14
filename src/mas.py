@@ -590,7 +590,6 @@ class MASAgentCallLogger:
         model: str,
         turn_number: Optional[int],
         tool_name: str,
-        reason: str,
         input_payload: Dict[str, object],
         started_at: float,
         finished_at: float,
@@ -604,7 +603,6 @@ class MASAgentCallLogger:
             "model": model,
             "turn_number": turn_number,
             "tool_name": tool_name,
-            "reason": reason.strip(),
             "input": _json_safe(input_payload),
             "output": _json_safe(output_payload),
             "status": status,
@@ -1199,7 +1197,6 @@ class MASAgent:
         self,
         *,
         tool_name: str,
-        reason: str,
         input_payload: Dict[str, object],
         fn: Callable[[], Any],
     ) -> Any:
@@ -1214,7 +1211,6 @@ class MASAgent:
                     model=self.model,
                     turn_number=self.current_turn,
                     tool_name=tool_name,
-                    reason=reason,
                     input_payload=input_payload,
                     started_at=started_at,
                     finished_at=finished_at,
@@ -1230,7 +1226,6 @@ class MASAgent:
                 model=self.model,
                 turn_number=self.current_turn,
                 tool_name=tool_name,
-                reason=reason,
                 input_payload=input_payload,
                 started_at=started_at,
                 finished_at=finished_at,
@@ -1644,7 +1639,6 @@ class VideoTeamBaseAgent(MASAgent):
         self,
         *,
         tool_name: str,
-        reason: str,
         input_payload: Dict[str, object],
         fn: Callable[[], Dict[str, object]],
     ) -> Dict[str, object]:
@@ -1675,7 +1669,6 @@ class VideoTeamBaseAgent(MASAgent):
                 model=self.model,
                 turn_number=self.current_turn,
                 tool_name=tool_name,
-                reason=reason,
                 input_payload=input_payload,
                 started_at=started_at,
                 finished_at=finished_at,
@@ -1738,7 +1731,7 @@ class VideoTeamBaseAgent(MASAgent):
             "has_rendered_video": bool(self.video_state.rendered_video_path[section_idx]),
         }
 
-    def get_topic(self, reason: str = "") -> Dict[str, object]:
+    def get_topic(self) -> Dict[str, object]:
         """Get the shared video topic and intended audience.
 
         Use this to confirm the teaching goal before writing narration,
@@ -1758,12 +1751,11 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_read_tool(
             tool_name="get_topic",
-            reason=reason,
             input_payload={},
             fn=_do_get_topic,
         )
 
-    def get_team_members(self, reason: str = "") -> Dict[str, object]:
+    def get_team_members(self) -> Dict[str, object]:
         """Get the current MAS team roster.
 
         Returns the names and role summaries for every agent participating in
@@ -1784,12 +1776,11 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_read_tool(
             tool_name="get_team_members",
-            reason=reason,
             input_payload={},
             fn=_do_get_team_members,
         )
 
-    def get_coder_assignments(self, reason: str = "") -> Dict[str, object]:
+    def get_coder_assignments(self) -> Dict[str, object]:
         """Get the section-to-coder ownership map.
 
         Use this when you need to route a coding issue to the right worker for
@@ -1810,12 +1801,11 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_read_tool(
             tool_name="get_coder_assignments",
-            reason=reason,
             input_payload={},
             fn=_do_get_coder_assignments,
         )
 
-    def get_section_outline(self, section_id: Optional[str] = None, reason: str = "") -> Dict[str, object]:
+    def get_section_outline(self, section_id: Optional[str] = None) -> Dict[str, object]:
         """Get outline-level data for one section or all sections.
 
         Args:
@@ -1846,12 +1836,11 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_read_tool(
             tool_name="get_section_outline",
-            reason=reason,
             input_payload={"section_id": section_id},
             fn=_do_get_section_outline,
         )
 
-    def get_section_storyboard(self, section_id: Optional[str] = None, reason: str = "") -> Dict[str, object]:
+    def get_section_storyboard(self, section_id: Optional[str] = None) -> Dict[str, object]:
         """Get storyboard data for one section or all sections.
 
         Args:
@@ -1887,12 +1876,11 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_read_tool(
             tool_name="get_section_storyboard",
-            reason=reason,
             input_payload={"section_id": section_id},
             fn=_do_get_section_storyboard,
         )
 
-    def get_render_context(self, section_id: Optional[str] = None, reason: str = "") -> Dict[str, object]:
+    def get_render_context(self, section_id: Optional[str] = None) -> Dict[str, object]:
         """Get current render state for one section or all sections.
 
         The render context includes the latest stored render status, the latest
@@ -1926,12 +1914,11 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_read_tool(
             tool_name="get_render_context",
-            reason=reason,
             input_payload={"section_id": section_id},
             fn=_do_get_render_context,
         )
 
-    def get_code(self, section_id: Optional[str] = None, reason: str = "") -> Dict[str, object]:
+    def get_code(self, section_id: Optional[str] = None) -> Dict[str, object]:
         """Get the latest stored code for one section or all sections.
 
         Args:
@@ -1964,12 +1951,11 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_read_tool(
             tool_name="get_code",
-            reason=reason,
             input_payload={"section_id": section_id},
             fn=_do_get_code,
         )
 
-    def get_my_active_issues(self, reason: str = "") -> Dict[str, object]:
+    def get_my_active_issues(self) -> Dict[str, object]:
         """Get active unresolved issues assigned to the current agent.
 
         Returns:
@@ -1987,12 +1973,11 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_read_tool(
             tool_name="get_my_active_issues",
-            reason=reason,
             input_payload={},
             fn=_do_get_my_active_issues,
         )
 
-    def get_all_active_issues(self, reason: str = "") -> Dict[str, object]:
+    def get_all_active_issues(self) -> Dict[str, object]:
         """Get all active unresolved issues across the full MAS run.
 
         Returns:
@@ -2010,12 +1995,11 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_read_tool(
             tool_name="get_all_active_issues",
-            reason=reason,
             input_payload={},
             fn=_do_get_all_active_issues,
         )
 
-    def get_my_under_review_issues(self, reason: str = "") -> Dict[str, object]:
+    def get_my_under_review_issues(self) -> Dict[str, object]:
         """Get unresolved under-review issues assigned to the current agent.
 
         Returns:
@@ -2037,12 +2021,11 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_read_tool(
             tool_name="get_my_under_review_issues",
-            reason=reason,
             input_payload={},
             fn=_do_get_my_under_review_issues,
         )
 
-    def get_all_under_review_issues(self, reason: str = "") -> Dict[str, object]:
+    def get_all_under_review_issues(self) -> Dict[str, object]:
         """Get all unresolved under-review issues across the MAS run.
 
         Returns:
@@ -2064,12 +2047,11 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_read_tool(
             tool_name="get_all_under_review_issues",
-            reason=reason,
             input_payload={},
             fn=_do_get_all_under_review_issues,
         )
 
-    def add_issue(self, section_id: str, toAgent: str, description: str, reason: str = "") -> int:
+    def add_issue(self, section_id: str, toAgent: str, description: str) -> int:
         def _do_add_issue() -> int:
             if not isinstance(description, str) or not description.strip():
                 raise ValueError("Issue description must be a non-empty string.")
@@ -2093,7 +2075,6 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_tool(
             tool_name="add_issue",
-            reason=reason,
             input_payload={
                 "section_id": section_id,
                 "toAgent": toAgent,
@@ -2107,7 +2088,6 @@ class VideoTeamBaseAgent(MASAgent):
         issue_id: int,
         under_review: Optional[bool] = None,
         resolution_note: Optional[str] = None,
-        reason: str = "",
     ) -> None:
         def _do_update_issue() -> None:
             if under_review is None and resolution_note is None:
@@ -2128,7 +2108,6 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_tool(
             tool_name="update_issue",
-            reason=reason,
             input_payload={
                 "issue_id": issue_id,
                 "under_review": under_review,
@@ -2141,7 +2120,6 @@ class VideoTeamBaseAgent(MASAgent):
         self,
         section_id: str,
         lecture_lines: List[str],
-        reason: str = "",
     ) -> Dict[str, object]:
         def _do_replace_lecture_lines() -> Dict[str, object]:
             section_idx = self._validate_section_access(section_id)
@@ -2167,7 +2145,6 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_tool(
             tool_name="replace_lecture_lines",
-            reason=reason,
             input_payload={
                 "section_id": section_id,
                 "lecture_lines": lecture_lines,
@@ -2179,7 +2156,6 @@ class VideoTeamBaseAgent(MASAgent):
         self,
         section_id: str,
         animations: List[str],
-        reason: str = "",
     ) -> Dict[str, object]:
         def _do_replace_animations() -> Dict[str, object]:
             section_idx = self._validate_section_access(section_id)
@@ -2227,7 +2203,6 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_tool(
             tool_name="replace_animations",
-            reason=reason,
             input_payload={
                 "section_id": section_id,
                 "animations": animations,
@@ -2258,7 +2233,7 @@ class VideoTeamBaseAgent(MASAgent):
             "line_count": len(normalized.splitlines()),
         }
 
-    def replace_code(self, code: str, reason: str = "") -> Dict[str, object]:
+    def replace_code(self, code: str) -> Dict[str, object]:
         def _do_replace_code() -> Dict[str, object]:
             if len(self.managed_sections) != 1:
                 raise ValueError(
@@ -2269,7 +2244,6 @@ class VideoTeamBaseAgent(MASAgent):
 
         return self._execute_traced_tool(
             tool_name="replace_code",
-            reason=reason,
             input_payload={"code": code},
             fn=_do_replace_code,
         )
@@ -2323,8 +2297,7 @@ MAS-specific instructions:
 10. Prefer persistent mobjects plus `add_updater(...)`/`ValueTracker` for animated movement. Avoid `always_redraw(...)` for heavyweight or text-like objects.
 11. Do NOT create `SVGMobject`, `Text`, `DecimalNumber`, `MathTex`, `Tex`, `NumberLine`, or other expensive mobjects inside `always_redraw(...)`. Load/build them once, then update position/value/geometry in place.
 12. If you answer in plain text instead of a tool call, return only the complete Python code for this section.
-13. Whenever you call a tool, always include `reason` as one short concrete sentence explaining why you are taking that action now.
-14. If a read tool returns `ok: false`, inspect the error payload, correct the arguments, and retry the read tool call when appropriate.
+13. If a read tool returns `ok: false`, inspect the error payload, correct the arguments, and retry the read tool call when appropriate.
 
 Original Code2Video Stage-3 prompt (follow this fully):
 {stage3_prompt}
@@ -2346,7 +2319,6 @@ Original Code2Video Stage-3 prompt (follow this fully):
 
         self.replace_code(
             fallback_code,
-            reason="Apply code from the model's plain-text response because no tool call updated the section.",
         )
         updated_code = self.video_state.code[section_idx] or ""
         if not updated_code.strip():
@@ -2413,8 +2385,7 @@ Instructions:
 6. {edit_instruction}
 7. If blocked, add targeted cross-agent issues via add_issue(section_id, toAgent, description).
 8. Any issue you create for another agent must be self-contained: include the concrete problem, relevant local context, and the action you want that agent to take.
-9. Whenever you call a tool, always include `reason` as one short concrete sentence explaining why you are taking that action now.
-10. If a read tool returns `ok: false`, inspect the error payload, correct the arguments, and retry the read tool call when appropriate.
+9. If a read tool returns `ok: false`, inspect the error payload, correct the arguments, and retry the read tool call when appropriate.
 
 Guidelines:
 {self.guidelines}
@@ -2524,7 +2495,6 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
                     section_id=section_id,
                     toAgent=coder_name,
                     description=description,
-                    reason="Create a coder issue from automatic video review feedback.",
                 )
                 result["created_issue_ids"].append(issue_id)
                 return
@@ -2599,10 +2569,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
                 continue
             try:
                 review_results.append(
-                    self.review_rendered_video(
-                        section_id,
-                        reason="Run the automatic rendered-video review for this section in the current orchestrator turn.",
-                    )
+                    self.review_rendered_video(section_id)
                 )
             except Exception as e:
                 review_results.append(
@@ -2614,7 +2581,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
                 )
         return review_results
 
-    def mark_task_complete(self, issue_id: int, reason: str = "") -> Dict[str, object]:
+    def mark_task_complete(self, issue_id: int) -> Dict[str, object]:
         def _do_mark_task_complete() -> Dict[str, object]:
             if not isinstance(issue_id, int):
                 raise ValueError("issue_id must be an integer.")
@@ -2631,7 +2598,6 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
 
         return self._execute_traced_tool(
             tool_name="mark_task_complete",
-            reason=reason,
             input_payload={"issue_id": issue_id},
             fn=_do_mark_task_complete,
         )
@@ -2642,7 +2608,6 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
         under_review: Optional[bool] = None,
         resolution_note: Optional[str] = None,
         isActive: Optional[bool] = None,
-        reason: str = "",
     ) -> None:
         def _do_update_issue() -> None:
             if under_review is None and resolution_note is None and isActive is None:
@@ -2664,7 +2629,6 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
 
         return self._execute_traced_tool(
             tool_name="update_issue",
-            reason=reason,
             input_payload={
                 "issue_id": issue_id,
                 "under_review": under_review,
@@ -2674,7 +2638,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
             fn=_do_update_issue,
         )
 
-    def review_rendered_video(self, section_id: str, reason: str = "") -> Dict[str, object]:
+    def review_rendered_video(self, section_id: str) -> Dict[str, object]:
         def _do_review_rendered_video() -> Dict[str, object]:
             section_idx = self._validate_section_access(section_id)
             video_path = self.video_state.rendered_video_path[section_idx]
@@ -2727,7 +2691,6 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
 
         return self._execute_traced_tool(
             tool_name="review_rendered_video",
-            reason=reason,
             input_payload={"section_id": section_id},
             fn=_do_review_rendered_video,
         )
@@ -2755,8 +2718,7 @@ Instructions:
 7. Add only high-impact new issues with add_issue(section_id, toAgent, description).
 8. Route coding issues to the correct dedicated coder (Coder1/Coder2/... based on coder assignments).
 9. Deactivate duplicates/out-of-scope issues with update_issue(..., isActive=False).
-10. Whenever you call a tool, always include `reason` as one short concrete sentence explaining why you are taking that action now.
-11. If a read tool returns `ok: false`, inspect the error payload, correct the arguments, and retry the read tool call when appropriate.
+10. If a read tool returns `ok: false`, inspect the error payload, correct the arguments, and retry the read tool call when appropriate.
 
 Guidelines:
 {self.guidelines}
