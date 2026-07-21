@@ -22,16 +22,35 @@ fi
 
 cd "$REPO_ROOT"
 
-PYTHON_BIN="${PYTHON_BIN:-/home/jthen/.conda/envs/py31020/bin/python3.10}"
-if [ ! -x "$PYTHON_BIN" ]; then
-  echo "Python interpreter not found: $PYTHON_BIN" >&2
-  exit 1
+CONTAINER_IMAGE="${CONTAINER_IMAGE:-/software/projects/pawsey1357/jthen/containers/manim-0.19.0.sif}"
+PYTHON_BIN="${PYTHON_BIN:-/software/projects/pawsey1357/jthen/venvs/code2video-manim/bin/python}"
+
+if [ -n "$CONTAINER_IMAGE" ]; then
+  if [ ! -f "$CONTAINER_IMAGE" ]; then
+    echo "Container image not found: $CONTAINER_IMAGE" >&2
+    exit 1
+  fi
+  module load singularity/4.1.0-nompi
+  SINGULARITY_JOB_TMP="${TMPDIR:-/tmp}/${USER}-code2video-${SLURM_JOB_ID:-$$}"
+  export SINGULARITY_CACHEDIR="$SINGULARITY_JOB_TMP/cache"
+  export SINGULARITY_TMPDIR="$SINGULARITY_JOB_TMP/tmp"
+  mkdir -p "$SINGULARITY_CACHEDIR" "$SINGULARITY_TMPDIR"
+  PYTHON_CMD=(singularity exec "$CONTAINER_IMAGE" "$PYTHON_BIN")
+else
+  if [ ! -x "$PYTHON_BIN" ]; then
+    echo "Python interpreter not found: $PYTHON_BIN" >&2
+    exit 1
+  fi
+  PYTHON_CMD=("$PYTHON_BIN")
 fi
 
 export PYTHONPATH="$REPO_ROOT:$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+export SINGULARITYENV_PYTHONPATH="$PYTHONPATH"
+export SINGULARITYENV_PATH="$(dirname "$PYTHON_BIN"):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # Curated 10-topic MAS pipeline defaults. Override via exported env vars
 # before sbatch if you want to tweak the run.
+RUN_LABEL="${RUN_LABEL:-selected-10}"
 KNOWLEDGE_FILE="${KNOWLEDGE_FILE:-json_files/agent_selected_topics_10.json}"
 MAX_TOPICS="${MAX_TOPICS:--1}"
 PER_QUESTION_WORKERS="${PER_QUESTION_WORKERS:-5}"
@@ -40,20 +59,25 @@ MAX_CODE_TOKEN_LENGTH="${MAX_CODE_TOKEN_LENGTH:-10000}"
 MAX_FIX_BUG_TRIES="${MAX_FIX_BUG_TRIES:-10}"
 MAX_REGENERATE_TRIES="${MAX_REGENERATE_TRIES:-10}"
 OUTLINE_DURATION_MINUTES="${OUTLINE_DURATION_MINUTES:-5}"
+MAS_MODEL="${MAS_MODEL:-gemini-3-flash-preview}"
+CODE_MODEL="${CODE_MODEL:-gemini-3-flash-preview}"
+REPAIR_MODEL="${REPAIR_MODEL:-gemini-3-flash-preview}"
+EVAL_MODEL="${EVAL_MODEL:-gemini-2.5-pro}"
+export MAS_MODEL CODE_MODEL REPAIR_MODEL EVAL_MODEL
 OUTLINE_MAX_REGENERATE_TRIES="${OUTLINE_MAX_REGENERATE_TRIES:-}"
-OUTLINE_MODEL="${OUTLINE_MODEL:-gemini-3-flash-preview}"
+OUTLINE_MODEL="$MAS_MODEL"
 MAX_TURNS="${MAX_TURNS:-3}"
 MAX_RETRIES="${MAX_RETRIES:-3}"
 CODER_FIX_ATTEMPTS="${CODER_FIX_ATTEMPTS:-}"
 FINAL_RENDER_FIX_ATTEMPTS="${FINAL_RENDER_FIX_ATTEMPTS:-}"
 CODER_REGENERATE_TRIES="${CODER_REGENERATE_TRIES:-}"
 SECTION_PARALLEL_WORKERS="${SECTION_PARALLEL_WORKERS:-}"
-WORKER_MODEL="${WORKER_MODEL:-gemini-3-flash-preview}"
-ORCHESTRATOR_MODEL="${ORCHESTRATOR_MODEL:-gemini-3-flash-preview}"
+WORKER_MODEL="$MAS_MODEL"
+ORCHESTRATOR_MODEL="$MAS_MODEL"
 TOPIC_PARALLEL_WORKERS="${TOPIC_PARALLEL_WORKERS:-1}"
 
 CMD=(
-  "$PYTHON_BIN" src/main.py
+  "${PYTHON_CMD[@]}" src/main.py
   --runner mas
   --run_pipeline
   --knowledge_file "$KNOWLEDGE_FILE"
@@ -103,10 +127,15 @@ if [ -n "${CASE_INDEX:-}" ]; then
   CMD+=(--case_index "$CASE_INDEX")
 fi
 
-echo "Starting selected-10 MAS generation+evaluation pipeline at $(date)"
+echo "Starting $RUN_LABEL MAS generation+evaluation pipeline at $(date)"
 echo "Repository: $REPO_ROOT"
 echo "Python: $PYTHON_BIN"
+echo "Container: ${CONTAINER_IMAGE:-<none>}"
 echo "Topics file: $KNOWLEDGE_FILE"
+echo "MAS model: $MAS_MODEL"
+echo "Code model: $CODE_MODEL"
+echo "Repair model: $REPAIR_MODEL"
+echo "Evaluation model: $EVAL_MODEL"
 echo "Max topics: $MAX_TOPICS"
 echo "Topic parallel workers: $TOPIC_PARALLEL_WORKERS"
 echo "Command: ${CMD[*]}"

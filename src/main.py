@@ -1,6 +1,7 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -35,7 +36,7 @@ DEFAULT_TOPIC_PARALLEL_WORKERS = 1
 
 # MAS-only defaults that do not have a direct single-run analogue in agent.py.
 DEFAULT_OUTLINE_DURATION_MINUTES = 5
-DEFAULT_OUTLINE_MODEL = "gemini-3-flash-preview"
+DEFAULT_OUTLINE_MODEL = os.getenv("MAS_MODEL", "gemini-3-flash-preview")
 DEFAULT_MAS_MAX_TURNS = 3
 DEFAULT_MAS_MAX_RETRIES = 3
 DEFAULT_KNOWLEDGE_FILE = "long_video_topics_list.json"

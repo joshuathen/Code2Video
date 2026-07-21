@@ -16,7 +16,11 @@ from gpt_request import cfg, request_gemini_with_video, request_gemini
 from prompts import get_unlearning_and_video_learning_prompt, get_unlearning_prompt
 
 
-DEFAULT_TEACHQUIZ_MODEL = cfg("teachquiz", "model", "gemini-2.5-pro")
+DEFAULT_TEACHQUIZ_MODEL = cfg(
+    "eval",
+    "model",
+    cfg("teachquiz", "model", "gemini-2.5-pro"),
+)
 
 
 def retry(max_retries=3, base_delay=0.5, jitter=0.2):

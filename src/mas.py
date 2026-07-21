@@ -40,7 +40,9 @@ from google.genai.errors import ClientError, ServerError
 ORCHESTRATOR = "Orchestrator"
 CODER = "Coder"
 ANIMATION_PLANNER = "AnimationPlanner"
+ANIMATION_PLANNER_MAX_REMOTE_CALLS = 40
 SCRIPT_WRITER = "ScriptWriter"
+SCRIPT_WRITER_MAX_REMOTE_CALLS = 40
 
 # Team role summaries for clearer cross-agent issue routing.
 CODER_ROLE = "Builds and debugs Manim code; ensures animation plans are technically feasible."
@@ -58,14 +60,29 @@ DEFAULT_CODER_REGENERATE_TRIES = 10
 TOPIC = "Implicit Differentiation"
 OUTLINE_DURATION_MINUTES = 5
 OUTLINE_MAX_REGENERATE_TRIES = 10
-OUTLINE_MODEL = "gemini-3-flash-preview"
+OUTLINE_MODEL = os.getenv("MAS_MODEL", "gemini-3-flash-preview")
 # ScopeRefine/bug-fix model used by MAS coder runtime.
-DEBUG_FIX_MODEL = "gemini-3-flash-preview"
+DEBUG_FIX_MODEL = os.getenv("REPAIR_MODEL", "gemini-3-flash-preview")
 # Debugger thinking controls:
 # - thinking_budget: 0 = disabled, -1 = automatic, positive int = token budget.
 # - include_thoughts: include thought parts in response payload.
 DEBUG_FIX_THINKING_BUDGET: Optional[int] = None
 DEBUG_FIX_INCLUDE_THOUGHTS: Optional[bool] = None
+
+
+def _mas_model() -> str:
+    """Model used by MAS calls not owned by a named worker."""
+    return os.getenv("MAS_MODEL", "gemini-3-flash-preview")
+
+
+def _code_model() -> str:
+    """Model used for initial Manim code generation and regeneration."""
+    return os.getenv("CODE_MODEL", "gemini-3-flash-preview")
+
+
+def _repair_model() -> str:
+    """Model used by ScopeRefine and other code-repair calls."""
+    return os.getenv("REPAIR_MODEL", "gemini-3-flash-preview")
 
 # Prompt blocks aligned to original Code2Video stage2/stage3 templates.
 STAGE2_STORYBOARD_REQUIREMENTS = """
@@ -1044,7 +1061,11 @@ def _scope_refine_request_with_client(
     going through `request_gemini_token(...)`.
     """
     del request_client
-    response, usage = request_gemini_token(prompt, max_tokens=max_tokens)
+    response, usage = request_gemini_token(
+        prompt,
+        max_tokens=max_tokens,
+        model_name=_repair_model(),
+    )
     if token_tracker is not None:
         token_tracker.record(
             source=usage_source,
@@ -1398,13 +1419,24 @@ class MASAgent:
         model_index = alternative_models.index(self.model) if self.model in alternative_models else -1
 
         response = None
+        if self.name == SCRIPT_WRITER:
+            maximum_remote_calls = SCRIPT_WRITER_MAX_REMOTE_CALLS
+        elif self.name == ANIMATION_PLANNER:
+            maximum_remote_calls = ANIMATION_PLANNER_MAX_REMOTE_CALLS
+        else:
+            maximum_remote_calls = 10
 
         while attempts < max_retries + 1:
             try:
                 response = self.client.models.generate_content(
                     model=self.model,
                     contents=parts,
-                    config=types.GenerateContentConfig(tools=tools),
+                    config=types.GenerateContentConfig(
+                        tools=tools,
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                            maximum_remote_calls=maximum_remote_calls,
+                        ),
+                    ),
                 )
                 if self.token_tracker is not None:
                     self.token_tracker.record(
@@ -1547,8 +1579,8 @@ class MASRunConfig:
     final_render_fix_attempts: int = DEFAULT_FINAL_RENDER_FIX_ATTEMPTS
     coder_regenerate_tries: int = DEFAULT_CODER_REGENERATE_TRIES
     max_code_token_length: int = 10000
-    worker_model: str = "gemini-3-flash-preview"
-    orchestrator_model: str = "gemini-3-flash-preview"
+    worker_model: str = field(default_factory=_mas_model)
+    orchestrator_model: str = field(default_factory=_mas_model)
     section_parallel_workers: int = 4
     clear_logs: bool = False
     case_index: Optional[int] = None
@@ -2519,6 +2551,9 @@ Original Code2Video Stage-3 prompt (follow this fully):
                 "Do not add new [Asset: ...] references yourself; only the built-in asset enhancer may introduce them. "
                 "If lecture lines are missing or incomplete, still draft the animations now from the section outline, title, and example instead of blocking; you can refine them in a later turn once lecture lines settle."
             )
+            priority_instructions = """1. Do not perform the standard exhaustive state inspection. Read the active issues once, then inspect only the storyboard data needed to write animations.
+2. Your first priority is writing animation data. Immediately call replace_animations once for every managed section whose animations are empty or incomplete. Process all such sections in one continuous tool-calling sequence; do not interleave issue bookkeeping between sections.
+3. Only after every required replace_animations call has succeeded should you call update_issue to record review status or resolution notes. Do not spend calls on topic, team, coder assignments, render context, or code unless a concrete blocker makes that information essential."""
             base_class_context = ""
         else:
             prompt = self._build_coder_generation_prompt(
@@ -2533,6 +2568,11 @@ Original Code2Video Stage-3 prompt (follow this fully):
                 return [response.usage_metadata, self.model, self.name]
             return None
 
+        if self.name != ANIMATION_PLANNER:
+            priority_instructions = """1. Use read tools to inspect current shared state before making edits. Fetch topic, team, coder assignments, section outline/storyboard, render context, code, and issues instead of relying on prompt snapshots.
+2. Resolve your assigned active issues first.
+3. Mark each attempted issue with update_issue(issue_id, under_review=True, resolution_note=...)."""
+
         lesson_block = f"\n{self.lesson_prompt_text}\n" if self.lesson_prompt_text else ""
         prompt = f"""You are {self.name} in a single shared MAS team building one multi-section video.
 
@@ -2543,9 +2583,7 @@ Sections you are allowed to edit:
 {lesson_block}
 
 Instructions:
-1. Use read tools to inspect current shared state before making edits. Fetch topic, team, coder assignments, section outline/storyboard, render context, code, and issues instead of relying on prompt snapshots.
-2. Resolve your assigned active issues first.
-3. Mark each attempted issue with update_issue(issue_id, under_review=True, resolution_note=...).
+{priority_instructions}
 4. Keep changes section-specific and avoid editing sections outside your assignment.
 5. If your section data or issues contain existing [Asset: ...] references, preserve them. Coders must use them in code, and non-coder agents must not remove them unless explicitly instructed.
 6. {edit_instruction}
@@ -2831,6 +2869,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
                 prompt=prompt,
                 video_path=video_path,
                 image_path=str(self.grid_img_path),
+                model_name=_mas_model(),
             )
             if self.token_tracker is not None:
                 self.token_tracker.record(
@@ -3001,7 +3040,7 @@ class MASVideoRunner:
                 role=f"{CODER_ROLE} Assigned section: {section_id}",
                 guidelines=CODER_GUIDELINES,
                 video_state=self.video_state,
-                model=self.cfg.worker_model,
+                model=_code_model(),
                 client=self.client,
                 managed_sections=[section_id],
                 tools=[],

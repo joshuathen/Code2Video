@@ -1,5 +1,7 @@
 import argparse
+import functools
 import json
+import os
 import re
 import sys
 from dataclasses import asdict, is_dataclass
@@ -92,6 +94,7 @@ def evaluate_video(
     tq_concept: Optional[str] = None,
     per_question_workers: int = 5,
 ) -> Dict[str, Any]:
+    eval_model = os.getenv("EVAL_MODEL", "gemini-2.5-pro")
     concept_questions = load_questions_from_json(str(questions_json))
     resolved_tq_concept = tq_concept or resolve_tq_concept(topic, concept_questions.keys())
 
@@ -104,7 +107,9 @@ def evaluate_video(
         "tq": {"ok": False, "result": None, "report": None, "error": None},
     }
 
-    evaluator = VideoEvaluator(request_gemini_with_video)
+    evaluator = VideoEvaluator(
+        functools.partial(request_gemini_with_video, model_name=eval_model)
+    )
     try:
         aes_result = evaluator.evaluate_video(video_path=str(video_path), knowledge_point=topic)
         result["aes"]["ok"] = True
@@ -119,6 +124,7 @@ def evaluate_video(
             questions=questions,
             video_path=str(video_path),
             per_question_workers=per_question_workers,
+            teachquiz_model=eval_model,
         )
         result["tq"]["ok"] = True
         result["tq"]["result"] = _to_jsonable(tq_result)

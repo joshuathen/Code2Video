@@ -297,7 +297,13 @@ def request_gemini_video_img(
 
 
 def request_gemini_video_img_token(
-    prompt: str, video_path: str, image_path: str, log_id=None, max_tokens: int = 10000, max_retries: int = 3
+    prompt: str,
+    video_path: str,
+    image_path: str,
+    log_id=None,
+    max_tokens: int = 10000,
+    max_retries: int = 3,
+    model_name=None,
 ):
     """
     Makes a multimodal request to the Gemini-2.5 model using video & ref img + text.
@@ -312,7 +318,7 @@ def request_gemini_video_img_token(
     Returns:
         dict: The Gemini model response
     """
-    model_name = cfg("gemini", "model")
+    model_name = _resolve_gemini_model(model_name)
 
     client = build_gemini_client()
 
