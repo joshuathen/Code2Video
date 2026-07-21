@@ -3,6 +3,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 from dataclasses import asdict, dataclass, field
 import hashlib
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import re
@@ -1095,6 +1096,15 @@ class CoderRuntime:
     ):
         self.runtime_dir = runtime_dir
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
+        # Parallel Manim sections share these topic-level caches. Manim 0.19's
+        # Text/Tex initialization uses a check-then-mkdir sequence without
+        # exist_ok=True, so two fresh render workers can otherwise race and
+        # raise FileExistsError before scene code starts.
+        for cache_dir_name in ("texts", "Tex"):
+            (self.runtime_dir / "media" / cache_dir_name).mkdir(
+                parents=True,
+                exist_ok=True,
+            )
         self.request_fn = request_fn
         self.max_code_token_length = max_code_token_length
         self.assets_dir = assets_dir.resolve() if assets_dir is not None else None
@@ -1116,6 +1126,63 @@ class CoderRuntime:
         artifacts_dir = self.runtime_dir / "coder_runtime_timeouts" / section_id
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         return artifacts_dir
+
+    def _next_attempt_number(self, section_id: str) -> int:
+        """Return a monotonically increasing attempt number for this section."""
+        section_dir = self.runtime_dir / "coder_debugger" / section_id
+        if not section_dir.exists():
+            return 1
+
+        attempt_numbers = []
+        for path in section_dir.glob("attempt_*"):
+            match = re.fullmatch(r"attempt_(\d+)", path.name)
+            if match:
+                attempt_numbers.append(int(match.group(1)))
+        return max(attempt_numbers, default=0) + 1
+
+    def _write_attempt_record(
+        self,
+        *,
+        section_id: str,
+        attempt_number: int,
+        phase: str,
+        code_before: str,
+        code_after: str,
+        elapsed_seconds: float,
+        render_error: str,
+        repair_strategy: str,
+        repair_reason: str,
+        render_outcome: Dict[str, object],
+        command: List[str],
+    ) -> Path:
+        """Persist the structured evidence consumed by lesson reflection."""
+        attempt_dir = (
+            self.runtime_dir
+            / "coder_debugger"
+            / section_id
+            / f"attempt_{attempt_number:02d}"
+        )
+        attempt_dir.mkdir(parents=True, exist_ok=True)
+        record = {
+            "section_id": section_id,
+            "attempt_number": attempt_number,
+            "phase": phase,
+            "code_before": code_before,
+            "code_after": code_after,
+            "code_sha1": hashlib.sha1(code_before.encode("utf-8")).hexdigest(),
+            "precheck_error": "",
+            "render_outcome": render_outcome,
+            "render_error": render_error,
+            "elapsed_seconds": round(elapsed_seconds, 3),
+            "repair_strategy": repair_strategy,
+            "repair_reason": repair_reason,
+            "changed_code": code_after != code_before,
+            "command": command,
+            "artifact_dir": str(attempt_dir),
+        }
+        attempt_path = attempt_dir / "attempt.json"
+        attempt_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        return attempt_path
 
     @staticmethod
     def _coerce_text(value: object) -> str:
@@ -1174,6 +1241,7 @@ class CoderRuntime:
         section_title: str = "",
         lecture_lines: Optional[List[str]] = None,
         topic: str = "",
+        phase: str = "unspecified",
     ) -> Dict[str, object]:
         if not code or not code.strip():
             return {"success": False, "status": "skipped", "reason": "No code available for section"}
@@ -1188,13 +1256,18 @@ class CoderRuntime:
         timeout_artifacts: Dict[str, str] = {}
         topic_prefix = f"{topic} " if topic else ""
         render_timeout_seconds = 180
+        first_attempt_number = self._next_attempt_number(section_id)
+        attempts_run = 0
         for fix_attempt in range(max_fix_attempts):
-            attempt_number = fix_attempt + 1
+            attempt_number = first_attempt_number + fix_attempt
+            attempts_run = fix_attempt + 1
             command = ["manim", "-ql", code_file.name, scene_name]
             print(
-                f"🔧 {topic_prefix}Debugging {section_id} (attempt {attempt_number}/{max_fix_attempts})",
+                f"🔧 {topic_prefix}Debugging {section_id} "
+                f"(attempt {attempts_run}/{max_fix_attempts}, record {attempt_number})",
                 flush=True,
             )
+            code_before = current_code
             render_started_at = time.perf_counter()
             try:
                 result = subprocess.run(
@@ -1214,11 +1287,30 @@ class CoderRuntime:
                     ]
                     for video_path in video_patterns:
                         if video_path.exists():
+                            self._write_attempt_record(
+                                section_id=section_id,
+                                attempt_number=attempt_number,
+                                phase=phase,
+                                code_before=code_before,
+                                code_after=current_code,
+                                elapsed_seconds=elapsed_seconds,
+                                render_error="",
+                                repair_strategy="none",
+                                repair_reason="Render succeeded; no repair required.",
+                                render_outcome={
+                                    "success": True,
+                                    "ok": True,
+                                    "returncode": result.returncode,
+                                    "timed_out": False,
+                                    "video_path": str(video_path),
+                                },
+                                command=command,
+                            )
                             print(f"✅ {topic_prefix}{section_id} finished", flush=True)
                             return {
                                 "success": True,
                                 "status": "ok",
-                                "attempts": attempt_number,
+                                "attempts": attempts_run,
                                 "code": current_code,
                                 "video_path": str(video_path),
                                 "elapsed_seconds": round(elapsed_seconds, 3),
@@ -1235,7 +1327,31 @@ class CoderRuntime:
                         else fixed_code
                     )
                     code_file.write_text(current_code, encoding="utf-8")
+                    repair_strategy = "scope_refine"
+                    repair_reason = "ScopeRefine produced replacement code from the Manim render error."
                 else:
+                    repair_strategy = "scope_refine_failed"
+                    repair_reason = "ScopeRefine did not return replacement code."
+
+                self._write_attempt_record(
+                    section_id=section_id,
+                    attempt_number=attempt_number,
+                    phase=phase,
+                    code_before=code_before,
+                    code_after=current_code,
+                    elapsed_seconds=elapsed_seconds,
+                    render_error=last_error,
+                    repair_strategy=repair_strategy,
+                    repair_reason=repair_reason,
+                    render_outcome={
+                        "success": False,
+                        "ok": False,
+                        "returncode": result.returncode,
+                        "timed_out": False,
+                    },
+                    command=command,
+                )
+                if not fixed_code:
                     break
             except subprocess.TimeoutExpired as timeout_error:
                 elapsed_seconds = time.perf_counter() - render_started_at
@@ -1252,6 +1368,25 @@ class CoderRuntime:
                     timeout_error=timeout_error,
                 )
                 last_error = f"Render timed out after {elapsed_seconds:.2f}s (limit {render_timeout_seconds}s)."
+                self._write_attempt_record(
+                    section_id=section_id,
+                    attempt_number=attempt_number,
+                    phase=phase,
+                    code_before=code_before,
+                    code_after=current_code,
+                    elapsed_seconds=elapsed_seconds,
+                    render_error=last_error,
+                    repair_strategy="timeout_snapshot",
+                    repair_reason="Render exceeded the configured timeout; diagnostic artifacts were saved.",
+                    render_outcome={
+                        "success": False,
+                        "ok": False,
+                        "returncode": None,
+                        "timed_out": True,
+                        "timeout_artifacts": timeout_artifacts,
+                    },
+                    command=command,
+                )
                 print(
                     f"❌ {topic_prefix}{section_id} timed out after {elapsed_seconds:.2f}s",
                     flush=True,
@@ -1263,13 +1398,34 @@ class CoderRuntime:
                 )
                 break
             except Exception as e:
+                elapsed_seconds = time.perf_counter() - render_started_at
+                last_elapsed_seconds = elapsed_seconds
+                last_error = str(e)
+                self._write_attempt_record(
+                    section_id=section_id,
+                    attempt_number=attempt_number,
+                    phase=phase,
+                    code_before=code_before,
+                    code_after=current_code,
+                    elapsed_seconds=elapsed_seconds,
+                    render_error=last_error,
+                    repair_strategy="runtime_exception",
+                    repair_reason="CoderRuntime raised an exception before completing the repair attempt.",
+                    render_outcome={
+                        "success": False,
+                        "ok": False,
+                        "returncode": None,
+                        "timed_out": False,
+                    },
+                    command=command,
+                )
                 print(f"❌ {topic_prefix}{section_id} failed with exception: {e}", flush=True)
                 break
 
         failure_result = {
             "success": False,
             "status": "failed",
-            "attempts": max_fix_attempts,
+            "attempts": attempts_run,
             "code": current_code,
             "error": last_error,
         }
@@ -1290,6 +1446,7 @@ def _run_coder_runtime_worker(
     max_code_token_length: int,
     section_title: str,
     lecture_lines: List[str],
+    phase: str = "unspecified",
     assets_dir: str = "",
 ) -> Tuple[str, Dict[str, object], Dict[str, object]]:
     for stream_name in ("stdout", "stderr"):
@@ -1331,6 +1488,7 @@ def _run_coder_runtime_worker(
             section_title=section_title,
             lecture_lines=lecture_lines,
             topic=topic,
+            phase=phase,
         )
     except Exception as e:
         result = {
@@ -3456,6 +3614,8 @@ class MASVideoRunner:
             max_fix_attempts=max_fix_attempts,
             section_title=section.title,
             lecture_lines=section.lecture_lines,
+            topic=self.video_state.topic,
+            phase=phase_label,
         )
         self._apply_coder_runtime_result(section_id, result)
         return section_id, result
@@ -3525,6 +3685,7 @@ class MASVideoRunner:
                     "max_code_token_length": self.cfg.max_code_token_length,
                     "section_title": section.title,
                     "lecture_lines": list(section.lecture_lines),
+                    "phase": phase_label,
                     "assets_dir": str(self.assets_dir),
                 }
             )
@@ -3533,7 +3694,13 @@ class MASVideoRunner:
             print(f"[VideoMAS] No sections require coder runtime execution for {phase_label}.")
             return results
 
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Topic-level pipeline parallelism uses threads. Starting this nested
+        # process pool with Linux's default ``fork`` from those threads can
+        # inherit locked SDK/HTTP state and hang. Spawn clean render workers.
+        with ProcessPoolExecutor(
+            max_workers=max_workers,
+            mp_context=multiprocessing.get_context("spawn"),
+        ) as executor:
             futures = {
                 executor.submit(_run_coder_runtime_worker, **task): task["section_id"]
                 for task in tasks

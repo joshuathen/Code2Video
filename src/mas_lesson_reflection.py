@@ -16,6 +16,8 @@ Lesson creation and lesson evaluation are delegated to Gemini.
 from __future__ import annotations
 
 import argparse
+import ast
+import difflib
 import json
 import re
 from collections import Counter
@@ -210,9 +212,83 @@ class SectionAttemptSummary:
     section_id: str
     attempts: int = 0
     scope_refine_attempts: int = 0
+    infrastructure_attempts: int = 0
     successful: bool = False
     elapsed_seconds: float = 0.0
     render_errors: List[str] = field(default_factory=list)
+    attempt_evidence: List[Dict[str, Any]] = field(default_factory=list)
+
+
+def _is_manim_cache_race(render_error: str) -> bool:
+    return (
+        "FileExistsError" in render_error
+        and ("media/texts" in render_error or "media/Tex" in render_error)
+    )
+
+
+def _call_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = _call_name(node.value)
+        return f"{prefix}.{node.attr}" if prefix else node.attr
+    return ""
+
+
+def _summarize_code_calls(code: str, *, max_calls: int = 20) -> List[Dict[str, Any]]:
+    """Extract bounded call-site evidence without placing whole source files in prompts."""
+    if not code.strip():
+        return []
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+
+    calls: Dict[str, Dict[str, Any]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node.func) or "unknown"
+        entry = calls.setdefault(name, {"name": name, "count": 0, "examples": []})
+        entry["count"] += 1
+        if len(entry["examples"]) < 1:
+            source = ast.get_source_segment(code, node) or name
+            entry["examples"].append(_truncate_text(source, max_chars=200))
+
+    return sorted(calls.values(), key=lambda item: (-item["count"], item["name"]))[:max_calls]
+
+
+def _bounded_code_diff(code_before: str, code_after: str, *, max_chars: int = 5000) -> str:
+    if not code_before or not code_after or code_before == code_after:
+        return ""
+    diff = "\n".join(
+        difflib.unified_diff(
+            code_before.splitlines(),
+            code_after.splitlines(),
+            fromfile="code_before.py",
+            tofile="code_after.py",
+            lineterm="",
+            n=3,
+        )
+    )
+    return diff if len(diff) <= max_chars else diff[: max_chars - 3] + "..."
+
+
+def _error_code_excerpt(code: str, render_error: str, *, radius: int = 10) -> str:
+    """Include source around the final traceback line when one is available."""
+    if not code or not render_error:
+        return ""
+    line_numbers = [int(value) for value in re.findall(r"\bline\s+(\d+)\b", render_error)]
+    if not line_numbers:
+        return ""
+    lines = code.splitlines()
+    line_number = line_numbers[-1]
+    start = max(0, line_number - radius - 1)
+    end = min(len(lines), line_number + radius)
+    return "\n".join(
+        f"{idx + 1}: {lines[idx] if len(lines[idx]) <= 300 else lines[idx][:297] + '...'}"
+        for idx in range(start, end)
+    )
 
 
 @dataclass
@@ -337,12 +413,43 @@ def _load_section_attempts(run_dir: Path) -> Dict[str, SectionAttemptSummary]:
         if "scope_refine" in strategy:
             summary.scope_refine_attempts += 1
         render_error = str(payload.get("render_error") or "").strip()
+        is_infrastructure_incident = _is_manim_cache_race(render_error)
+        if is_infrastructure_incident:
+            summary.infrastructure_attempts += 1
         if render_error:
             summary.render_errors.append(render_error)
         render_outcome = payload.get("render_outcome") or {}
         if isinstance(render_outcome, dict):
-            succeeded = bool(render_outcome.get("success"))
+            succeeded = bool(render_outcome.get("success", render_outcome.get("ok", False)))
             summary.successful = summary.successful or succeeded
+        else:
+            render_outcome = {}
+
+        code_before = str(payload.get("code_before") or "")
+        code_after = str(payload.get("code_after") or "")
+        changed_code = bool(payload.get("changed_code", code_before != code_after))
+        attempt_evidence = {
+            "attempt_number": payload.get("attempt_number"),
+            "phase": str(payload.get("phase") or "unspecified"),
+            "elapsed_seconds": round(float(payload.get("elapsed_seconds", 0.0) or 0.0), 3),
+            "render_outcome": {
+                "success": bool(render_outcome.get("success", render_outcome.get("ok", False))),
+                "returncode": render_outcome.get("returncode"),
+                "timed_out": bool(render_outcome.get("timed_out", False)),
+            },
+            "render_error": _truncate_text(render_error, max_chars=1800),
+            "repair_strategy": str(payload.get("repair_strategy") or ""),
+            "repair_reason": _truncate_text(str(payload.get("repair_reason") or ""), max_chars=600),
+            "changed_code": changed_code,
+            "incident_type": "infrastructure" if is_infrastructure_incident else "code_or_render",
+        }
+        if not is_infrastructure_incident:
+            attempt_evidence["calls_before"] = _summarize_code_calls(code_before)
+            attempt_evidence["error_code_excerpt"] = _error_code_excerpt(code_before, render_error)
+        if changed_code and not is_infrastructure_incident:
+            attempt_evidence["calls_after"] = _summarize_code_calls(code_after)
+            attempt_evidence["code_diff"] = _bounded_code_diff(code_before, code_after)
+        summary.attempt_evidence.append(attempt_evidence)
     return summaries
 
 
@@ -514,16 +621,24 @@ def _build_reflection_context(run: RunSummary, state_payload: Dict[str, Any], le
         for lesson in sorted(lessons.values(), key=lambda item: item.lesson_id)
     ]
 
-    section_attempts = {
-        section_id: {
+    section_attempts = {}
+    for section_id, summary in sorted(run.section_attempts.items()):
+        # Preserve both early and late evidence when a section has a long repair
+        # history while keeping the reflection prompt bounded.
+        if len(summary.attempt_evidence) > 12:
+            selected_attempts = summary.attempt_evidence[:4] + summary.attempt_evidence[-8:]
+        else:
+            selected_attempts = summary.attempt_evidence
+        section_attempts[section_id] = {
             "attempts": summary.attempts,
             "scope_refine_attempts": summary.scope_refine_attempts,
+            "infrastructure_attempts": summary.infrastructure_attempts,
             "successful": summary.successful,
             "elapsed_seconds": round(summary.elapsed_seconds, 3),
             "render_errors": summary.render_errors[:5],
+            "attempt_evidence": selected_attempts,
+            "omitted_attempt_evidence_count": summary.attempts - len(selected_attempts),
         }
-        for section_id, summary in sorted(run.section_attempts.items())
-    }
 
     return {
         "run_summary": {
@@ -583,6 +698,11 @@ Important rules:
 - For new lessons, choose action ADD and set lesson_id to null.
 - Weight must be between 0 and 1.
 - Keep evidence short and grounded in the supplied run context only.
+- Inspect section_attempts.attempt_evidence for code-specific patterns, including call sites, traceback-adjacent source, timeouts, and before/after repair diffs.
+- Prefer actionable Coder lessons that name the relevant Manim/Python API or coding pattern when repeated evidence or a successful repair supports that conclusion.
+- Do not claim that a function caused a timeout merely because it appears in the code. Require repeated association, traceback evidence, or a before/after change followed by a successful render.
+- Treat a repair as successful evidence only when a later attempt for the same section renders successfully.
+- Never derive a Coder lesson from attempt evidence whose incident_type is "infrastructure"; it describes the runtime environment rather than generated code.
 
 Return JSON only in this exact shape:
 {{

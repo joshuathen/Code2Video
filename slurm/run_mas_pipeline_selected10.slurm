@@ -30,12 +30,15 @@ if [ -n "$CONTAINER_IMAGE" ]; then
     echo "Container image not found: $CONTAINER_IMAGE" >&2
     exit 1
   fi
-  module load singularity/4.1.0-nompi
+  module load singularity/4.1.0-nompi psc-texlive-2025
   SINGULARITY_JOB_TMP="${TMPDIR:-/tmp}/${USER}-code2video-${SLURM_JOB_ID:-$$}"
   export SINGULARITY_CACHEDIR="$SINGULARITY_JOB_TMP/cache"
   export SINGULARITY_TMPDIR="$SINGULARITY_JOB_TMP/tmp"
-  mkdir -p "$SINGULARITY_CACHEDIR" "$SINGULARITY_TMPDIR"
-  PYTHON_CMD=(singularity exec "$CONTAINER_IMAGE" "$PYTHON_BIN")
+  RUNTIME_BIN="$SINGULARITY_JOB_TMP/runtime-bin"
+  mkdir -p "$SINGULARITY_CACHEDIR" "$SINGULARITY_TMPDIR" "$SINGULARITY_JOB_TMP/media" "$RUNTIME_BIN"
+  TEXLIVE_BIN=$(dirname "$(command -v latex)")
+  TEXLIVE_ROOT=$(CDPATH= cd -- "$TEXLIVE_BIN/../.." && pwd)
+  PYTHON_CMD=(singularity exec --bind "$TEXLIVE_ROOT:$TEXLIVE_ROOT:ro" "$CONTAINER_IMAGE" "$PYTHON_BIN")
 else
   if [ ! -x "$PYTHON_BIN" ]; then
     echo "Python interpreter not found: $PYTHON_BIN" >&2
@@ -46,7 +49,16 @@ fi
 
 export PYTHONPATH="$REPO_ROOT:$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 export SINGULARITYENV_PYTHONPATH="$PYTHONPATH"
-export SINGULARITYENV_PATH="$(dirname "$PYTHON_BIN"):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export SINGULARITYENV_PATH="${RUNTIME_BIN:+$RUNTIME_BIN:}${TEXLIVE_BIN:+$TEXLIVE_BIN:}$(dirname "$PYTHON_BIN"):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+if [ -n "$CONTAINER_IMAGE" ]; then
+  FFMPEG_BIN=$("${PYTHON_CMD[@]}" -c 'from imageio_ffmpeg import get_ffmpeg_exe; print(get_ffmpeg_exe())')
+  ln -sf "$FFMPEG_BIN" "$RUNTIME_BIN/ffmpeg"
+  (
+    cd "$SINGULARITY_JOB_TMP"
+    "${PYTHON_CMD[@]}" -c 'import os, shutil; from imageio_ffmpeg import get_ffmpeg_exe; from manim import MathTex; required=("latex", "dvisvgm"); missing=[name for name in required if not shutil.which(name)]; assert not missing, f"Missing render tools: {missing}"; ffmpeg=shutil.which("ffmpeg") or get_ffmpeg_exe(); assert ffmpeg and os.access(ffmpeg, os.X_OK), "No usable ffmpeg executable"; MathTex(r"x^2 + y^2"); print("MAS render preflight passed: LaTeX, dvisvgm, and ffmpeg are available.")'
+  )
+fi
 
 # Curated 10-topic MAS pipeline defaults. Override via exported env vars
 # before sbatch if you want to tweak the run.
