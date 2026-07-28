@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=code2video-mas-selected10-lessons
+#SBATCH --job-name=code2video-mas-selected10-beliefs
 #SBATCH --time=24:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -60,7 +60,7 @@ if [ -n "$CONTAINER_IMAGE" ]; then
   )
 fi
 
-# Curated 10-topic MAS pipeline defaults, with prompt lesson injection enabled.
+# Curated 10-topic MAS pipeline defaults, with prompt belief injection enabled.
 # Override via exported env vars before sbatch if needed.
 KNOWLEDGE_FILE="${KNOWLEDGE_FILE:-json_files/agent_selected_topics_10.json}"
 MAX_TOPICS="${MAX_TOPICS:--1}"
@@ -87,10 +87,10 @@ WORKER_MODEL="$MAS_MODEL"
 ORCHESTRATOR_MODEL="$MAS_MODEL"
 TOPIC_PARALLEL_WORKERS="${TOPIC_PARALLEL_WORKERS:-1}"
 
-INJECT_LESSONS_INTO_PROMPTS="${INJECT_LESSONS_INTO_PROMPTS:-1}"
-LESSON_LIBRARY_PATH="${LESSON_LIBRARY_PATH:-}"
-TOP_GENERAL_LESSONS="${TOP_GENERAL_LESSONS:-10}"
-TOP_SPECIALIZED_LESSONS="${TOP_SPECIALIZED_LESSONS:-10}"
+INJECT_BELIEFS_INTO_PROMPTS="${INJECT_BELIEFS_INTO_PROMPTS:-1}"
+BELIEF_LIBRARY_PATH="${BELIEF_LIBRARY_PATH:-}"
+TOP_GENERAL_BELIEFS="${TOP_GENERAL_BELIEFS:-10}"
+TOP_SPECIALIZED_BELIEFS="${TOP_SPECIALIZED_BELIEFS:-10}"
 
 CMD=(
   "${PYTHON_CMD[@]}" src/main.py
@@ -109,18 +109,18 @@ CMD=(
   --max_retries "$MAX_RETRIES"
   --worker_model "$WORKER_MODEL"
   --orchestrator_model "$ORCHESTRATOR_MODEL"
-  --top_general_lessons "$TOP_GENERAL_LESSONS"
-  --top_specialized_lessons "$TOP_SPECIALIZED_LESSONS"
+  --top_general_beliefs "$TOP_GENERAL_BELIEFS"
+  --top_specialized_beliefs "$TOP_SPECIALIZED_BELIEFS"
 )
 
-if [ "${INJECT_LESSONS_INTO_PROMPTS:-0}" = "1" ]; then
-  CMD+=(--inject_lessons_into_prompts)
+if [ "${INJECT_BELIEFS_INTO_PROMPTS:-0}" = "1" ]; then
+  CMD+=(--inject_beliefs_into_prompts)
 else
-  CMD+=(--no_inject_lessons_into_prompts)
+  CMD+=(--no_inject_beliefs_into_prompts)
 fi
 
-if [ -n "$LESSON_LIBRARY_PATH" ]; then
-  CMD+=(--lesson_library_path "$LESSON_LIBRARY_PATH")
+if [ -n "$BELIEF_LIBRARY_PATH" ]; then
+  CMD+=(--belief_library_path "$BELIEF_LIBRARY_PATH")
 fi
 
 if [ -n "${QUESTIONS_JSON:-}" ]; then
@@ -155,7 +155,7 @@ if [ -n "${CASE_INDEX:-}" ]; then
   CMD+=(--case_index "$CASE_INDEX")
 fi
 
-echo "Starting selected-10 MAS generation+evaluation pipeline with lesson injection at $(date)"
+echo "Starting selected-10 MAS generation+evaluation pipeline with belief injection at $(date)"
 echo "Repository: $REPO_ROOT"
 echo "Python: $PYTHON_BIN"
 echo "Container: ${CONTAINER_IMAGE:-<none>}"
@@ -166,14 +166,14 @@ echo "Repair model: $REPAIR_MODEL"
 echo "Evaluation model: $EVAL_MODEL"
 echo "Max topics: $MAX_TOPICS"
 echo "Topic parallel workers: $TOPIC_PARALLEL_WORKERS"
-echo "Inject lessons into prompts: $INJECT_LESSONS_INTO_PROMPTS"
-if [ -n "$LESSON_LIBRARY_PATH" ]; then
-  echo "Lesson library override: $LESSON_LIBRARY_PATH"
+echo "Inject beliefs into prompts: $INJECT_BELIEFS_INTO_PROMPTS"
+if [ -n "$BELIEF_LIBRARY_PATH" ]; then
+  echo "Belief library override: $BELIEF_LIBRARY_PATH"
 else
-  echo "Lesson library override: <latest under mas_logs>"
+  echo "Belief library override: <latest under mas_logs>"
 fi
-echo "Top general lessons: $TOP_GENERAL_LESSONS"
-echo "Top specialized lessons: $TOP_SPECIALIZED_LESSONS"
+echo "Top general beliefs: $TOP_GENERAL_BELIEFS"
+echo "Top specialized beliefs: $TOP_SPECIALIZED_BELIEFS"
 echo "Command: ${CMD[*]}"
 
 "${CMD[@]}"

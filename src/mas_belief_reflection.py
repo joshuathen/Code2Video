@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Build and update an LLM-driven MAS lesson library from run artifacts.
+"""Build and update an LLM-driven MAS belief library from run artifacts.
 
 This utility analyses one MAS run or a full pipeline, prepares condensed run
-evidence, asks Gemini for structured lesson assessments, and persists the
-resulting lesson library over repeated runs.
+evidence, asks Gemini for structured belief assessments, and persists the
+resulting belief library over repeated runs.
 
 The deterministic parts of the script only:
 - collect run artifacts into a stable summary
-- maintain lesson evidence counts and Bayesian confidence
+- maintain belief evidence counts and Bayesian confidence
 - write analysis/library JSON files
 
-Lesson creation and lesson evaluation are delegated to Gemini.
+Belief creation and belief evaluation are delegated to Gemini.
 """
 
 from __future__ import annotations
@@ -19,32 +19,93 @@ import argparse
 import ast
 import difflib
 import json
+import math
+import os
 import re
 from collections import Counter
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from statistics import mean
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
 
-from gpt_request import cfg, request_gemini_token
-from utils import extract_answer_from_response, extract_json_from_markdown
-
+from google.genai import Client
+from pydantic import BaseModel, Field
+from mas_interactions import create_interaction, response_usage_dict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_CFG_PATH = Path(__file__).with_name("api_config.json")
+
+
+def cfg(service: str, key: str, default: Any = None) -> Any:
+    """Read only the lightweight configuration needed by this utility."""
+    env_value = os.getenv(f"{service}_{key}".upper())
+    if env_value is not None:
+        return env_value
+    try:
+        with _CFG_PATH.open("r", encoding="utf-8") as config_file:
+            config_payload = json.load(config_file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return default
+    service_payload = config_payload.get(service, {})
+    if not isinstance(service_payload, dict):
+        return default
+    return service_payload.get(key, default)
+
+
 DEFAULT_LOGS_ROOT = PROJECT_ROOT / "mas_logs"
-DEFAULT_LIBRARY_FILENAME = "lesson_library.json"
-DEFAULT_ANALYSIS_FILENAME = "lesson_analysis.json"
+DEFAULT_LIBRARY_FILENAME = "belief_library.json"
+DEFAULT_ANALYSIS_FILENAME = "belief_analysis.json"
 DEFAULT_REFLECTION_MODEL = cfg("gemini", "model", "gemini-3-flash-preview")
 
 ACTION_ADD = "ADD"
 ACTION_SUPPORT = "SUPPORT"
 ACTION_CONTRADICT = "CONTRADICT"
 ACTION_IRRELEVANT = "IRRELEVANT"
+ACTION_REVISE = "REVISE"
+ACTION_MERGE = "MERGE"
+VALID_ACTIONS = {
+    ACTION_ADD,
+    ACTION_SUPPORT,
+    ACTION_CONTRADICT,
+    ACTION_IRRELEVANT,
+    ACTION_REVISE,
+    ACTION_MERGE,
+}
 
 STATUS_ACTIVE = "active"
 STATUS_PROBATION = "probation"
 STATUS_DEPRECATED = "deprecated"
+
+IMPACT_LEVELS = {"low": 0.25, "medium": 0.5, "high": 0.8, "critical": 1.0}
+BELIEF_TYPES = {"confirmed", "precaution", "hypothesis", "quality"}
+BELIEF_TIMINGS = {"preventative", "reactive", "both"}
+
+
+def _normalize_impact(value: Any) -> str:
+    normalized = str(value or "medium").strip().lower()
+    return normalized if normalized in IMPACT_LEVELS else "medium"
+
+
+def _normalize_belief_type(value: Any) -> str:
+    normalized = str(value or "confirmed").strip().lower()
+    return normalized if normalized in BELIEF_TYPES else "confirmed"
+
+
+def _normalize_belief_timing(value: Any) -> str:
+    # Legacy libraries predate timing classification. Treating those beliefs
+    # as usable in both contexts preserves their previous behaviour.
+    normalized = str(value or "both").strip().lower()
+    return normalized if normalized in BELIEF_TIMINGS else "both"
+
+
+def _impact_max(first: str, second: str) -> str:
+    return max((_normalize_impact(first), _normalize_impact(second)), key=lambda item: IMPACT_LEVELS[item])
+
+
+def _belief_type_max(first: str, second: str) -> str:
+    order = {"hypothesis": 0, "quality": 1, "precaution": 2, "confirmed": 3}
+    return max((_normalize_belief_type(first), _normalize_belief_type(second)), key=lambda item: order[item])
 
 
 def _read_json(path: Path) -> Dict[str, Any]:
@@ -56,28 +117,6 @@ def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
-
-
-def _parse_first_json_object(text: str) -> Dict[str, Any]:
-    cleaned = extract_json_from_markdown(text).strip()
-
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        pass
-
-    decoder = json.JSONDecoder()
-    for idx, char in enumerate(cleaned):
-        if char != "{":
-            continue
-        try:
-            payload, _end = decoder.raw_decode(cleaned[idx:])
-            if isinstance(payload, dict):
-                return payload
-        except json.JSONDecodeError:
-            continue
-
-    raise ValueError(f"Could not parse JSON object from model response: {cleaned[:1000]}")
 
 
 def _coerce_evidence_payload(value: Any) -> Dict[str, Any]:
@@ -157,16 +196,15 @@ def _status_from_counts(
 
 
 @dataclass
-class LessonScope:
-    level: str = "general"
+class BeliefScope:
     roles: List[str] = field(default_factory=list)
 
 
 @dataclass
-class LessonRecord:
-    lesson_id: str
+class BeliefRecord:
+    belief_id: str
     instruction: str
-    scope: LessonScope
+    scope: BeliefScope
     status: str = STATUS_ACTIVE
     alpha: float = 1.0
     beta: float = 1.0
@@ -177,12 +215,24 @@ class LessonRecord:
     weighted_support: float = 0.0
     weighted_contradiction: float = 0.0
     confidence: float = 0.5
+    impact: str = "medium"
+    priority: float = 0.0
+    belief_type: str = "confirmed"
+    timing: str = "both"
     created_from_run: Optional[str] = None
     observed_runs: List[str] = field(default_factory=list)
     evidence: List[Dict[str, Any]] = field(default_factory=list)
 
     def update_confidence(self) -> None:
         self.confidence = round(self.alpha / (self.alpha + self.beta), 4)
+        support_signal = min(1.0, math.log1p(self.support_count) / math.log(11.0))
+        self.impact = _normalize_impact(self.impact)
+        self.belief_type = _normalize_belief_type(self.belief_type)
+        self.timing = _normalize_belief_timing(self.timing)
+        self.priority = round(
+            0.5 * self.confidence + 0.3 * IMPACT_LEVELS[self.impact] + 0.2 * support_signal,
+            4,
+        )
         self.status = _status_from_counts(
             contradiction_count=self.contradiction_count,
             confidence=self.confidence,
@@ -190,21 +240,57 @@ class LessonRecord:
 
 
 @dataclass
-class LessonAssessment:
+class BeliefAssessment:
     run_id: str
-    lesson_id: Optional[str]
+    belief_id: Optional[str]
     instruction: str
     applicable: bool
     compliance: str
     outcome: str
     action: str
     weight: float
-    scope: LessonScope
+    scope: BeliefScope
+    evidence_confidence: float = 0.5
+    impact: str = "medium"
+    belief_type: str = "confirmed"
+    timing: str = "both"
     agent: Optional[str] = None
     section_id: Optional[str] = None
     reason: str = ""
     evidence_event_ids: List[str] = field(default_factory=list)
     evidence: Dict[str, Any] = field(default_factory=dict)
+    merge_belief_ids: List[str] = field(default_factory=list)
+
+
+class ReflectionScopePayload(BaseModel):
+    roles: List[Literal["Orchestrator", "Coder", "AnimationPlanner", "ScriptWriter"]] = Field(
+        min_length=1
+    )
+
+
+class ReflectionAssessmentPayload(BaseModel):
+    belief_id: Optional[str] = None
+    instruction: str
+    scope: ReflectionScopePayload
+    applicable: bool
+    compliance: Literal["followed", "violated", "mixed", "unclear", "observed_pattern"]
+    outcome: Literal["positive", "negative", "mixed", "unclear"]
+    action: Literal["ADD", "SUPPORT", "CONTRADICT", "IRRELEVANT", "REVISE", "MERGE"]
+    merge_belief_ids: List[str] = Field(default_factory=list)
+    evidence_confidence: float = Field(ge=0.0, le=1.0)
+    impact: Literal["low", "medium", "high", "critical"]
+    belief_type: Literal["confirmed", "precaution", "hypothesis", "quality"]
+    timing: Literal["preventative", "reactive", "both"]
+    agent: Optional[Literal["Orchestrator", "Coder", "AnimationPlanner", "ScriptWriter"]] = None
+    section_id: Optional[str] = None
+    reason: str
+    # Gemini structured output does not support free-form object schemas because
+    # Pydantic represents them with JSON Schema `additionalProperties`.
+    evidence: str = ""
+
+
+class ReflectionResponsePayload(BaseModel):
+    assessments: List[ReflectionAssessmentPayload]
 
 
 @dataclass
@@ -279,6 +365,7 @@ def _error_code_excerpt(code: str, render_error: str, *, radius: int = 10) -> st
     if not code or not render_error:
         return ""
     line_numbers = [int(value) for value in re.findall(r"\bline\s+(\d+)\b", render_error)]
+    line_numbers.extend(int(value) for value in re.findall(r"\.py:(\d+)\b", render_error))
     if not line_numbers:
         return ""
     lines = code.splitlines()
@@ -315,7 +402,7 @@ class RunSummary:
     video_review_issue_count: int
     issue_counts_by_role: Dict[str, int] = field(default_factory=dict)
     section_attempts: Dict[str, SectionAttemptSummary] = field(default_factory=dict)
-    lesson_assessments: List[LessonAssessment] = field(default_factory=list)
+    belief_assessments: List[BeliefAssessment] = field(default_factory=list)
     reflection_model: Optional[str] = None
     reflection_usage: Dict[str, int] = field(default_factory=dict)
 
@@ -324,18 +411,21 @@ class RunSummary:
         return (self.render_ok_count / self.render_total) if self.render_total else 0.0
 
 
-def _lesson_scope_from_dict(payload: Dict[str, Any]) -> LessonScope:
-    return LessonScope(
-        level=str(payload.get("level", "general")),
-        roles=[str(item) for item in payload.get("roles", [])],
-    )
+def _belief_scope_from_dict(payload: Dict[str, Any]) -> BeliefScope:
+    roles = [str(item) for item in payload.get("roles", []) if str(item).strip()]
+    # Backward compatibility for libraries written before explicit multi-role
+    # scope was required. Legacy general beliefs with no roles applied to all
+    # MAS generation roles.
+    if not roles and str(payload.get("level") or "").strip() == "general":
+        roles = ["Orchestrator", "Coder", "AnimationPlanner", "ScriptWriter"]
+    return BeliefScope(roles=roles)
 
 
-def _record_from_dict(payload: Dict[str, Any]) -> LessonRecord:
-    record = LessonRecord(
-        lesson_id=str(payload["lesson_id"]),
+def _record_from_dict(payload: Dict[str, Any]) -> BeliefRecord:
+    record = BeliefRecord(
+        belief_id=str(payload.get("belief_id", payload.get("lesson_id"))),
         instruction=str(payload["instruction"]),
-        scope=_lesson_scope_from_dict(payload.get("scope", {})),
+        scope=_belief_scope_from_dict(payload.get("scope", {})),
         status=str(payload.get("status", STATUS_ACTIVE)),
         alpha=float(payload.get("alpha", 1.0)),
         beta=float(payload.get("beta", 1.0)),
@@ -346,6 +436,12 @@ def _record_from_dict(payload: Dict[str, Any]) -> LessonRecord:
         weighted_support=float(payload.get("weighted_support", 0.0)),
         weighted_contradiction=float(payload.get("weighted_contradiction", 0.0)),
         confidence=float(payload.get("confidence", 0.5)),
+        impact=_normalize_impact(payload.get("impact", "medium")),
+        priority=float(payload.get("priority", 0.0)),
+        belief_type=_normalize_belief_type(
+            payload.get("belief_type", payload.get("lesson_type", "confirmed"))
+        ),
+        timing=_normalize_belief_timing(payload.get("timing", "both")),
         created_from_run=payload.get("created_from_run"),
         observed_runs=[str(item) for item in payload.get("observed_runs", [])],
         evidence=list(payload.get("evidence", [])),
@@ -367,19 +463,19 @@ def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
     return rows
 
 
-def load_library(path: Path) -> Dict[str, LessonRecord]:
+def load_library(path: Path) -> Dict[str, BeliefRecord]:
     if path.exists():
         payload = _read_json(path)
-        lessons = payload.get("lessons", payload)
-        records = [_record_from_dict(item) for item in lessons]
-        return {record.lesson_id: record for record in records}
+        beliefs = payload.get("beliefs", payload.get("lessons", payload))
+        records = [_record_from_dict(item) for item in beliefs]
+        return {record.belief_id: record for record in records}
     return {}
 
 
-def save_library(path: Path, lessons: Dict[str, LessonRecord], metadata: Dict[str, Any]) -> None:
+def save_library(path: Path, beliefs: Dict[str, BeliefRecord], metadata: Dict[str, Any]) -> None:
     payload = {
         "metadata": metadata,
-        "lessons": [asdict(lesson) for lesson in sorted(lessons.values(), key=lambda item: item.lesson_id)],
+        "beliefs": [asdict(belief) for belief in sorted(beliefs.values(), key=lambda item: item.belief_id)],
     }
     _write_json(path, payload)
 
@@ -399,6 +495,31 @@ def _find_final_state_json(run_dir: Path) -> Optional[Path]:
         run_dir / "mas_state" / "final_render_pass_video_state.json",
     ]
     return _first_existing(candidates)
+
+
+def _load_timeout_diagnostics(run_dir: Path, render_outcome: Dict[str, Any]) -> Dict[str, Any]:
+    if not bool(render_outcome.get("timed_out", False)):
+        return {}
+    artifacts = render_outcome.get("timeout_artifacts") or {}
+    metadata_value = artifacts.get("metadata_path")
+    if not metadata_value:
+        return {}
+    metadata_path = Path(str(metadata_value)).expanduser()
+    if not metadata_path.is_absolute():
+        metadata_path = run_dir / metadata_path
+    try:
+        metadata_path = metadata_path.resolve()
+        metadata_path.relative_to(run_dir.resolve())
+        metadata = _read_json(metadata_path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+    return {
+        "elapsed_seconds": metadata.get("elapsed_seconds"),
+        "timeout_seconds": metadata.get("timeout_seconds"),
+        "command": metadata.get("command"),
+        "stdout_tail": _truncate_text(str(metadata.get("stdout") or "")[-4000:], max_chars=4000),
+        "stderr_tail": _truncate_text(str(metadata.get("stderr") or "")[-6000:], max_chars=6000),
+    }
 
 
 def _load_section_attempts(run_dir: Path) -> Dict[str, SectionAttemptSummary]:
@@ -425,6 +546,8 @@ def _load_section_attempts(run_dir: Path) -> Dict[str, SectionAttemptSummary]:
         else:
             render_outcome = {}
 
+        timeout_diagnostics = _load_timeout_diagnostics(run_dir, render_outcome)
+
         code_before = str(payload.get("code_before") or "")
         code_after = str(payload.get("code_after") or "")
         changed_code = bool(payload.get("changed_code", code_before != code_after))
@@ -443,9 +566,19 @@ def _load_section_attempts(run_dir: Path) -> Dict[str, SectionAttemptSummary]:
             "changed_code": changed_code,
             "incident_type": "infrastructure" if is_infrastructure_incident else "code_or_render",
         }
+        if timeout_diagnostics:
+            attempt_evidence["timeout_diagnostics"] = timeout_diagnostics
         if not is_infrastructure_incident:
             attempt_evidence["calls_before"] = _summarize_code_calls(code_before)
-            attempt_evidence["error_code_excerpt"] = _error_code_excerpt(code_before, render_error)
+            diagnostic_error = "\n".join(
+                value
+                for value in (
+                    render_error,
+                    str(timeout_diagnostics.get("stderr_tail") or ""),
+                )
+                if value
+            )
+            attempt_evidence["error_code_excerpt"] = _error_code_excerpt(code_before, diagnostic_error)
         if changed_code and not is_infrastructure_incident:
             attempt_evidence["calls_after"] = _summarize_code_calls(code_after)
             attempt_evidence["code_diff"] = _bounded_code_diff(code_before, code_after)
@@ -517,6 +650,96 @@ def _summarize_video_review(video_review: Any) -> List[Dict[str, Any]]:
         if section_entry["issues"]:
             summary.append(section_entry)
     return summary
+
+
+def _summarize_storyboard(storyboard: Any) -> Dict[str, Any]:
+    if not isinstance(storyboard, list):
+        return {"section_count": 0, "empty_sections": [], "count_mismatches": [], "sections": []}
+
+    sections: List[Dict[str, Any]] = []
+    empty_sections: List[str] = []
+    count_mismatches: List[Dict[str, Any]] = []
+    for raw_section in storyboard:
+        if not isinstance(raw_section, dict):
+            continue
+        section_id = str(raw_section.get("id") or "")
+        lecture_lines = [str(value) for value in (raw_section.get("lecture_lines") or [])]
+        animations = [str(value) for value in (raw_section.get("animations") or [])]
+        if not lecture_lines or not animations:
+            empty_sections.append(section_id)
+        if len(lecture_lines) != len(animations):
+            count_mismatches.append(
+                {
+                    "section_id": section_id,
+                    "lecture_line_count": len(lecture_lines),
+                    "animation_count": len(animations),
+                }
+            )
+        paired_steps = []
+        for index in range(max(len(lecture_lines), len(animations))):
+            paired_steps.append(
+                {
+                    "step": index + 1,
+                    "lecture_line": _truncate_text(lecture_lines[index], 220) if index < len(lecture_lines) else None,
+                    "animation": _truncate_text(animations[index], 280) if index < len(animations) else None,
+                }
+            )
+        sections.append(
+            {
+                "section_id": section_id,
+                "title": _truncate_text(str(raw_section.get("title") or ""), 160),
+                "lecture_line_count": len(lecture_lines),
+                "animation_count": len(animations),
+                "paired_steps": paired_steps,
+            }
+        )
+    return {
+        "section_count": len(sections),
+        "empty_sections": empty_sections,
+        "count_mismatches": count_mismatches,
+        "sections": sections,
+    }
+
+
+def _summarize_evaluation(eval_payload: Dict[str, Any]) -> Dict[str, Any]:
+    aes = eval_payload.get("aes") or {}
+    tq = eval_payload.get("tq") or {}
+    aes_result = aes.get("result") or {}
+    tq_result = tq.get("result") or {}
+
+    aes_scores = {
+        key: value
+        for key, value in aes_result.items()
+        if key not in {"detailed_feedback", "knowledge_point"} and isinstance(value, (int, float))
+    }
+    detailed_responses: Dict[str, List[str]] = {}
+    for stage, responses in (tq_result.get("detailed_responses") or {}).items():
+        if not isinstance(responses, list):
+            continue
+        detailed_responses[str(stage)] = [_truncate_text(str(value), 500) for value in responses[:10]]
+
+    return {
+        "success": eval_payload.get("success"),
+        "aes": {
+            "ok": aes.get("ok"),
+            "scores": aes_scores,
+            "knowledge_point": aes_result.get("knowledge_point"),
+            "detailed_feedback": _truncate_text(str(aes_result.get("detailed_feedback") or ""), 6000),
+            "error": _truncate_text(str(aes.get("error") or ""), 1000),
+        },
+        "tq": {
+            "ok": tq.get("ok"),
+            "concept": tq_result.get("concept") or eval_payload.get("tq_concept"),
+            "pre_unlearning_score": tq_result.get("pre_unlearning_score"),
+            "post_unlearning_score": tq_result.get("post_unlearning_score"),
+            "post_video_score": tq_result.get("post_video_score"),
+            "learning_gain": tq_result.get("learning_gain"),
+            "unlearning_success": tq_result.get("unlearning_success"),
+            "detailed_responses": detailed_responses,
+            "report": _truncate_text(str(tq.get("report") or ""), 3000),
+            "error": _truncate_text(str(tq.get("error") or ""), 1000),
+        },
+    }
 
 
 def _summarize_function_trace(
@@ -606,19 +829,23 @@ def _summarize_issues(issues: List[Dict[str, Any]], *, max_items: int = 20) -> D
     return {"unresolved": unresolved, "resolved": resolved}
 
 
-def _build_reflection_context(run: RunSummary, state_payload: Dict[str, Any], lessons: Dict[str, LessonRecord]) -> Dict[str, Any]:
-    existing_lessons = [
+def _build_reflection_context(run: RunSummary, state_payload: Dict[str, Any], beliefs: Dict[str, BeliefRecord]) -> Dict[str, Any]:
+    existing_beliefs = [
         {
-            "lesson_id": lesson.lesson_id,
-            "instruction": lesson.instruction,
-            "scope": asdict(lesson.scope),
-            "status": lesson.status,
-            "confidence": lesson.confidence,
-            "support_count": lesson.support_count,
-            "contradiction_count": lesson.contradiction_count,
-            "relevant_count": lesson.relevant_count,
+            "belief_id": belief.belief_id,
+            "instruction": belief.instruction,
+            "scope": asdict(belief.scope),
+            "status": belief.status,
+            "confidence": belief.confidence,
+            "impact": belief.impact,
+            "priority": belief.priority,
+            "belief_type": belief.belief_type,
+            "timing": belief.timing,
+            "support_count": belief.support_count,
+            "contradiction_count": belief.contradiction_count,
+            "relevant_count": belief.relevant_count,
         }
-        for lesson in sorted(lessons.values(), key=lambda item: item.lesson_id)
+        for belief in sorted(beliefs.values(), key=lambda item: item.belief_id)
     ]
 
     section_attempts = {}
@@ -669,60 +896,113 @@ def _build_reflection_context(run: RunSummary, state_payload: Dict[str, Any], le
             for section_id, role_name in (state_payload.get("coder_assignments") or {}).items()
         },
         "issues": _summarize_issues(state_payload.get("issues") or []),
+        "storyboard_summary": _summarize_storyboard(state_payload.get("storyboard")),
+        "evaluation_summary": _summarize_evaluation(
+            _read_json(eval_path) if (eval_path := _find_eval_json(Path(run.run_dir))) is not None else {}
+        ),
         "section_attempts": section_attempts,
         "video_review_summary": _summarize_video_review(state_payload.get("video_review")),
         "function_trace_summary": _summarize_function_trace(Path(run.run_dir)),
-        "existing_lessons": existing_lessons,
+        "existing_beliefs": existing_beliefs,
     }
 
 
 def _build_reflection_prompt(run: RunSummary, context_payload: Dict[str, Any]) -> str:
     context_json = json.dumps(context_payload, ensure_ascii=False, indent=2)
     return f"""
-You are maintaining a reusable lesson library for a multi-agent MAS pipeline.
+You are maintaining a reusable belief library for a multi-agent MAS pipeline.
 
 Your job:
 1. Read the run evidence carefully.
-2. Evaluate existing lessons when relevant.
-3. Create new lessons organically when the run contains reusable evidence.
+2. Evaluate existing beliefs when relevant.
+3. Create new beliefs organically when the run contains reusable evidence.
 
 Important rules:
-- All lesson generation and lesson management must be evidence-based.
-- Do not rely on predefined starter lessons.
-- Scope lessons by role, not by agent instance. Example: use "Coder", never "Coder3".
-- Scope schema must be simple: {{"level": "general" or "role_specific", "roles": ["Coder"]}}
-- Do not add extra scope fields beyond level and roles.
-- Each lesson must be actionable, general, concise, and reusable across runs.
-- Avoid duplicates or near-duplicates of existing lessons.
-- For existing lessons, choose one action: SUPPORT, CONTRADICT, IRRELEVANT.
-- For new lessons, choose action ADD and set lesson_id to null.
-- Weight must be between 0 and 1.
+- All belief generation and belief management must be evidence-based.
+- Do not rely on predefined starter beliefs.
+- Scope beliefs by role, not by agent instance. Example: use "Coder", never "Coder3".
+- Every belief must list one or more explicitly applicable roles. A cross-role belief lists every applicable role; there is no "general" scope.
+- Scope schema must be exactly: {{"roles": ["Coder"]}} or, for a cross-role belief, {{"roles": ["ScriptWriter", "AnimationPlanner"]}}.
+- Do not leave roles empty and do not add extra scope fields.
+- Each belief must be actionable, general, concise, and reusable across runs.
+- Base every belief on explicit evidence in the supplied context. Clearly distinguish observed facts from inferred causes.
+- Only claim that an action fixed a problem when the evidence shows that action occurred and was followed by an improved outcome. A later success alone does not prove causation.
+- Prefer beliefs that identify the underlying reusable mechanism rather than a topic-specific symptom, fixed numerical threshold, section number, or isolated example.
+- Generalize only as far as the evidence supports. Preserve uncertainty when multiple explanations remain plausible.
+- Before adding a belief, compare it with existing beliefs. SUPPORT, REVISE, MERGE, or CONTRADICT an existing belief when appropriate instead of creating a near-duplicate.
+- When evidence contradicts part of an existing belief, narrow or revise the belief rather than supporting it unchanged.
+- Evaluate belief importance separately from evidence confidence. Consider failure severity, recovery cost, repeated work, and downstream impact, not only how frequently a pattern appears.
+- Do not dismiss an event solely because it occurred once. For a rare high-impact event with uncertain causality, create a cautiously worded precaution or hypothesis rather than asserting an unproven universal rule.
+- Use belief_type "confirmed" for demonstrated mechanisms, "precaution" for safe mitigations to rare costly risks, "hypothesis" for unresolved patterns that should not yet guide agents, and "quality" for non-failing output improvements.
+- Classify every belief's timing as "preventative", "reactive", or "both":
+  - preventative: guidance primarily useful before execution to avoid a foreseeable failure or quality defect;
+  - reactive: recovery or fallback guidance that should only be applied after a matching observed failure;
+  - both: guidance that is safe and useful before execution and is also a direct repair for a matching failure.
+- Prefer reactive for fallbacks, degradation strategies, retries, and recovery actions whose premature use could reduce quality. Do not choose both merely because a belief could theoretically be remembered before a failure.
+- Before assigning timing, apply this counterfactual test to the exact instruction as written:
+  1. Does following it require an observed failure, timeout, unsuccessful attempt, or diagnosed quality defect?
+  2. Would following it before such evidence unnecessarily constrain a valid approach or reduce quality/capability?
+  3. Is the exact same action, without changing its conditions or strength, appropriate both before execution and after a matching failure?
+- Choose reactive when either of the first two answers is yes. Choose both only when the third answer is clearly yes. Otherwise choose preventative.
+- Set evidence_confidence from the strength of the causal evidence. Set impact from the likely consequence if the event recurs. The system calculates final injection priority separately.
+- Assign impact using these consequence-based definitions:
+  - critical: can terminate the pipeline, corrupt or lose outputs, make a run unrecoverable, or create an uncontrolled external effect;
+  - high: causes a timeout, exhausts or is likely to exhaust retries, repeatedly blocks progress, or creates substantial compute or API cost;
+  - medium: causes a deterministic but recoverable failure that normally requires a repair or retry;
+  - low: affects presentation quality, style, clarity, or minor efficiency without preventing successful completion.
+- Do not mark a belief high or critical merely because an exception occurred. Base impact on the observed or reasonably expected operational consequence, independently of confidence and frequency.
+- Prefer a small set of distinct, high-value beliefs over many overlapping low-impact beliefs.
+- Perform a consolidation pass before returning assessments. Compare proposed beliefs with every existing belief and with each other by underlying mechanism and mitigation, not merely by wording.
+- If an existing belief already covers the same mechanism, use SUPPORT instead of ADD.
+- If new evidence changes the appropriate scope, specificity, or wording of an existing belief, use REVISE instead of adding a variant.
+- If multiple existing beliefs describe the same underlying mechanism or substantially overlapping mitigations, use MERGE and provide one complete consolidated instruction.
+- Prefer one adaptable principle over separate beliefs for different examples, fixed coordinates, numeric thresholds, API instances, or topic-specific manifestations of the same mechanism.
+- Do not merge beliefs that have genuinely different causes, consequences, roles, or required mitigations merely to reduce the belief count.
+- Produce at most one ADD assessment for each distinct underlying mechanism found in the current run.
+- Consider evidence and potential beliefs for every participating role. Do not default to the role with the most detailed logs.
+- For existing beliefs, choose one action: SUPPORT, CONTRADICT, IRRELEVANT, REVISE, or MERGE.
+- For new beliefs, choose action ADD and set belief_id to null.
+- For REVISE, belief_id must identify the belief to rewrite and instruction must contain the complete replacement instruction.
+- For MERGE, belief_id must identify the surviving belief, merge_belief_ids must identify the other existing beliefs to absorb, and instruction must contain the complete consolidated instruction.
+- Evidence confidence must be between 0 and 1.
 - Keep evidence short and grounded in the supplied run context only.
 - Inspect section_attempts.attempt_evidence for code-specific patterns, including call sites, traceback-adjacent source, timeouts, and before/after repair diffs.
-- Prefer actionable Coder lessons that name the relevant Manim/Python API or coding pattern when repeated evidence or a successful repair supports that conclusion.
+- Prefer actionable Coder beliefs that name the relevant Manim/Python API or coding pattern when repeated evidence or a successful repair supports that conclusion.
 - Do not claim that a function caused a timeout merely because it appears in the code. Require repeated association, traceback evidence, or a before/after change followed by a successful render.
 - Treat a repair as successful evidence only when a later attempt for the same section renders successfully.
-- Never derive a Coder lesson from attempt evidence whose incident_type is "infrastructure"; it describes the runtime environment rather than generated code.
+- Never derive a Coder belief from attempt evidence whose incident_type is "infrastructure"; it describes the runtime environment rather than generated code.
+
+Before returning each assessment, verify:
+1. What was directly observed?
+2. What causal relationship, if any, was demonstrated?
+3. Is the belief more general than the evidence permits?
+4. Does an existing belief already cover it?
+5. Is its proposed importance proportional to its likely impact?
+6. Does it overlap with another proposed or existing belief that should be supported, revised, or merged instead?
+7. Is its timing genuinely preventative, reactive, or useful in both contexts?
 
 Return JSON only in this exact shape:
 {{
   "assessments": [
     {{
-      "lesson_id": "L001" or null,
-      "instruction": "Actionable lesson text",
+      "belief_id": "B001" or null,
+      "instruction": "Actionable belief text",
       "scope": {{
-        "level": "general" or "role_specific",
-        "roles": ["Orchestrator"] or ["Coder"] or ["AnimationPlanner"] or ["ScriptWriter"]
+        "roles": ["Orchestrator"] or ["Coder"] or ["AnimationPlanner"] or ["ScriptWriter"] or a multi-role list
       }},
       "applicable": true,
       "compliance": "followed" or "violated" or "mixed" or "unclear" or "observed_pattern",
       "outcome": "positive" or "negative" or "mixed" or "unclear",
-      "action": "ADD" or "SUPPORT" or "CONTRADICT" or "IRRELEVANT",
-      "weight": 0.0,
+      "action": "ADD" or "SUPPORT" or "CONTRADICT" or "IRRELEVANT" or "REVISE" or "MERGE",
+      "merge_belief_ids": ["L002", "L003"] or [],
+      "evidence_confidence": 0.0,
+      "impact": "low" or "medium" or "high" or "critical",
+      "belief_type": "confirmed" or "precaution" or "hypothesis" or "quality",
+      "timing": "preventative" or "reactive" or "both",
       "agent": "Coder" or null,
       "section_id": "section_1" or null,
       "reason": "Short explanation",
-      "evidence": {{}}
+      "evidence": "Short concrete evidence summary"
     }}
   ]
 }}
@@ -739,61 +1019,75 @@ Run context:
 
 def _llm_reflect_run(
     run: RunSummary,
-    lessons: Dict[str, LessonRecord],
+    beliefs: Dict[str, BeliefRecord],
     *,
     state_payload: Dict[str, Any],
-) -> Tuple[List[LessonAssessment], Dict[str, int]]:
-    context_payload = _build_reflection_context(run, state_payload, lessons)
+) -> Tuple[List[BeliefAssessment], Dict[str, int]]:
+    context_payload = _build_reflection_context(run, state_payload, beliefs)
     prompt = _build_reflection_prompt(run, context_payload)
-    response, usage = request_gemini_token(
-        prompt,
-        max_tokens=12000,
-        model_name=DEFAULT_REFLECTION_MODEL,
-        response_format={"type": "json_object"},
+    api_key = cfg("gemini", "api_key")
+    if not api_key:
+        raise ValueError("Missing gemini.api_key in api_config.json or GEMINI_API_KEY")
+    client = Client(api_key=api_key)
+    response = create_interaction(
+        client,
+        model=DEFAULT_REFLECTION_MODEL,
+        input_value=prompt,
+        response_schema=ReflectionResponsePayload,
+        max_output_tokens=12000,
     )
-    content = extract_answer_from_response(response)
-    payload = _parse_first_json_object(content)
+    parsed = ReflectionResponsePayload.model_validate_json(response.output_text)
+    usage = response_usage_dict(response)
 
-    assessments: List[LessonAssessment] = []
-    for item in payload.get("assessments", []):
+    assessments: List[BeliefAssessment] = []
+    for item in parsed.assessments:
+        action = item.action
+        if action not in VALID_ACTIONS:
+            raise ValueError(f"Unsupported belief assessment action: {action}")
+        evidence_confidence = item.evidence_confidence
         assessments.append(
-            LessonAssessment(
+            BeliefAssessment(
                 run_id=run.run_id,
-                lesson_id=item.get("lesson_id"),
-                instruction=str(item["instruction"]),
-                applicable=bool(item.get("applicable", True)),
-                compliance=str(item.get("compliance", "unclear")),
-                outcome=str(item.get("outcome", "unclear")),
-                action=str(item["action"]),
-                weight=float(_clamp(float(item.get("weight", 0.5)), 0.0, 1.0)),
-                scope=_lesson_scope_from_dict(item.get("scope", {})),
-                agent=item.get("agent"),
-                section_id=item.get("section_id"),
-                reason=str(item.get("reason", "")),
-                evidence=_coerce_evidence_payload(item.get("evidence")),
+                belief_id=item.belief_id,
+                instruction=item.instruction,
+                applicable=item.applicable,
+                compliance=item.compliance,
+                outcome=item.outcome,
+                action=action,
+                weight=evidence_confidence,
+                scope=BeliefScope(roles=list(item.scope.roles)),
+                evidence_confidence=evidence_confidence,
+                impact=item.impact,
+                belief_type=item.belief_type,
+                timing=item.timing,
+                agent=item.agent,
+                section_id=item.section_id,
+                reason=item.reason,
+                evidence=_coerce_evidence_payload(item.evidence),
+                merge_belief_ids=list(item.merge_belief_ids),
             )
         )
     return assessments, usage
 
 
-def _find_lesson_by_instruction(
-    lessons: Dict[str, LessonRecord],
+def _find_belief_by_instruction(
+    beliefs: Dict[str, BeliefRecord],
     instruction: str,
-) -> Optional[LessonRecord]:
+) -> Optional[BeliefRecord]:
     target = _normalize_instruction(instruction)
-    for record in lessons.values():
+    for record in beliefs.values():
         if _normalize_instruction(record.instruction) == target:
             return record
     return None
 
 
-def _next_lesson_id(lessons: Dict[str, LessonRecord]) -> str:
+def _next_belief_id(beliefs: Dict[str, BeliefRecord]) -> str:
     max_numeric = 0
-    for lesson_id in lessons:
-        match = re.fullmatch(r"L(\d+)", lesson_id)
+    for belief_id in beliefs:
+        match = re.fullmatch(r"[BL](\d+)", belief_id)
         if match:
             max_numeric = max(max_numeric, int(match.group(1)))
-    return f"L{max_numeric + 1:03d}"
+    return f"B{max_numeric + 1:03d}"
 
 
 def summarise_run(run_dir: Path, baseline_combined_score: Optional[float]) -> RunSummary:
@@ -859,8 +1153,8 @@ def summarise_run(run_dir: Path, baseline_combined_score: Optional[float]) -> Ru
 
 
 def apply_assessments(
-    lessons: Dict[str, LessonRecord],
-    assessments: List[LessonAssessment],
+    beliefs: Dict[str, BeliefRecord],
+    assessments: List[BeliefAssessment],
 ) -> Dict[str, Any]:
     summary = Counter()
 
@@ -868,30 +1162,77 @@ def apply_assessments(
         summary[f"action:{assessment.action.lower()}"] += 1
 
         if assessment.action == ACTION_IRRELEVANT:
-            if assessment.lesson_id and assessment.lesson_id in lessons:
-                lessons[assessment.lesson_id].irrelevant_count += 1
+            if assessment.belief_id and assessment.belief_id in beliefs:
+                beliefs[assessment.belief_id].irrelevant_count += 1
             continue
 
-        record: Optional[LessonRecord] = None
-        if assessment.lesson_id:
-            record = lessons.get(assessment.lesson_id)
+        record: Optional[BeliefRecord] = None
+        if assessment.belief_id:
+            record = beliefs.get(assessment.belief_id)
         elif assessment.action == ACTION_ADD:
-            record = _find_lesson_by_instruction(lessons, assessment.instruction)
+            record = _find_belief_by_instruction(beliefs, assessment.instruction)
 
         if record is None and assessment.action == ACTION_ADD:
-            lesson_id = _next_lesson_id(lessons)
-            record = LessonRecord(
-                lesson_id=lesson_id,
+            belief_id = _next_belief_id(beliefs)
+            record = BeliefRecord(
+                belief_id=belief_id,
                 instruction=assessment.instruction,
                 scope=assessment.scope,
+                impact=assessment.impact,
+                belief_type=assessment.belief_type,
+                timing=assessment.timing,
                 created_from_run=assessment.run_id,
             )
-            lessons[lesson_id] = record
-            assessment.lesson_id = lesson_id
-            summary["lessons_created"] += 1
+            beliefs[belief_id] = record
+            assessment.belief_id = belief_id
+            summary["beliefs_created"] += 1
 
         if record is None:
             continue
+
+        previous_instruction: Optional[str] = None
+        if assessment.action in {ACTION_REVISE, ACTION_MERGE}:
+            previous_instruction = record.instruction
+            record.instruction = assessment.instruction
+            record.scope = assessment.scope
+            record.belief_type = assessment.belief_type
+            record.timing = assessment.timing
+            summary["beliefs_revised"] += 1
+
+        record.impact = _impact_max(record.impact, assessment.impact)
+        if assessment.action not in {ACTION_REVISE, ACTION_MERGE}:
+            record.belief_type = _belief_type_max(record.belief_type, assessment.belief_type)
+        if assessment.action in {ACTION_ADD, ACTION_SUPPORT}:
+            # Timing describes when the current instruction should be used,
+            # rather than an accumulating severity signal. Let a fresh
+            # assessment classify legacy records that previously defaulted to
+            # ``both``.
+            record.timing = assessment.timing
+
+        if assessment.action == ACTION_MERGE:
+            merged_ids: List[str] = []
+            for merge_id in dict.fromkeys(assessment.merge_belief_ids):
+                if merge_id == record.belief_id:
+                    continue
+                merged = beliefs.get(merge_id)
+                if merged is None:
+                    continue
+                record.alpha += merged.alpha - 1.0
+                record.beta += merged.beta - 1.0
+                record.support_count += merged.support_count
+                record.contradiction_count += merged.contradiction_count
+                record.relevant_count += merged.relevant_count
+                record.irrelevant_count += merged.irrelevant_count
+                record.weighted_support += merged.weighted_support
+                record.weighted_contradiction += merged.weighted_contradiction
+                record.impact = _impact_max(record.impact, merged.impact)
+                record.belief_type = _belief_type_max(record.belief_type, merged.belief_type)
+                record.observed_runs.extend(merged.observed_runs)
+                record.evidence.extend(merged.evidence)
+                merged_ids.append(merge_id)
+                del beliefs[merge_id]
+            summary["beliefs_merged"] += len(merged_ids)
+            assessment.merge_belief_ids = merged_ids
 
         record.relevant_count += 1
         record.observed_runs.append(assessment.run_id)
@@ -900,21 +1241,27 @@ def apply_assessments(
                 "run_id": assessment.run_id,
                 "action": assessment.action,
                 "weight": assessment.weight,
+                "evidence_confidence": assessment.evidence_confidence,
+                "impact": assessment.impact,
+                "belief_type": assessment.belief_type,
+                "timing": assessment.timing,
                 "reason": assessment.reason,
                 "agent": assessment.agent,
                 "section_id": assessment.section_id,
+                "previous_instruction": previous_instruction,
+                "merge_belief_ids": assessment.merge_belief_ids,
                 "evidence": assessment.evidence,
             }
         )
 
-        if assessment.action in {ACTION_ADD, ACTION_SUPPORT}:
+        if assessment.action in {ACTION_ADD, ACTION_SUPPORT, ACTION_REVISE, ACTION_MERGE}:
             record.support_count += 1
-            record.weighted_support += assessment.weight
-            record.alpha += assessment.weight
+            record.weighted_support += assessment.evidence_confidence
+            record.alpha += assessment.evidence_confidence
         elif assessment.action == ACTION_CONTRADICT:
             record.contradiction_count += 1
-            record.weighted_contradiction += assessment.weight
-            record.beta += assessment.weight
+            record.weighted_contradiction += assessment.evidence_confidence
+            record.beta += assessment.evidence_confidence
 
         record.update_confidence()
 
@@ -929,13 +1276,13 @@ def _state_for_run(run_dir: Path) -> Dict[str, Any]:
     return _read_json(state_path)
 
 
-def analyse_single_run(run_dir: Path, lessons: Dict[str, LessonRecord]) -> Dict[str, Any]:
+def analyse_single_run(run_dir: Path, beliefs: Dict[str, BeliefRecord]) -> Dict[str, Any]:
     pipeline_id = run_dir.parent.name if run_dir.parent.name.startswith("pipeline_") else None
     baseline = _load_pipeline_paper_average(run_dir.parent) if pipeline_id else None
     run_summary = summarise_run(run_dir, baseline)
     state_payload = _state_for_run(run_dir)
-    assessments, usage = _llm_reflect_run(run_summary, lessons, state_payload=state_payload)
-    run_summary.lesson_assessments = assessments
+    assessments, usage = _llm_reflect_run(run_summary, beliefs, state_payload=state_payload)
+    run_summary.belief_assessments = assessments
     run_summary.reflection_model = DEFAULT_REFLECTION_MODEL
     run_summary.reflection_usage = usage
     return {
@@ -944,7 +1291,7 @@ def analyse_single_run(run_dir: Path, lessons: Dict[str, LessonRecord]) -> Dict[
     }
 
 
-def analyse_pipeline(pipeline_dir: Path, lessons: Dict[str, LessonRecord]) -> Dict[str, Any]:
+def analyse_pipeline(pipeline_dir: Path, beliefs: Dict[str, BeliefRecord]) -> Dict[str, Any]:
     run_dirs = _iter_run_dirs_from_pipeline(pipeline_dir)
     provisional_runs = [summarise_run(run_dir, None) for run_dir in run_dirs if _find_final_state_json(run_dir)]
     baseline = _safe_mean(
@@ -952,17 +1299,17 @@ def analyse_pipeline(pipeline_dir: Path, lessons: Dict[str, LessonRecord]) -> Di
     )
 
     final_runs: List[RunSummary] = []
-    working_lessons = {lesson_id: deepcopy(record) for lesson_id, record in lessons.items()}
+    working_beliefs = {belief_id: deepcopy(record) for belief_id, record in beliefs.items()}
     for run_dir in run_dirs:
         if _find_final_state_json(run_dir) is None:
             continue
         run_summary = summarise_run(run_dir, baseline)
         state_payload = _state_for_run(run_dir)
-        assessments, usage = _llm_reflect_run(run_summary, working_lessons, state_payload=state_payload)
-        run_summary.lesson_assessments = assessments
+        assessments, usage = _llm_reflect_run(run_summary, working_beliefs, state_payload=state_payload)
+        run_summary.belief_assessments = assessments
         run_summary.reflection_model = DEFAULT_REFLECTION_MODEL
         run_summary.reflection_usage = usage
-        apply_assessments(working_lessons, assessments)
+        apply_assessments(working_beliefs, assessments)
         final_runs.append(run_summary)
 
     pipeline_scores = [run.combined_score for run in final_runs if run.combined_score is not None]
@@ -983,7 +1330,7 @@ def _run_summary_to_json(run: RunSummary) -> Dict[str, Any]:
     payload["section_attempts"] = {
         key: asdict(value) for key, value in sorted(run.section_attempts.items())
     }
-    payload["lesson_assessments"] = [asdict(item) for item in run.lesson_assessments]
+    payload["belief_assessments"] = [asdict(item) for item in run.belief_assessments]
     payload["render_success_rate"] = round(run.render_success_rate, 4)
     return payload
 
@@ -1022,14 +1369,14 @@ def _clear_pipeline_outputs(*paths: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Analyse MAS run(s) and update an LLM-driven lesson library."
+        description="Analyse MAS run(s) and update an LLM-driven belief library."
     )
     parser.add_argument("--run-dir", default=None, help="Path to one MAS run directory.")
     parser.add_argument("--pipeline-dir", default=None, help="Path to a MAS pipeline directory.")
     parser.add_argument(
         "--library-path",
         default=None,
-        help="JSON path for the persistent lesson library. Defaults to the target run/pipeline folder.",
+        help="JSON path for the persistent belief library. Defaults to the target run/pipeline folder.",
     )
     parser.add_argument(
         "--analysis-output",
@@ -1039,7 +1386,7 @@ def main() -> int:
     parser.add_argument(
         "--write-library",
         action="store_true",
-        help="Apply generated assessments and write the updated lesson library.",
+        help="Apply generated assessments and write the updated belief library.",
     )
     args = parser.parse_args()
 
@@ -1058,51 +1405,58 @@ def main() -> int:
     )
     if mode == "pipeline":
         _clear_pipeline_outputs(analysis_output_path, library_path)
-        lessons: Dict[str, LessonRecord] = {}
+        beliefs: Dict[str, BeliefRecord] = {}
     else:
-        lessons = load_library(library_path)
+        beliefs = load_library(library_path)
 
     if mode == "single_run":
-        analysis = analyse_single_run(target_path, lessons)
+        analysis = analyse_single_run(target_path, beliefs)
         run_payload = analysis["run_summary"]
-        assessment_payloads = run_payload.get("lesson_assessments", [])
+        assessment_payloads = run_payload.get("belief_assessments", [])
     else:
-        analysis = analyse_pipeline(target_path, lessons)
+        analysis = analyse_pipeline(target_path, beliefs)
         assessment_payloads = []
         for run_payload in analysis["runs"]:
-            assessment_payloads.extend(run_payload.get("lesson_assessments", []))
+            assessment_payloads.extend(run_payload.get("belief_assessments", []))
 
     _write_json(analysis_output_path, analysis)
 
     update_summary: Dict[str, Any] = {}
     if args.write_library:
         parsed_assessments = [
-            LessonAssessment(
+            BeliefAssessment(
                 run_id=item["run_id"],
-                lesson_id=item.get("lesson_id"),
+                belief_id=item.get("belief_id"),
                 instruction=item["instruction"],
                 applicable=bool(item["applicable"]),
                 compliance=str(item["compliance"]),
                 outcome=str(item["outcome"]),
-                action=str(item["action"]),
-                weight=float(item["weight"]),
-                scope=_lesson_scope_from_dict(item.get("scope", {})),
+                action=str(item["action"]).upper(),
+                weight=float(item.get("weight", item.get("evidence_confidence", 0.5))),
+                scope=_belief_scope_from_dict(item.get("scope", {})),
+                evidence_confidence=float(
+                    item.get("evidence_confidence", item.get("weight", 0.5))
+                ),
+                impact=_normalize_impact(item.get("impact", "medium")),
+                belief_type=_normalize_belief_type(item.get("belief_type", "confirmed")),
+                timing=_normalize_belief_timing(item.get("timing", "both")),
                 agent=item.get("agent"),
                 section_id=item.get("section_id"),
                 reason=str(item.get("reason", "")),
                 evidence_event_ids=[str(value) for value in item.get("evidence_event_ids", [])],
                 evidence=_coerce_evidence_payload(item.get("evidence")),
+                merge_belief_ids=[str(value) for value in item.get("merge_belief_ids", [])],
             )
             for item in assessment_payloads
         ]
-        update_summary = apply_assessments(lessons, parsed_assessments)
+        update_summary = apply_assessments(beliefs, parsed_assessments)
         save_library(
             library_path,
-            lessons,
+            beliefs,
             metadata={
                 "source_mode": mode,
                 "source_path": str(target_path),
-                "lesson_count": len(lessons),
+                "belief_count": len(beliefs),
                 "update_summary": update_summary,
             },
         )
@@ -1113,15 +1467,15 @@ def main() -> int:
         print(f"Topic: {run['topic']}")
         print(f"Combined score: {run['combined_score']}")
         print(f"Baseline combined score: {run['baseline_combined_score']}")
-        print(f"Assessments generated: {len(run['lesson_assessments'])}")
+        print(f"Assessments generated: {len(run['belief_assessments'])}")
     else:
         print(f"Pipeline: {analysis['pipeline_dir']}")
         print(f"Runs analysed: {analysis['run_count']}")
         print(f"Average combined score: {analysis['average_combined_score']}")
-        print(f"Assessments generated: {sum(len(run['lesson_assessments']) for run in analysis['runs'])}")
+        print(f"Assessments generated: {sum(len(run['belief_assessments']) for run in analysis['runs'])}")
 
     if args.write_library:
-        print(f"Lesson library written to: {library_path}")
+        print(f"Belief library written to: {library_path}")
         print(f"Update summary: {json.dumps(update_summary, ensure_ascii=False)}")
 
     print(f"Analysis output written to: {analysis_output_path}")

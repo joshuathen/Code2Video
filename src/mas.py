@@ -16,7 +16,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from type_utils import *
 from external_assets import process_storyboard_with_assets
-from gpt_request import request_gemini_token, request_gemini_video_img_token
+from mas_interactions import (
+    create_interaction,
+    request_interaction_video_image,
+    response_usage_dict,
+    run_tool_interaction,
+)
 from scope_refine import ScopeRefineFixer, GridPositionExtractor
 from utils import extract_answer_from_response
 from utils import extract_json_from_markdown
@@ -34,7 +39,7 @@ except ModuleNotFoundError:
         sys.path.insert(0, str(_repo_root))
     from prompts import get_prompt1_outline, get_prompt3_code_mas, get_prompt4_layout_feedback, get_regenerate_note
 
-from google.genai import types, Client
+from google.genai import Client
 from google.genai.errors import ClientError, ServerError
 
 # MAS Team
@@ -44,6 +49,14 @@ ANIMATION_PLANNER = "AnimationPlanner"
 ANIMATION_PLANNER_MAX_REMOTE_CALLS = 40
 SCRIPT_WRITER = "ScriptWriter"
 SCRIPT_WRITER_MAX_REMOTE_CALLS = 40
+ORCHESTRATOR_MAX_REMOTE_CALLS = 60
+CODER_MAX_REMOTE_CALLS = 30
+DEFAULT_AGENT_MAX_REMOTE_CALLS = 20
+
+TOOL_CALL_BATCHING_GUIDANCE = """Tool-call batching:
+- When multiple tool calls are independent and all of their arguments are already known, emit them together in the same response. The runtime will execute them as one batch.
+- Do not batch a call that depends on the result of another call. Wait for the prerequisite result, then issue the dependent call.
+- After inspecting returned results, batch all independent edits, issue updates, or completion actions that are now ready."""
 
 # Team role summaries for clearer cross-agent issue routing.
 CODER_ROLE = "Builds and debugs Manim code; ensures animation plans are technically feasible."
@@ -235,26 +248,27 @@ def _normalize_role_label(label: Optional[str]) -> Optional[str]:
     return normalized or None
 
 
-def _lesson_sort_key(payload: Dict[str, Any]) -> Tuple[float, float, float, str]:
+def _belief_sort_key(payload: Dict[str, Any]) -> Tuple[float, float, float, str]:
     return (
+        -float(payload.get("priority", payload.get("confidence", 0.0)) or 0.0),
         -float(payload.get("confidence", 0.0) or 0.0),
         -float(payload.get("weighted_support", 0.0) or 0.0),
-        -float(payload.get("support_count", 0.0) or 0.0),
-        str(payload.get("lesson_id") or ""),
+        str(payload.get("belief_id") or ""),
     )
 
 
-def _resolve_latest_lesson_library_path(logs_root: Path) -> Optional[Path]:
+def _resolve_latest_belief_library_path(logs_root: Path) -> Optional[Path]:
     if not logs_root.exists():
         return None
 
     candidates: List[Tuple[float, Path]] = []
-    for lesson_path in logs_root.glob("pipeline_*/lesson_library.json"):
-        try:
-            stat = lesson_path.stat()
-        except OSError:
-            continue
-        candidates.append((stat.st_mtime, lesson_path))
+    for filename in ("belief_library.json", "lesson_library.json"):
+        for belief_path in logs_root.glob(f"pipeline_*/{filename}"):
+            try:
+                stat = belief_path.stat()
+            except OSError:
+                continue
+            candidates.append((stat.st_mtime, belief_path))
 
     if not candidates:
         return None
@@ -262,9 +276,9 @@ def _resolve_latest_lesson_library_path(logs_root: Path) -> Optional[Path]:
     return candidates[0][1]
 
 
-def _resolve_lesson_library_path(path_value: Optional[str]) -> Optional[Path]:
+def _resolve_belief_library_path(path_value: Optional[str]) -> Optional[Path]:
     if not path_value:
-        return _resolve_latest_lesson_library_path(Path(__file__).resolve().parent.parent / "mas_logs")
+        return _resolve_latest_belief_library_path(Path(__file__).resolve().parent.parent / "mas_logs")
 
     candidate = Path(path_value).expanduser()
     if not candidate.is_absolute():
@@ -273,10 +287,11 @@ def _resolve_lesson_library_path(path_value: Optional[str]) -> Optional[Path]:
         candidate = candidate.resolve()
 
     if candidate.is_dir():
-        direct_candidate = candidate / "lesson_library.json"
-        if direct_candidate.exists():
-            return direct_candidate
-        nested_candidate = _resolve_latest_lesson_library_path(candidate)
+        for filename in ("belief_library.json", "lesson_library.json"):
+            direct_candidate = candidate / filename
+            if direct_candidate.exists():
+                return direct_candidate
+        nested_candidate = _resolve_latest_belief_library_path(candidate)
         if nested_candidate is not None:
             return nested_candidate
         return None
@@ -286,97 +301,141 @@ def _resolve_lesson_library_path(path_value: Optional[str]) -> Optional[Path]:
     return None
 
 
-def _load_ranked_lessons_for_prompt(lesson_library_path: Optional[Path]) -> Dict[str, Any]:
-    empty_payload: Dict[str, Any] = {"general": [], "by_role": {}}
-    if lesson_library_path is None or not lesson_library_path.exists():
+def _load_ranked_beliefs_for_prompt(belief_library_path: Optional[Path]) -> Dict[str, Any]:
+    empty_payload: Dict[str, Any] = {"by_role": {}}
+    if belief_library_path is None or not belief_library_path.exists():
         return empty_payload
 
     try:
-        payload = json.loads(lesson_library_path.read_text(encoding="utf-8"))
+        payload = json.loads(belief_library_path.read_text(encoding="utf-8"))
     except Exception:
         return empty_payload
 
-    lessons_raw = payload.get("lessons", payload) if isinstance(payload, dict) else payload
-    if isinstance(lessons_raw, dict):
-        lesson_items = list(lessons_raw.values())
-    elif isinstance(lessons_raw, list):
-        lesson_items = list(lessons_raw)
+    beliefs_raw = (
+        payload.get("beliefs", payload.get("lessons", payload))
+        if isinstance(payload, dict)
+        else payload
+    )
+    if isinstance(beliefs_raw, dict):
+        belief_items = list(beliefs_raw.values())
+    elif isinstance(beliefs_raw, list):
+        belief_items = list(beliefs_raw)
     else:
         return empty_payload
 
-    general_lessons: List[Dict[str, Any]] = []
     by_role: Dict[str, List[Dict[str, Any]]] = {}
 
-    for lesson in lesson_items:
-        if not isinstance(lesson, dict):
+    for belief in belief_items:
+        if not isinstance(belief, dict):
             continue
-        if str(lesson.get("status") or "active") != "active":
+        if str(belief.get("status") or "active") != "active":
             continue
 
-        instruction = str(lesson.get("instruction") or "").strip()
+        instruction = str(belief.get("instruction") or "").strip()
         if not instruction:
             continue
 
-        scope = lesson.get("scope") or {}
+        belief_type = str(
+            belief.get("belief_type", belief.get("lesson_type", "confirmed"))
+        ).strip().lower()
+        if belief_type == "hypothesis":
+            continue
+
+        scope = belief.get("scope") or {}
         if not isinstance(scope, dict):
             scope = {}
-        level = str(scope.get("level") or "").strip()
         roles = [_normalize_role_label(role) for role in (scope.get("roles") or [])]
         roles = [role for role in roles if role]
+        if not roles and str(scope.get("level") or "").strip() == "general":
+            # Backward compatibility for legacy general beliefs.
+            roles = [ORCHESTRATOR, CODER, ANIMATION_PLANNER, SCRIPT_WRITER]
 
-        normalized_lesson = {
-            "lesson_id": lesson.get("lesson_id"),
+        normalized_belief = {
+            "belief_id": belief.get("belief_id", belief.get("lesson_id")),
             "instruction": instruction,
-            "confidence": float(lesson.get("confidence", 0.0) or 0.0),
-            "weighted_support": float(lesson.get("weighted_support", 0.0) or 0.0),
-            "support_count": int(lesson.get("support_count", 0) or 0),
+            "confidence": float(belief.get("confidence", 0.0) or 0.0),
+            "impact": str(belief.get("impact") or "medium").strip().lower(),
+            "priority": float(belief.get("priority", belief.get("confidence", 0.0)) or 0.0),
+            "belief_type": belief_type,
+            "timing": str(belief.get("timing") or "both").strip().lower(),
+            "weighted_support": float(belief.get("weighted_support", 0.0) or 0.0),
+            "support_count": int(belief.get("support_count", 0) or 0),
         }
 
-        if level == "general":
-            general_lessons.append(normalized_lesson)
-        elif level == "role_specific":
-            for role in roles:
-                by_role.setdefault(role, []).append(normalized_lesson)
+        for role in roles:
+            by_role.setdefault(role, []).append(normalized_belief)
 
-    general_lessons.sort(key=_lesson_sort_key)
-    for role_lessons in by_role.values():
-        role_lessons.sort(key=_lesson_sort_key)
+    for role_beliefs in by_role.values():
+        role_beliefs.sort(key=_belief_sort_key)
 
-    return {"general": general_lessons, "by_role": by_role}
+    return {"by_role": by_role}
 
 
-def _format_lessons_for_prompt(
+def _format_beliefs_for_prompt(
     *,
     agent_role: Optional[str],
-    lesson_payload: Dict[str, Any],
+    belief_payload: Dict[str, Any],
     top_general_k: int,
     top_specialized_k: int,
+    allowed_timings: Optional[set[str]] = None,
+    allowed_belief_types: Optional[set[str]] = None,
 ) -> str:
-    general_lessons = list((lesson_payload or {}).get("general") or [])[: max(0, top_general_k)]
-    specialized_lessons = list(((lesson_payload or {}).get("by_role") or {}).get(agent_role or "", []))[
-        : max(0, top_specialized_k)
+    # Retained in the signature for CLI/config compatibility. General beliefs
+    # no longer exist; every belief is selected from an explicit role scope.
+    del top_general_k
+    role_limit = max(0, top_specialized_k)
+    timing_filter = allowed_timings or {"preventative", "reactive", "both"}
+    belief_type_filter = allowed_belief_types or {"confirmed", "precaution", "quality"}
+    role_pool = [
+        belief
+        for belief in (((belief_payload or {}).get("by_role") or {}).get(agent_role or "", []))
+        if belief.get("timing", "both") in timing_filter
+        and belief.get("belief_type", "confirmed") in belief_type_filter
     ]
 
-    if not general_lessons and not specialized_lessons:
+    watch_candidates = [
+        belief
+        for belief in role_pool
+        if belief.get("impact") in {"high", "critical"}
+        and belief.get("belief_type") in {"confirmed", "precaution"}
+    ]
+    watch_candidates.sort(key=_belief_sort_key)
+    watchlist: List[Dict[str, Any]] = []
+    used_ids = set()
+    for belief in watch_candidates:
+        belief_id = belief.get("belief_id")
+        if len(watchlist) >= min(2, role_limit) or belief_id in used_ids:
+            continue
+        watchlist.append(belief)
+        used_ids.add(belief_id)
+
+    role_beliefs = [belief for belief in role_pool if belief.get("belief_id") not in used_ids][
+        : max(0, role_limit - len(watchlist))
+    ]
+
+    if not watchlist and not role_beliefs:
         return ""
 
     lines = [
-        "Reusable lesson library guidance for this run:",
+        "Reusable belief library guidance for this run:",
         "Treat these as high-priority heuristics, but still verify the current shared state with read tools before acting.",
     ]
-    if general_lessons:
-        lines.append("General lessons:")
-        for idx, lesson in enumerate(general_lessons, start=1):
+    if watchlist:
+        lines.append("High-impact watchlist:")
+        for idx, belief in enumerate(watchlist, start=1):
             lines.append(
-                f"{idx}. [{lesson.get('lesson_id') or 'GEN'} | conf={lesson.get('confidence', 0.0):.3f}] "
-                f"{lesson['instruction']}"
+                f"{idx}. [{belief.get('belief_id') or 'WATCH'} | {agent_role}-scoped | "
+                f"{belief.get('belief_type')} | impact={belief.get('impact')} | "
+                f"timing={belief.get('timing', 'both')} | "
+                f"conf={belief.get('confidence', 0.0):.3f}] {belief['instruction']}"
             )
-    if specialized_lessons:
-        lines.append(f"{agent_role}-specific lessons:")
-        for idx, lesson in enumerate(specialized_lessons, start=1):
+    if role_beliefs:
+        lines.append(f"{agent_role}-scoped beliefs:")
+        for idx, belief in enumerate(role_beliefs, start=1):
             lines.append(
-                f"{idx}. [{lesson.get('lesson_id') or agent_role} | conf={lesson.get('confidence', 0.0):.3f}] "
-                f"{lesson['instruction']}"
+                f"{idx}. [{belief.get('belief_id') or agent_role} | "
+                f"timing={belief.get('timing', 'both')} | conf={belief.get('confidence', 0.0):.3f}] "
+                f"{belief['instruction']}"
             )
     return "\n".join(lines)
 
@@ -651,6 +710,33 @@ def _response_tool_trace(response: object) -> Dict[str, object]:
     function_responses: List[Dict[str, object]] = []
     text_parts: List[str] = []
 
+    steps = getattr(response, "steps", None) or []
+    for step_index, step in enumerate(steps):
+        step_type = getattr(step, "type", None)
+        if step_type == "function_call":
+            function_calls.append(
+                {
+                    "step_index": step_index,
+                    "name": getattr(step, "name", None),
+                    "args": _json_safe(getattr(step, "arguments", None)),
+                    "id": getattr(step, "id", None),
+                }
+            )
+        elif step_type == "function_result":
+            function_responses.append(
+                {
+                    "step_index": step_index,
+                    "name": getattr(step, "name", None),
+                    "id": getattr(step, "call_id", getattr(step, "id", None)),
+                    "response": _json_safe(getattr(step, "result", None)),
+                }
+            )
+        elif step_type == "model_output":
+            for content in getattr(step, "content", None) or []:
+                text_value = getattr(content, "text", None)
+                if text_value:
+                    text_parts.append(str(text_value))
+
     candidates = getattr(response, "candidates", None) or []
     for candidate_index, candidate in enumerate(candidates):
         content = getattr(candidate, "content", None)
@@ -722,6 +808,11 @@ class MASAgentCallLogger:
                 "event_type": "agent_response",
                 "agent": agent_name,
                 "model": model,
+                "api": "gemini_interactions",
+                "interaction_ids": [
+                    getattr(interaction, "id", None)
+                    for interaction in (getattr(response, "interactions", None) or [])
+                ],
                 "turn_number": turn_number,
                 "usage": _extract_token_usage(response=response),
                 "function_calls": trace["function_calls"],
@@ -1005,6 +1096,10 @@ def _extract_text_from_gemini_response(response) -> str:
     Extract concatenated text parts without calling `response.text` to avoid
     warnings when non-text parts (e.g., thought_signature) are present.
     """
+    output_text = getattr(response, "output_text", None)
+    if output_text:
+        return str(output_text).strip()
+
     candidates = getattr(response, "candidates", None) or []
     if not candidates:
         return ""
@@ -1057,16 +1152,15 @@ def _scope_refine_request_with_client(
     """
     ScopeRefine request adapter aligned with agent.py's Gemini wrapper.
 
-    The `request_client` parameter is kept for compatibility with older call
-    sites, but the actual request path intentionally mirrors agent.py by
-    going through `request_gemini_token(...)`.
+    Use a stateless Interactions request for MAS runtime repair.
     """
-    del request_client
-    response, usage = request_gemini_token(
-        prompt,
-        max_tokens=max_tokens,
-        model_name=_repair_model(),
+    response = create_interaction(
+        request_client,
+        model=_repair_model(),
+        input_value=prompt,
+        max_output_tokens=max_tokens,
     )
+    usage = response_usage_dict(response)
     if token_tracker is not None:
         token_tracker.record(
             source=usage_source,
@@ -1093,6 +1187,7 @@ class CoderRuntime:
         request_fn: Callable,
         max_code_token_length: int = 10000,
         assets_dir: Optional[Path] = None,
+        belief_prompt_text: str = "",
     ):
         self.runtime_dir = runtime_dir
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
@@ -1108,6 +1203,7 @@ class CoderRuntime:
         self.request_fn = request_fn
         self.max_code_token_length = max_code_token_length
         self.assets_dir = assets_dir.resolve() if assets_dir is not None else None
+        self.belief_prompt_text = belief_prompt_text.strip()
 
     def _scene_name(self, section_id: str) -> str:
         return _scene_name_from_section_id(section_id)
@@ -1155,7 +1251,7 @@ class CoderRuntime:
         render_outcome: Dict[str, object],
         command: List[str],
     ) -> Path:
-        """Persist the structured evidence consumed by lesson reflection."""
+        """Persist the structured evidence consumed by belief reflection."""
         attempt_dir = (
             self.runtime_dir
             / "coder_debugger"
@@ -1317,7 +1413,11 @@ class CoderRuntime:
                             }
 
                 last_error = (result.stderr or "").strip()
-                scope_refine_fixer = ScopeRefineFixer(self.request_fn, self.max_code_token_length)
+                scope_refine_fixer = ScopeRefineFixer(
+                    self.request_fn,
+                    self.max_code_token_length,
+                    belief_prompt_text=self.belief_prompt_text,
+                )
                 fixed_code = scope_refine_fixer.fix_code_smart(section_id, current_code, result.stderr, self.runtime_dir)
 
                 if fixed_code:
@@ -1448,6 +1548,7 @@ def _run_coder_runtime_worker(
     lecture_lines: List[str],
     phase: str = "unspecified",
     assets_dir: str = "",
+    belief_prompt_text: str = "",
 ) -> Tuple[str, Dict[str, object], Dict[str, object]]:
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
@@ -1478,6 +1579,7 @@ def _run_coder_runtime_worker(
         ),
         max_code_token_length=max_code_token_length,
         assets_dir=Path(assets_dir).resolve() if assets_dir else None,
+        belief_prompt_text=belief_prompt_text,
     )
 
     try:
@@ -1581,20 +1683,21 @@ class MASAgent:
             maximum_remote_calls = SCRIPT_WRITER_MAX_REMOTE_CALLS
         elif self.name == ANIMATION_PLANNER:
             maximum_remote_calls = ANIMATION_PLANNER_MAX_REMOTE_CALLS
+        elif self.role == ORCHESTRATOR:
+            maximum_remote_calls = ORCHESTRATOR_MAX_REMOTE_CALLS
+        elif self.name.startswith(CODER):
+            maximum_remote_calls = CODER_MAX_REMOTE_CALLS
         else:
-            maximum_remote_calls = 10
+            maximum_remote_calls = DEFAULT_AGENT_MAX_REMOTE_CALLS
 
         while attempts < max_retries + 1:
             try:
-                response = self.client.models.generate_content(
+                response = run_tool_interaction(
+                    self.client,
                     model=self.model,
-                    contents=parts,
-                    config=types.GenerateContentConfig(
-                        tools=tools,
-                        automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                            maximum_remote_calls=maximum_remote_calls,
-                        ),
-                    ),
+                    input_value=parts,
+                    tools=tools,
+                    max_remote_calls=maximum_remote_calls,
                 )
                 if self.token_tracker is not None:
                     self.token_tracker.record(
@@ -1746,10 +1849,10 @@ class MASRunConfig:
     storyboard_asset_enhancement_turn: int = 2
     auto_review_changed_only: bool = True
     iconfinder_api_key: str = ""
-    inject_lessons_into_prompts: bool = False
-    lesson_library_path: Optional[str] = None
-    top_general_lessons: int = 10
-    top_specialized_lessons: int = 10
+    inject_beliefs_into_prompts: bool = False
+    belief_library_path: Optional[str] = None
+    top_general_beliefs: int = 10
+    top_specialized_beliefs: int = 10
 
 
 def generate_outline_with_code2video_stage1(
@@ -1773,9 +1876,10 @@ def generate_outline_with_code2video_stage1(
     last_error: Optional[Exception] = None
     for attempt in range(1, max_regenerate_tries + 1):
         try:
-            response = req_client.models.generate_content(
+            response = create_interaction(
+                req_client,
                 model=model,
-                contents=[prompt],
+                input_value=prompt,
             )
             if token_tracker is not None:
                 token_tracker.record(
@@ -1905,7 +2009,8 @@ class VideoTeamBaseAgent(MASAgent):
         managed_sections: Optional[List[str]] = None,
         tools: Optional[List[Callable]] = None,
         token_tracker: Optional[MASTokenTracker] = None,
-        lesson_prompt_text: str = "",
+        belief_prompt_text: str = "",
+        reactive_belief_prompt_text: str = "",
     ):
         super().__init__(
             name=name,
@@ -1918,7 +2023,9 @@ class VideoTeamBaseAgent(MASAgent):
         )
         self.video_state = video_state
         self.managed_sections = managed_sections or self.video_state.section_ids()
-        self.lesson_prompt_text = lesson_prompt_text.strip()
+        self.belief_prompt_text = belief_prompt_text.strip()
+        self.reactive_belief_prompt_text = reactive_belief_prompt_text.strip()
+        self._belief_invocation_count = 0
         self.tools.extend(
             [
                 self.get_topic,
@@ -1934,6 +2041,15 @@ class VideoTeamBaseAgent(MASAgent):
                 self.get_all_under_review_issues,
             ]
         )
+
+    def _belief_prompt_for_invocation(self) -> str:
+        """Return stage-appropriate beliefs and advance this agent's task count."""
+        if self._belief_invocation_count == 0:
+            prompt_text = self.belief_prompt_text
+        else:
+            prompt_text = self.reactive_belief_prompt_text
+        self._belief_invocation_count += 1
+        return prompt_text
 
     def _build_read_tool_error_payload(
         self,
@@ -2606,6 +2722,7 @@ class VideoTeamBaseAgent(MASAgent):
         codegen_attempt: int,
         max_codegen_attempts: int,
         failure_context: str,
+        belief_prompt_text: str,
     ) -> str:
         section_id = self.managed_sections[0]
         section_idx = self.video_state.section_index(section_id)
@@ -2628,7 +2745,7 @@ class VideoTeamBaseAgent(MASAgent):
                 f"\nFailure hint for this retry: {failure_context.strip()}\n"
                 "Treat it as a hint only and use read tools to inspect the latest shared state before editing.\n"
             )
-        lesson_block = f"\n{self.lesson_prompt_text}\n" if self.lesson_prompt_text else ""
+        belief_block = f"\n{belief_prompt_text}\n" if belief_prompt_text else ""
 
         return f"""You are {self.name} in a single shared MAS team building one multi-section video.
 
@@ -2636,7 +2753,7 @@ You are assigned to exactly one section:
 {section_id}
 
 {failure_instruction}
-{lesson_block}
+{belief_block}
 
 MAS-specific instructions:
 1. Use read tools to inspect current shared state before writing or revising code. In particular, fetch the latest topic, team, coder assignments, section outline/storyboard, render context, current code, and issues instead of assuming prompt state is current.
@@ -2652,6 +2769,13 @@ MAS-specific instructions:
 11. Do NOT create `SVGMobject`, `Text`, `DecimalNumber`, `MathTex`, `Tex`, `NumberLine`, or other expensive mobjects inside `always_redraw(...)`. Load/build them once, then update position/value/geometry in place.
 12. If you answer in plain text instead of a tool call, return only the complete Python code for this section.
 13. If a read tool returns `ok: false`, inspect the error payload, correct the arguments, and retry the read tool call when appropriate.
+
+{TOOL_CALL_BATCHING_GUIDANCE}
+Coder-specific batching workflow:
+1. Batch independent reads when their arguments are already known.
+2. Inspect the returned state before generating or replacing code.
+3. After replacing the code, batch independent issue status updates whose outcomes are now known.
+4. Never batch replace_code with a read whose result is needed to construct that code.
 
 Original Code2Video Stage-3 prompt (follow this fully):
 {stage3_prompt}
@@ -2689,6 +2813,7 @@ Original Code2Video Stage-3 prompt (follow this fully):
         max_codegen_attempts: int = 1,
         failure_context: str = "",
     ) -> str:
+        active_belief_prompt_text = self._belief_prompt_for_invocation()
         tools = [self.add_issue, self.update_issue]
         tools.extend(self.tools)
         previous_code = ""
@@ -2718,6 +2843,7 @@ Original Code2Video Stage-3 prompt (follow this fully):
                 codegen_attempt=codegen_attempt,
                 max_codegen_attempts=max_codegen_attempts,
                 failure_context=failure_context,
+                belief_prompt_text=active_belief_prompt_text,
             )
             response = self.run_with_retry([prompt], tools, max_retries)
             if response is not None:
@@ -2731,14 +2857,14 @@ Original Code2Video Stage-3 prompt (follow this fully):
 2. Resolve your assigned active issues first.
 3. Mark each attempted issue with update_issue(issue_id, under_review=True, resolution_note=...)."""
 
-        lesson_block = f"\n{self.lesson_prompt_text}\n" if self.lesson_prompt_text else ""
+        belief_block = f"\n{active_belief_prompt_text}\n" if active_belief_prompt_text else ""
         prompt = f"""You are {self.name} in a single shared MAS team building one multi-section video.
 
 Sections you are allowed to edit:
 {self.managed_sections}
 
 {base_class_context}
-{lesson_block}
+{belief_block}
 
 Instructions:
 {priority_instructions}
@@ -2748,6 +2874,8 @@ Instructions:
 7. If blocked, add targeted cross-agent issues via add_issue(section_id, toAgent, description).
 8. Any issue you create for another agent must be self-contained: include the concrete problem, relevant local context, and the action you want that agent to take.
 9. If a read tool returns `ok: false`, inspect the error payload, correct the arguments, and retry the read tool call when appropriate.
+
+{TOOL_CALL_BATCHING_GUIDANCE}
 
 Guidelines:
 {self.guidelines}
@@ -2773,7 +2901,8 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
         managed_sections: Optional[List[str]] = None,
         tools: Optional[List[Callable]] = None,
         token_tracker: Optional[MASTokenTracker] = None,
-        lesson_prompt_text: str = "",
+        belief_prompt_text: str = "",
+        reactive_belief_prompt_text: str = "",
         auto_review_changed_only: bool = True,
     ):
         super().__init__(
@@ -2786,7 +2915,8 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
             managed_sections=managed_sections,
             tools=tools,
             token_tracker=token_tracker,
-            lesson_prompt_text=lesson_prompt_text,
+            belief_prompt_text=belief_prompt_text,
+            reactive_belief_prompt_text=reactive_belief_prompt_text,
         )
         self.extractor = GridPositionExtractor()
         self.grid_img_path = Path(__file__).resolve().parent.parent / "assets" / "reference" / "GRID.png"
@@ -3023,7 +3153,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
                 position_table=position_table,
             )
 
-            response, usage = request_gemini_video_img_token(
+            response, usage = request_interaction_video_image(
                 prompt=prompt,
                 video_path=video_path,
                 image_path=str(self.grid_img_path),
@@ -3061,17 +3191,18 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
         )
 
     def run(self, max_retries: int = 3) -> str:
+        active_belief_prompt_text = self._belief_prompt_for_invocation()
         tools = [self.mark_task_complete, self.add_issue, self.update_issue, self.review_rendered_video]
         tools.extend(self.tools)
 
         auto_review_results = self._auto_review_rendered_sections()
-        lesson_block = f"\n{self.lesson_prompt_text}\n" if self.lesson_prompt_text else ""
+        belief_block = f"\n{active_belief_prompt_text}\n" if active_belief_prompt_text else ""
 
         prompt = f"""You are {self.name}, the orchestrator for one shared MAS team producing all sections of a video.
 
 Automatic video review results this turn:
 {auto_review_results}
-{lesson_block}
+{belief_block}
 
 Instructions:
 1. Use read tools to inspect the latest shared state before making coordination decisions. Fetch topic, team, coder assignments, section outline/storyboard, render context, code, and issues instead of relying on prompt snapshots.
@@ -3086,6 +3217,13 @@ Instructions:
 8. Route coding issues to the correct dedicated coder (Coder1/Coder2/... based on coder assignments).
 9. Deactivate duplicates/out-of-scope issues with update_issue(..., isActive=False).
 10. If a read tool returns `ok: false`, inspect the error payload, correct the arguments, and retry the read tool call when appropriate.
+
+{TOOL_CALL_BATCHING_GUIDANCE}
+Orchestrator-specific batching workflow:
+1. Batch-read all independent shared-state documents whose arguments are already known.
+2. Evaluate the returned state and issue resolutions.
+3. In the next response, batch all independent mark_task_complete, update_issue, and add_issue actions that are ready.
+4. Start another read or update round only when its arguments or decision depend on a previous result.
 
 Guidelines:
 {self.guidelines}
@@ -3122,14 +3260,14 @@ class MASVideoRunner:
         self.assets_dir.mkdir(parents=True, exist_ok=True)
         self.iconfinder_api_key = self.cfg.iconfinder_api_key or _load_iconfinder_api_key()
         self.pre_asset_storyboard_payload: Optional[Dict[str, object]] = None
-        self.lesson_library_path = _resolve_lesson_library_path(self.cfg.lesson_library_path)
-        self.prompt_lessons: Dict[str, Any] = {"general": [], "by_role": {}}
-        if self.cfg.inject_lessons_into_prompts:
-            self.prompt_lessons = _load_ranked_lessons_for_prompt(self.lesson_library_path)
-            library_label = str(self.lesson_library_path) if self.lesson_library_path is not None else "none"
-            print(f"[VideoMAS] Prompt lesson injection enabled. Lesson library: {library_label}")
-            if not self.prompt_lessons["general"] and not self.prompt_lessons["by_role"]:
-                print("[VideoMAS] No active lessons found for prompt injection.")
+        self.belief_library_path = _resolve_belief_library_path(self.cfg.belief_library_path)
+        self.prompt_beliefs: Dict[str, Any] = {"by_role": {}}
+        if self.cfg.inject_beliefs_into_prompts:
+            self.prompt_beliefs = _load_ranked_beliefs_for_prompt(self.belief_library_path)
+            library_label = str(self.belief_library_path) if self.belief_library_path is not None else "none"
+            print(f"[VideoMAS] Prompt belief injection enabled. Belief library: {library_label}")
+            if not self.prompt_beliefs["by_role"]:
+                print("[VideoMAS] No active beliefs found for prompt injection.")
 
         self._sync_token_usage()
 
@@ -3149,6 +3287,14 @@ class MASVideoRunner:
                 ),
                 max_code_token_length=self.cfg.max_code_token_length,
                 assets_dir=self.assets_dir,
+                belief_prompt_text=_format_beliefs_for_prompt(
+                    agent_role=CODER,
+                    belief_payload=self.prompt_beliefs,
+                    top_general_k=self.cfg.top_general_beliefs,
+                    top_specialized_k=self.cfg.top_specialized_beliefs,
+                    allowed_timings={"reactive", "both"},
+                    allowed_belief_types={"confirmed", "precaution"},
+                ),
             )
 
         self.script_writer_agent = VideoTeamBaseAgent(
@@ -3161,11 +3307,19 @@ class MASVideoRunner:
             managed_sections=self.video_state.section_ids(),
             tools=[],
             token_tracker=self.token_tracker,
-            lesson_prompt_text=_format_lessons_for_prompt(
+            belief_prompt_text=_format_beliefs_for_prompt(
                 agent_role=SCRIPT_WRITER,
-                lesson_payload=self.prompt_lessons,
-                top_general_k=self.cfg.top_general_lessons,
-                top_specialized_k=self.cfg.top_specialized_lessons,
+                belief_payload=self.prompt_beliefs,
+                top_general_k=self.cfg.top_general_beliefs,
+                top_specialized_k=self.cfg.top_specialized_beliefs,
+                allowed_timings={"preventative", "both"},
+            ),
+            reactive_belief_prompt_text=_format_beliefs_for_prompt(
+                agent_role=SCRIPT_WRITER,
+                belief_payload=self.prompt_beliefs,
+                top_general_k=self.cfg.top_general_beliefs,
+                top_specialized_k=self.cfg.top_specialized_beliefs,
+                allowed_timings={"reactive", "both"},
             ),
         )
         self.script_writer_agent.tools.append(self.script_writer_agent.replace_lecture_lines)
@@ -3180,11 +3334,19 @@ class MASVideoRunner:
             managed_sections=self.video_state.section_ids(),
             tools=[],
             token_tracker=self.token_tracker,
-            lesson_prompt_text=_format_lessons_for_prompt(
+            belief_prompt_text=_format_beliefs_for_prompt(
                 agent_role=ANIMATION_PLANNER,
-                lesson_payload=self.prompt_lessons,
-                top_general_k=self.cfg.top_general_lessons,
-                top_specialized_k=self.cfg.top_specialized_lessons,
+                belief_payload=self.prompt_beliefs,
+                top_general_k=self.cfg.top_general_beliefs,
+                top_specialized_k=self.cfg.top_specialized_beliefs,
+                allowed_timings={"preventative", "both"},
+            ),
+            reactive_belief_prompt_text=_format_beliefs_for_prompt(
+                agent_role=ANIMATION_PLANNER,
+                belief_payload=self.prompt_beliefs,
+                top_general_k=self.cfg.top_general_beliefs,
+                top_specialized_k=self.cfg.top_specialized_beliefs,
+                allowed_timings={"reactive", "both"},
             ),
         )
         self.animation_planner_agent.tools.append(self.animation_planner_agent.replace_animations)
@@ -3203,11 +3365,19 @@ class MASVideoRunner:
                 managed_sections=[section_id],
                 tools=[],
                 token_tracker=self.token_tracker,
-                lesson_prompt_text=_format_lessons_for_prompt(
+                belief_prompt_text=_format_beliefs_for_prompt(
                     agent_role=CODER,
-                    lesson_payload=self.prompt_lessons,
-                    top_general_k=self.cfg.top_general_lessons,
-                    top_specialized_k=self.cfg.top_specialized_lessons,
+                    belief_payload=self.prompt_beliefs,
+                    top_general_k=self.cfg.top_general_beliefs,
+                    top_specialized_k=self.cfg.top_specialized_beliefs,
+                    allowed_timings={"preventative", "both"},
+                ),
+                reactive_belief_prompt_text=_format_beliefs_for_prompt(
+                    agent_role=CODER,
+                    belief_payload=self.prompt_beliefs,
+                    top_general_k=self.cfg.top_general_beliefs,
+                    top_specialized_k=self.cfg.top_specialized_beliefs,
+                    allowed_timings={"reactive", "both"},
                 ),
             )
             coder_agent.tools.append(coder_agent.replace_code)
@@ -3231,11 +3401,19 @@ class MASVideoRunner:
             tools=[],
             token_tracker=self.token_tracker,
             auto_review_changed_only=self.cfg.auto_review_changed_only,
-            lesson_prompt_text=_format_lessons_for_prompt(
+            belief_prompt_text=_format_beliefs_for_prompt(
                 agent_role=ORCHESTRATOR,
-                lesson_payload=self.prompt_lessons,
-                top_general_k=self.cfg.top_general_lessons,
-                top_specialized_k=self.cfg.top_specialized_lessons,
+                belief_payload=self.prompt_beliefs,
+                top_general_k=self.cfg.top_general_beliefs,
+                top_specialized_k=self.cfg.top_specialized_beliefs,
+                allowed_timings={"preventative", "both"},
+            ),
+            reactive_belief_prompt_text=_format_beliefs_for_prompt(
+                agent_role=ORCHESTRATOR,
+                belief_payload=self.prompt_beliefs,
+                top_general_k=self.cfg.top_general_beliefs,
+                top_specialized_k=self.cfg.top_specialized_beliefs,
+                allowed_timings={"reactive", "both"},
             ),
         )
 
@@ -3687,6 +3865,7 @@ class MASVideoRunner:
                     "lecture_lines": list(section.lecture_lines),
                     "phase": phase_label,
                     "assets_dir": str(self.assets_dir),
+                    "belief_prompt_text": self.coder_runtimes[section_id].belief_prompt_text,
                 }
             )
 

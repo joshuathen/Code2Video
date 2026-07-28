@@ -93,6 +93,7 @@ def evaluate_video(
     questions_json: Path,
     tq_concept: Optional[str] = None,
     per_question_workers: int = 5,
+    use_interactions: bool = False,
 ) -> Dict[str, Any]:
     eval_model = os.getenv("EVAL_MODEL", "gemini-2.5-pro")
     concept_questions = load_questions_from_json(str(questions_json))
@@ -107,9 +108,12 @@ def evaluate_video(
         "tq": {"ok": False, "result": None, "report": None, "error": None},
     }
 
-    evaluator = VideoEvaluator(
-        functools.partial(request_gemini_with_video, model_name=eval_model)
-    )
+    video_request = request_gemini_with_video
+    if use_interactions:
+        from mas_interactions import request_interaction_video
+
+        video_request = request_interaction_video
+    evaluator = VideoEvaluator(functools.partial(video_request, model_name=eval_model))
     try:
         aes_result = evaluator.evaluate_video(video_path=str(video_path), knowledge_point=topic)
         result["aes"]["ok"] = True
@@ -125,6 +129,7 @@ def evaluate_video(
             video_path=str(video_path),
             per_question_workers=per_question_workers,
             teachquiz_model=eval_model,
+            use_interactions=use_interactions,
         )
         result["tq"]["ok"] = True
         result["tq"]["result"] = _to_jsonable(tq_result)

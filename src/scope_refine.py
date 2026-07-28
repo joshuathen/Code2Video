@@ -249,10 +249,11 @@ class ManimCodeErrorAnalyzer:
 
 class ScopeRefineFixer:
 
-    def __init__(self, gpt_request_func, MAX_CODE_TOKEN_LENGTH):
+    def __init__(self, gpt_request_func, MAX_CODE_TOKEN_LENGTH, belief_prompt_text: str = ""):
         self.analyzer = ManimCodeErrorAnalyzer()
         self.request_gpt = gpt_request_func
         self.MAX_CODE_TOKEN_LENGTH = MAX_CODE_TOKEN_LENGTH
+        self.belief_prompt_text = belief_prompt_text.strip()
 
         self.common_fixes = self._load_common_fixes()
         self.error_patterns = self._load_error_patterns()
@@ -408,6 +409,15 @@ class ScopeRefineFixer:
         else:
             strategy = "complete_rewrite"
 
+        belief_block = f"""
+
+        **Relevant reactive beliefs:**
+        {self.belief_prompt_text}
+
+        Apply these beliefs only when relevant to the observed error. The exact traceback,
+        current code, and installed Manim CE v0.19.0 API take precedence.
+        """ if self.belief_prompt_text else ""
+
         base_prompt = f"""
         You are an expert Manim Community Edition v0.19.0 developer. Fix the following code error with high precision.
 
@@ -432,6 +442,7 @@ class ScopeRefineFixer:
 
         **Suggestions:**
         {chr(10).join(f"- {s}" for s in suggestions)}
+        {belief_block}
         """
 
         if strategy == "focused_fix":
@@ -577,6 +588,15 @@ class ScopeRefineFixer:
         error_type, error_category, suggestions = self.classify_error(error_msg)
         error_context = self.extract_error_context(error_msg)
 
+        belief_block = f"""
+
+        **Relevant reactive beliefs:**
+        {self.belief_prompt_text}
+
+        Apply these beliefs only when relevant to the observed error. The exact traceback,
+        current code, and installed Manim CE v0.19.0 API take precedence.
+        """ if self.belief_prompt_text else ""
+
         prompt = f"""
         You are an expert Manim Community Edition v0.19.0 developer. Fix the error in the following code block.
 
@@ -596,6 +616,7 @@ class ScopeRefineFixer:
 
         **Suggestions:**
         {chr(10).join(f"- {s}" for s in suggestions)}
+        {belief_block}
 
         **Code Block to Fix:**
         ```python

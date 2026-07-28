@@ -1,5 +1,6 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import csv
 import json
 import os
 import sys
@@ -289,6 +290,122 @@ def _pipeline_output_root(results: List[Dict[str, Any]]) -> Optional[Path]:
     return generated_dirs[0].parent
 
 
+def _build_topic_metrics(result: Dict[str, Any]) -> Dict[str, Any]:
+    generation = result.get("generation") or {}
+    evaluation = result.get("evaluation") or {}
+    combined_result = evaluation.get("result") or {}
+    aes_result = ((combined_result.get("aes") or {}).get("result") or {})
+    tq_result = ((combined_result.get("tq") or {}).get("result") or {})
+
+    def _float_or_none(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _aes_percent(key: str) -> Optional[float]:
+        raw_value = _float_or_none(aes_result.get(key))
+        return raw_value / 20.0 * 100.0 if raw_value is not None else None
+
+    learning_gain_raw = _float_or_none(tq_result.get("learning_gain"))
+    total_tokens = generation.get("total_tokens")
+
+    return {
+        "schema_version": 1,
+        "runner": result.get("runner"),
+        "topic_index": result.get("topic_index"),
+        "topic": result.get("topic"),
+        "generated_topic": generation.get("generated_topic"),
+        "generation_success": bool(generation.get("success")),
+        "evaluation_success": bool(evaluation.get("success")),
+        "pipeline_success": bool(result.get("success")),
+        "generation_time_minutes": _float_or_none(generation.get("duration_minutes")),
+        "evaluation_time_minutes": _float_or_none(evaluation.get("duration_minutes")),
+        "generation_tokens": int(total_tokens) if total_tokens is not None else None,
+        "generation_tokens_k": (
+            float(total_tokens) / 1000.0 if total_tokens is not None else None
+        ),
+        "element_layout": _aes_percent("element_layout"),
+        "attractiveness": _aes_percent("attractiveness"),
+        "logic_flow": _aes_percent("logic_flow"),
+        "visual_consistency": _aes_percent("visual_consistency"),
+        "accuracy_depth": _aes_percent("accuracy_depth"),
+        "aesthetics_average": _float_or_none(aes_result.get("overall_score")),
+        "teachquiz_gain": (
+            learning_gain_raw * 100.0 if learning_gain_raw is not None else None
+        ),
+        "raw_metrics": {
+            "aes_scale": "0-20",
+            "element_layout": _float_or_none(aes_result.get("element_layout")),
+            "attractiveness": _float_or_none(aes_result.get("attractiveness")),
+            "logic_flow": _float_or_none(aes_result.get("logic_flow")),
+            "visual_consistency": _float_or_none(aes_result.get("visual_consistency")),
+            "accuracy_depth": _float_or_none(aes_result.get("accuracy_depth")),
+            "aesthetics_average": _float_or_none(aes_result.get("overall_score")),
+            "teachquiz_gain_proportion": learning_gain_raw,
+        },
+        "output_dir": generation.get("output_dir"),
+        "final_video_path": generation.get("final_video_path"),
+        "evaluation_path": evaluation.get("output_path"),
+        "error": result.get("error"),
+    }
+
+
+def _write_topic_metrics(result: Dict[str, Any]) -> Optional[Path]:
+    generation = result.get("generation") or {}
+    output_dir = generation.get("output_dir")
+    if not output_dir:
+        return None
+
+    output_path = Path(output_dir).resolve() / "topic_metrics.json"
+    output_path.write_text(
+        json.dumps(_build_topic_metrics(result), indent=2),
+        encoding="utf-8",
+    )
+    return output_path
+
+
+def _write_pipeline_topic_metrics(results: List[Dict[str, Any]]) -> Optional[Path]:
+    output_root = _pipeline_output_root(results)
+    if output_root is None:
+        return None
+
+    metrics = [_build_topic_metrics(result) for result in results]
+    fieldnames = [
+        "topic_index",
+        "runner",
+        "topic",
+        "generated_topic",
+        "generation_success",
+        "evaluation_success",
+        "pipeline_success",
+        "generation_time_minutes",
+        "evaluation_time_minutes",
+        "generation_tokens",
+        "generation_tokens_k",
+        "element_layout",
+        "attractiveness",
+        "logic_flow",
+        "visual_consistency",
+        "accuracy_depth",
+        "aesthetics_average",
+        "teachquiz_gain",
+        "output_dir",
+        "final_video_path",
+        "evaluation_path",
+        "error",
+    ]
+    output_path = output_root / "pipeline_topic_metrics.csv"
+    with output_path.open("w", encoding="utf-8", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        for metric in metrics:
+            writer.writerow({name: metric.get(name) for name in fieldnames})
+    return output_path
+
+
 def _write_batch_pipeline_summary(runner_name: str, results: List[Dict[str, Any]]) -> None:
     paper_row = _build_paper_style_row(results)
     if paper_row is None:
@@ -469,10 +586,10 @@ def _build_mas_generation_result(args: argparse.Namespace, idx: int) -> Dict[str
         case_index=args.case_index,
         auto_review_changed_only=True,
         iconfinder_api_key=_load_iconfinder_api_key(),
-        inject_lessons_into_prompts=args.inject_lessons_into_prompts,
-        lesson_library_path=args.lesson_library_path,
-        top_general_lessons=args.top_general_lessons,
-        top_specialized_lessons=args.top_specialized_lessons,
+        inject_beliefs_into_prompts=args.inject_beliefs_into_prompts,
+        belief_library_path=args.belief_library_path,
+        top_general_beliefs=args.top_general_beliefs,
+        top_specialized_beliefs=args.top_specialized_beliefs,
     )
 
     final_video_state = run_mas_for_video_state(
@@ -507,6 +624,7 @@ def _evaluate_generated_video(
     topic: str,
     questions_json: Path,
     per_question_workers: int,
+    use_interactions: bool = False,
 ) -> Dict[str, Any]:
     from eval_video import evaluate_video
 
@@ -516,6 +634,7 @@ def _evaluate_generated_video(
         topic=topic,
         questions_json=questions_json,
         per_question_workers=per_question_workers,
+        use_interactions=use_interactions,
     )
     output_path = resolved_video_path.with_name(f"{resolved_video_path.stem}_eval.json")
     output_path.write_text(json.dumps(combined_result, indent=2), encoding="utf-8")
@@ -557,41 +676,57 @@ def _run_single_topic_pipeline(
     if runner_name == "mas":
         topic_args.case_index = _resolve_mas_case_index(getattr(base_args, "case_index", None), idx)
 
+    generation_result = None
+    evaluation_result = None
     try:
         generation_result = generation_fn(topic_args, idx)
         print(f"Run outputs written to: {generation_result['output_dir']}")
         if generation_result.get("final_video_path"):
             print(f"Final video: {generation_result['final_video_path']}")
 
-        evaluation_result = None
         if generation_result["success"] and generation_result.get("final_video_path"):
+            evaluation_started_at = time.time()
             evaluation_result = _evaluate_generated_video(
                 video_path=generation_result["final_video_path"],
                 topic=knowledge_point,
                 questions_json=questions_json,
                 per_question_workers=per_question_workers,
+                use_interactions=(runner_name == "mas"),
             )
+            evaluation_result["duration_minutes"] = (
+                time.time() - evaluation_started_at
+            ) / 60.0
             print(f"Saved evaluation: {evaluation_result['output_path']}")
         else:
             print("Skipping evaluation because no final video was produced.")
 
-        return {
+        result = {
             "runner": runner_name,
+            "topic_index": idx,
             "topic": knowledge_point,
             "generation": generation_result,
             "evaluation": evaluation_result,
             "success": bool(generation_result["success"] and evaluation_result and evaluation_result["success"]),
         }
+        metrics_path = _write_topic_metrics(result)
+        if metrics_path is not None:
+            print(f"Saved topic metrics: {metrics_path}")
+        return result
     except Exception as exc:
         print(f"❌ {runner_name} pipeline failed for '{knowledge_point}': {exc}")
-        return {
+        result = {
             "runner": runner_name,
+            "topic_index": idx,
             "topic": knowledge_point,
-            "generation": None,
-            "evaluation": None,
+            "generation": generation_result,
+            "evaluation": evaluation_result,
             "success": False,
             "error": str(exc),
         }
+        metrics_path = _write_topic_metrics(result)
+        if metrics_path is not None:
+            print(f"Saved partial topic metrics: {metrics_path}")
+        return result
 
 
 def _run_generation_and_evaluation_pipeline(
@@ -646,6 +781,9 @@ def _run_generation_and_evaluation_pipeline(
                 results[idx] = future.result()
 
     finalized_results = [item for item in results if item is not None]
+    topic_metrics_path = _write_pipeline_topic_metrics(finalized_results)
+    if topic_metrics_path is not None:
+        print(f"Saved per-topic pipeline metrics: {topic_metrics_path}")
     _print_batch_pipeline_summary(runner_name, finalized_results)
     _write_batch_pipeline_summary(runner_name, finalized_results)
     return finalized_results
@@ -723,10 +861,10 @@ def run_mas_generation_and_evaluation_pipeline(
     clear_logs: bool = False,
     case_index: Optional[int] = None,
     topic_parallel_workers: int = DEFAULT_TOPIC_PARALLEL_WORKERS,
-    inject_lessons_into_prompts: bool = False,
-    lesson_library_path: Optional[str] = None,
-    top_general_lessons: int = 10,
-    top_specialized_lessons: int = 10,
+    inject_beliefs_into_prompts: bool = False,
+    belief_library_path: Optional[str] = None,
+    top_general_beliefs: int = 10,
+    top_specialized_beliefs: int = 10,
 ) -> List[Dict[str, Any]]:
     """Run MAS generation plus evaluation for the first N topics, or all topics when max_topics is None/-1."""
     knowledge_points = load_knowledge_points(knowledge_file=knowledge_file, max_topics=max_topics)
@@ -750,10 +888,10 @@ def run_mas_generation_and_evaluation_pipeline(
         orchestrator_model=orchestrator_model,
         clear_logs=clear_logs,
         case_index=case_index,
-        inject_lessons_into_prompts=inject_lessons_into_prompts,
-        lesson_library_path=lesson_library_path,
-        top_general_lessons=top_general_lessons,
-        top_specialized_lessons=top_specialized_lessons,
+        inject_beliefs_into_prompts=inject_beliefs_into_prompts,
+        belief_library_path=belief_library_path,
+        top_general_beliefs=top_general_beliefs,
+        top_specialized_beliefs=top_specialized_beliefs,
     )
     _resolve_mas_pipeline_output_root(base_args)
 
@@ -810,10 +948,10 @@ def _run_pipeline_from_cli(args: argparse.Namespace) -> int:
             clear_logs=args.clear_logs,
             case_index=args.case_index,
             topic_parallel_workers=args.topic_parallel_workers,
-            inject_lessons_into_prompts=args.inject_lessons_into_prompts,
-            lesson_library_path=args.lesson_library_path,
-            top_general_lessons=args.top_general_lessons,
-            top_specialized_lessons=args.top_specialized_lessons,
+            inject_beliefs_into_prompts=args.inject_beliefs_into_prompts,
+            belief_library_path=args.belief_library_path,
+            top_general_beliefs=args.top_general_beliefs,
+            top_specialized_beliefs=args.top_specialized_beliefs,
         )
 
     if not results:
@@ -921,15 +1059,41 @@ def build_and_parse_args() -> argparse.Namespace:
     parser.add_argument("--section_parallel_workers", type=int, default=None)
     parser.add_argument("--worker_model", type=str, default=DEFAULT_OUTLINE_MODEL)
     parser.add_argument("--orchestrator_model", type=str, default=DEFAULT_OUTLINE_MODEL)
-    _add_bool_flag(parser, "inject_lessons_into_prompts", False)
+    _add_bool_flag(parser, "inject_beliefs_into_prompts", False)
     parser.add_argument(
+        "--inject_lessons_into_prompts",
+        action="store_true",
+        dest="inject_beliefs_into_prompts",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--no_inject_lessons_into_prompts",
+        action="store_false",
+        dest="inject_beliefs_into_prompts",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--belief_library_path",
         "--lesson_library_path",
+        dest="belief_library_path",
         type=str,
         default=None,
-        help="Optional path to lesson_library.json or a pipeline directory containing it. Defaults to the latest pipeline library under mas_logs when lesson injection is enabled.",
+        help="Optional path to belief_library.json or a pipeline directory containing it. Defaults to the latest pipeline library under mas_logs when belief injection is enabled.",
     )
-    parser.add_argument("--top_general_lessons", type=int, default=10)
-    parser.add_argument("--top_specialized_lessons", type=int, default=10)
+    parser.add_argument(
+        "--top_general_beliefs",
+        "--top_general_lessons",
+        dest="top_general_beliefs",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        "--top_specialized_beliefs",
+        "--top_specialized_lessons",
+        dest="top_specialized_beliefs",
+        type=int,
+        default=10,
+    )
     parser.add_argument("--clear_logs", action="store_true", default=False)
     parser.add_argument("--case_index", type=int, default=None)
 

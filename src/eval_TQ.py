@@ -117,7 +117,25 @@ def _call_video_api(prompt: str, video_path: str, model_name: str = DEFAULT_TEAC
     return extract_answer_from_response(response)
 
 
-def make_mllm_api(video_path: Optional[str], model_name: str = DEFAULT_TEACHQUIZ_MODEL) -> Callable[[str], str]:
+def make_mllm_api(
+    video_path: Optional[str],
+    model_name: str = DEFAULT_TEACHQUIZ_MODEL,
+    use_interactions: bool = False,
+) -> Callable[[str], str]:
+    if use_interactions:
+        from mas_interactions import request_interaction_text, request_interaction_video
+
+        if video_path:
+            return lambda prompt: extract_answer_from_response(
+                request_interaction_video(
+                    prompt=prompt,
+                    video_path=video_path,
+                    model_name=model_name,
+                )
+            )
+        return lambda prompt: extract_answer_from_response(
+            request_interaction_text(prompt=prompt, model_name=model_name)
+        )
     if video_path:
         return lambda prompt: _call_video_api(prompt, video_path, model_name=model_name)
     else:
@@ -299,9 +317,18 @@ def run_one_concept(
     video_path: str,
     per_question_workers: int,
     teachquiz_model: str = DEFAULT_TEACHQUIZ_MODEL,
+    use_interactions: bool = False,
 ) -> EvaluationResult:
-    text_api = make_mllm_api(video_path=None, model_name=teachquiz_model)
-    video_api = make_mllm_api(video_path=video_path, model_name=teachquiz_model)
+    text_api = make_mllm_api(
+        video_path=None,
+        model_name=teachquiz_model,
+        use_interactions=use_interactions,
+    )
+    video_api = make_mllm_api(
+        video_path=video_path,
+        model_name=teachquiz_model,
+        use_interactions=use_interactions,
+    )
     sku = SelectiveKnowledgeUnlearning(mllm_api_function=text_api, per_question_workers=per_question_workers)
     return sku.evaluate_educational_video(concept=concept, questions=questions, video_api_fn=video_api)
 
