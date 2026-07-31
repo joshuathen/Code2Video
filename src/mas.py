@@ -22,11 +22,18 @@ from mas_interactions import (
     response_usage_dict,
     run_tool_interaction,
 )
+from belief_bbn import (
+    BBNParameters,
+    BeliefEmbeddingIndex,
+    BeliefSelector,
+    BeliefSituation,
+    format_selected_beliefs,
+)
 from scope_refine import ScopeRefineFixer, GridPositionExtractor
 from utils import extract_answer_from_response
 from utils import extract_json_from_markdown
-from utils import replace_base_class
 from utils import topic_to_safe_name
+from code_normalization import normalize_code_to_code2video
 
 try:
     from prompts import get_prompt1_outline, get_prompt3_code_mas, get_prompt4_layout_feedback, get_regenerate_note
@@ -1072,25 +1079,6 @@ def _scene_name_from_section_id(section_id: str) -> str:
     return f"{section_id.title().replace('_', '')}Scene"
 
 
-def normalize_code_to_code2video(
-    code: str,
-    section_id: str,
-    section_title: str,
-    lecture_lines: List[str],
-) -> str:
-    normalized = (code or "").strip()
-    if not normalized:
-        return normalized
-
-    if "```python" in normalized:
-        normalized = normalized.split("```python", 1)[1].split("```", 1)[0].strip()
-    elif "```" in normalized:
-        normalized = normalized.split("```", 1)[1].split("```", 1)[0].strip()
-
-    normalized = replace_base_class(normalized, TEACHING_SCENE_BASE_CLASS)
-    return normalized.strip() + "\n"
-
-
 def _extract_text_from_gemini_response(response) -> str:
     """
     Extract concatenated text parts without calling `response.text` to avoid
@@ -1853,6 +1841,11 @@ class MASRunConfig:
     belief_library_path: Optional[str] = None
     top_general_beliefs: int = 10
     top_specialized_beliefs: int = 10
+    contextual_belief_selection: bool = True
+    belief_usefulness_threshold: float = 0.60
+    belief_candidate_limit: int = 20
+    bbn_parameters_path: Optional[str] = None
+    belief_embedding_model: Optional[str] = None
 
 
 def generate_outline_with_code2video_stage1(
@@ -2011,6 +2004,7 @@ class VideoTeamBaseAgent(MASAgent):
         token_tracker: Optional[MASTokenTracker] = None,
         belief_prompt_text: str = "",
         reactive_belief_prompt_text: str = "",
+        contextual_belief_prompt_fn: Optional[Callable[[str], str]] = None,
     ):
         super().__init__(
             name=name,
@@ -2025,6 +2019,7 @@ class VideoTeamBaseAgent(MASAgent):
         self.managed_sections = managed_sections or self.video_state.section_ids()
         self.belief_prompt_text = belief_prompt_text.strip()
         self.reactive_belief_prompt_text = reactive_belief_prompt_text.strip()
+        self.contextual_belief_prompt_fn = contextual_belief_prompt_fn
         self._belief_invocation_count = 0
         self.tools.extend(
             [
@@ -2044,7 +2039,10 @@ class VideoTeamBaseAgent(MASAgent):
 
     def _belief_prompt_for_invocation(self) -> str:
         """Return stage-appropriate beliefs and advance this agent's task count."""
-        if self._belief_invocation_count == 0:
+        timing = "preventative" if self._belief_invocation_count == 0 else "reactive"
+        if self.contextual_belief_prompt_fn is not None:
+            prompt_text = self.contextual_belief_prompt_fn(timing)
+        elif self._belief_invocation_count == 0:
             prompt_text = self.belief_prompt_text
         else:
             prompt_text = self.reactive_belief_prompt_text
@@ -2903,6 +2901,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
         token_tracker: Optional[MASTokenTracker] = None,
         belief_prompt_text: str = "",
         reactive_belief_prompt_text: str = "",
+        contextual_belief_prompt_fn: Optional[Callable[[str], str]] = None,
         auto_review_changed_only: bool = True,
     ):
         super().__init__(
@@ -2917,6 +2916,7 @@ class VideoOrchestratorTeamAgent(VideoTeamBaseAgent):
             token_tracker=token_tracker,
             belief_prompt_text=belief_prompt_text,
             reactive_belief_prompt_text=reactive_belief_prompt_text,
+            contextual_belief_prompt_fn=contextual_belief_prompt_fn,
         )
         self.extractor = GridPositionExtractor()
         self.grid_img_path = Path(__file__).resolve().parent.parent / "assets" / "reference" / "GRID.png"
@@ -3262,12 +3262,85 @@ class MASVideoRunner:
         self.pre_asset_storyboard_payload: Optional[Dict[str, object]] = None
         self.belief_library_path = _resolve_belief_library_path(self.cfg.belief_library_path)
         self.prompt_beliefs: Dict[str, Any] = {"by_role": {}}
+        self.contextual_belief_selector: Optional[BeliefSelector] = None
         if self.cfg.inject_beliefs_into_prompts:
             self.prompt_beliefs = _load_ranked_beliefs_for_prompt(self.belief_library_path)
             library_label = str(self.belief_library_path) if self.belief_library_path is not None else "none"
             print(f"[VideoMAS] Prompt belief injection enabled. Belief library: {library_label}")
             if not self.prompt_beliefs["by_role"]:
                 print("[VideoMAS] No active beliefs found for prompt injection.")
+            if self.cfg.contextual_belief_selection and self.belief_library_path is not None:
+                try:
+                    raw_library = json.loads(
+                        self.belief_library_path.read_text(encoding="utf-8")
+                    )
+                    raw_beliefs = raw_library.get(
+                        "beliefs", raw_library.get("lessons", raw_library)
+                    )
+                    if isinstance(raw_beliefs, dict):
+                        raw_beliefs = list(raw_beliefs.values())
+                    parameters_path = (
+                        Path(self.cfg.bbn_parameters_path).expanduser().resolve()
+                        if self.cfg.bbn_parameters_path
+                        else self.belief_library_path.with_name("bbn_parameters.json")
+                    )
+                    embeddings_path = self.belief_library_path.with_name(
+                        "belief_embeddings.npz"
+                    )
+                    embedding_metadata_path = self.belief_library_path.with_name(
+                        "belief_embedding_metadata.json"
+                    )
+                    embedding_index = None
+                    if embeddings_path.exists() and embedding_metadata_path.exists():
+                        embedding_index = BeliefEmbeddingIndex.load(
+                            embeddings_path=embeddings_path,
+                            metadata_path=embedding_metadata_path,
+                            model_name_or_path=self.cfg.belief_embedding_model,
+                        )
+                        stale_ids = embedding_index.validate_beliefs(
+                            raw_beliefs if isinstance(raw_beliefs, list) else []
+                        )
+                        if stale_ids:
+                            print(
+                                "[VideoMAS] Belief embedding cache is stale/missing "
+                                f"{len(stale_ids)} records; ignoring it until rebuilt."
+                            )
+                            embedding_index = None
+                    if (
+                        embedding_index is None
+                        and self.cfg.belief_embedding_model
+                    ):
+                        try:
+                            embedding_index = BeliefEmbeddingIndex.build(
+                                raw_beliefs if isinstance(raw_beliefs, list) else [],
+                                model_name_or_path=self.cfg.belief_embedding_model,
+                                embeddings_path=embeddings_path,
+                                metadata_path=embedding_metadata_path,
+                            )
+                            print(
+                                "[VideoMAS] Built and stored belief embedding cache: "
+                                f"{embeddings_path}"
+                            )
+                        except Exception as embedding_exc:
+                            print(
+                                "[VideoMAS] Could not build stored belief embeddings; "
+                                f"using lexical similarity: {embedding_exc}"
+                            )
+                    self.contextual_belief_selector = BeliefSelector(
+                        raw_beliefs if isinstance(raw_beliefs, list) else [],
+                        parameters=BBNParameters.from_path(parameters_path),
+                        embedding_index=embedding_index,
+                        log_path=self.case_dir / "belief_selections.jsonl",
+                    )
+                    print(
+                        "[VideoMAS] Contextual BBN belief selection enabled "
+                        f"(threshold={self.cfg.belief_usefulness_threshold:.2f})."
+                    )
+                except Exception as exc:
+                    print(
+                        "[VideoMAS] Could not initialise contextual belief selection; "
+                        f"using static ranking: {exc}"
+                    )
 
         self._sync_token_usage()
 
@@ -3287,13 +3360,10 @@ class MASVideoRunner:
                 ),
                 max_code_token_length=self.cfg.max_code_token_length,
                 assets_dir=self.assets_dir,
-                belief_prompt_text=_format_beliefs_for_prompt(
-                    agent_role=CODER,
-                    belief_payload=self.prompt_beliefs,
-                    top_general_k=self.cfg.top_general_beliefs,
-                    top_specialized_k=self.cfg.top_specialized_beliefs,
-                    allowed_timings={"reactive", "both"},
-                    allowed_belief_types={"confirmed", "precaution"},
+                belief_prompt_text=self._contextual_belief_prompt(
+                    CODER,
+                    [section_id],
+                    "reactive",
                 ),
             )
 
@@ -3321,6 +3391,9 @@ class MASVideoRunner:
                 top_specialized_k=self.cfg.top_specialized_beliefs,
                 allowed_timings={"reactive", "both"},
             ),
+            contextual_belief_prompt_fn=lambda timing: self._contextual_belief_prompt(
+                SCRIPT_WRITER, self.video_state.section_ids(), timing
+            ),
         )
         self.script_writer_agent.tools.append(self.script_writer_agent.replace_lecture_lines)
 
@@ -3347,6 +3420,9 @@ class MASVideoRunner:
                 top_general_k=self.cfg.top_general_beliefs,
                 top_specialized_k=self.cfg.top_specialized_beliefs,
                 allowed_timings={"reactive", "both"},
+            ),
+            contextual_belief_prompt_fn=lambda timing: self._contextual_belief_prompt(
+                ANIMATION_PLANNER, self.video_state.section_ids(), timing
             ),
         )
         self.animation_planner_agent.tools.append(self.animation_planner_agent.replace_animations)
@@ -3378,6 +3454,9 @@ class MASVideoRunner:
                     top_general_k=self.cfg.top_general_beliefs,
                     top_specialized_k=self.cfg.top_specialized_beliefs,
                     allowed_timings={"reactive", "both"},
+                ),
+                contextual_belief_prompt_fn=lambda timing, section_id=section_id: self._contextual_belief_prompt(
+                    CODER, [section_id], timing
                 ),
             )
             coder_agent.tools.append(coder_agent.replace_code)
@@ -3415,11 +3494,79 @@ class MASVideoRunner:
                 top_specialized_k=self.cfg.top_specialized_beliefs,
                 allowed_timings={"reactive", "both"},
             ),
+            contextual_belief_prompt_fn=lambda timing: self._contextual_belief_prompt(
+                ORCHESTRATOR, self.video_state.section_ids(), timing
+            ),
         )
 
         for agent in self.team_agents + [self.orchestrator_agent]:
             agent.set_team_agents(self.team_agents)
             agent.call_logger = self.call_logger
+
+    def _contextual_belief_prompt(
+        self,
+        agent_role: str,
+        section_ids: List[str],
+        timing: str,
+    ) -> str:
+        selector = self.contextual_belief_selector
+        if selector is None:
+            return _format_beliefs_for_prompt(
+                agent_role=agent_role,
+                belief_payload=self.prompt_beliefs,
+                top_general_k=self.cfg.top_general_beliefs,
+                top_specialized_k=self.cfg.top_specialized_beliefs,
+                allowed_timings={timing, "both"},
+            )
+
+        relevant_issues = []
+        normalized_role = _normalize_role_label(agent_role)
+        for issue in self.video_state.issues:
+            if not issue.isActive:
+                continue
+            issue_role = _normalize_role_label(issue.toAgent)
+            if issue_role != normalized_role:
+                continue
+            if issue.section_id and issue.section_id not in section_ids:
+                continue
+            relevant_issues.append(issue.description)
+
+        problem_text = "\n".join(relevant_issues) or self.video_state.topic
+        lowered = problem_text.lower()
+        context_tags = {
+            tag
+            for tag, patterns in {
+                "render_timeout": ("timeout", "timed out"),
+                "repeated_render_timeout": ("repeated timeout", "timeouts"),
+                "dynamic_geometry_present": ("updater", "always_redraw", "dynamic"),
+                "render_error": ("render", "traceback", "exception"),
+                "visual_quality_issue": ("layout", "overlap", "visual", "aesthetic"),
+                "pedagogical_issue": ("lecture", "explain", "learning", "quiz"),
+            }.items()
+            if any(pattern in lowered for pattern in patterns)
+        }
+        stage_by_role = {
+            SCRIPT_WRITER: "writing" if timing == "preventative" else "revision",
+            ANIMATION_PLANNER: "planning" if timing == "preventative" else "revision",
+            CODER: "coding" if timing == "preventative" else "debugging",
+            ORCHESTRATOR: "coordination" if timing == "preventative" else "evaluation",
+        }
+        situation = BeliefSituation(
+            topic=self.video_state.topic,
+            agent_role=agent_role,
+            pipeline_stage=stage_by_role.get(agent_role, timing),
+            problem_text=problem_text,
+            context_tags=sorted(context_tags),
+            section_ids=section_ids,
+            timing=timing,
+        )
+        selected = selector.select(
+            situation,
+            top_k=self.cfg.top_specialized_beliefs,
+            threshold=self.cfg.belief_usefulness_threshold,
+            candidate_limit=self.cfg.belief_candidate_limit,
+        )
+        return format_selected_beliefs(selected)
 
     def _set_current_turn_for_agents(self, turn_idx: int) -> None:
         for agent in self.team_agents + [self.orchestrator_agent]:

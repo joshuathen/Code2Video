@@ -18,20 +18,29 @@ from __future__ import annotations
 import argparse
 import ast
 import difflib
+import hashlib
 import json
 import math
 import os
 import re
+import time
 from collections import Counter
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from statistics import mean
-from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Tuple
 
 from google.genai import Client
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, model_validator
+from belief_bbn import (
+    BBNParameters,
+    BeliefEmbeddingIndex,
+    TransitionEvidence,
+    update_beta_posterior,
+)
 from mas_interactions import create_interaction, response_usage_dict
+from code_normalization import normalize_code_to_code2video
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _CFG_PATH = Path(__file__).with_name("api_config.json")
@@ -56,11 +65,15 @@ def cfg(service: str, key: str, default: Any = None) -> Any:
 DEFAULT_LOGS_ROOT = PROJECT_ROOT / "mas_logs"
 DEFAULT_LIBRARY_FILENAME = "belief_library.json"
 DEFAULT_ANALYSIS_FILENAME = "belief_analysis.json"
+DEFAULT_EVIDENCE_FILENAME = "belief_evidence.jsonl"
+DEFAULT_BBN_PARAMETERS_FILENAME = "bbn_parameters.json"
+DEFAULT_PROGRESS_FILENAME = "belief_generation_progress.json"
 DEFAULT_REFLECTION_MODEL = cfg("gemini", "model", "gemini-3-flash-preview")
 
 ACTION_ADD = "ADD"
 ACTION_SUPPORT = "SUPPORT"
 ACTION_CONTRADICT = "CONTRADICT"
+ACTION_OBSERVE = "OBSERVE"
 ACTION_IRRELEVANT = "IRRELEVANT"
 ACTION_REVISE = "REVISE"
 ACTION_MERGE = "MERGE"
@@ -68,6 +81,7 @@ VALID_ACTIONS = {
     ACTION_ADD,
     ACTION_SUPPORT,
     ACTION_CONTRADICT,
+    ACTION_OBSERVE,
     ACTION_IRRELEVANT,
     ACTION_REVISE,
     ACTION_MERGE,
@@ -80,6 +94,64 @@ STATUS_DEPRECATED = "deprecated"
 IMPACT_LEVELS = {"low": 0.25, "medium": 0.5, "high": 0.8, "critical": 1.0}
 BELIEF_TYPES = {"confirmed", "precaution", "hypothesis", "quality"}
 BELIEF_TIMINGS = {"preventative", "reactive", "both"}
+
+STRATEGY_APPLICATION_PROBABILITIES = {
+    "full": 0.95,
+    "partial": 0.65,
+    "unclear": 0.35,
+    "none": 0.05,
+}
+ATTRIBUTION_PROBABILITIES = {
+    "strong": 0.90,
+    "moderate": 0.65,
+    "weak": 0.30,
+    "unclear": 0.20,
+    "none": 0.05,
+}
+EVIDENCE_RELIABILITY_PROBABILITIES = {
+    "direct": 1.00,
+    "corroborated": 0.85,
+    "indirect": 0.65,
+    "inferred": 0.40,
+    "unverifiable": 0.00,
+}
+OUTCOME_IMPROVEMENT_VALUES = {
+    "resolved": 1.00,
+    "improved": 0.75,
+    "unchanged": 0.50,
+    "worsened": 0.00,
+    "unclear": 0.50,
+}
+
+
+def _evidence_categories_to_values(
+    strategy_application: str,
+    attribution_strength: str,
+    evidence_reliability: str,
+    outcome_improvement: str,
+) -> Dict[str, float]:
+    """Map auditable model classifications to deterministic BBN inputs."""
+    return {
+        "strategy_applied_probability": STRATEGY_APPLICATION_PROBABILITIES[
+            strategy_application
+        ],
+        "attribution_probability": ATTRIBUTION_PROBABILITIES[attribution_strength],
+        "reliability_probability": EVIDENCE_RELIABILITY_PROBABILITIES[
+            evidence_reliability
+        ],
+        "improvement": OUTCOME_IMPROVEMENT_VALUES[outcome_improvement],
+    }
+
+
+def _extract_structured_json(response_text: str) -> str:
+    """Accept plain JSON and the fenced JSON some Gemini models still emit."""
+    stripped = response_text.strip()
+    fenced_match = re.fullmatch(
+        r"```(?:json)?\s*(.*?)\s*```",
+        stripped,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return fenced_match.group(1).strip() if fenced_match else stripped
 
 
 def _normalize_impact(value: Any) -> str:
@@ -115,8 +187,12 @@ def _read_json(path: Path) -> Dict[str, Any]:
 
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
+    temporary_path = path.with_name(f".{path.name}.tmp")
+    with temporary_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temporary_path, path)
 
 
 def _coerce_evidence_payload(value: Any) -> Dict[str, Any]:
@@ -198,6 +274,9 @@ def _status_from_counts(
 @dataclass
 class BeliefScope:
     roles: List[str] = field(default_factory=list)
+    stages: List[str] = field(default_factory=list)
+    problem_description: str = ""
+    context_conditions: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -221,6 +300,8 @@ class BeliefRecord:
     timing: str = "both"
     created_from_run: Optional[str] = None
     observed_runs: List[str] = field(default_factory=list)
+    independent_topics: List[str] = field(default_factory=list)
+    topic_evidence_weights: Dict[str, float] = field(default_factory=dict)
     evidence: List[Dict[str, Any]] = field(default_factory=list)
 
     def update_confidence(self) -> None:
@@ -260,17 +341,30 @@ class BeliefAssessment:
     evidence_event_ids: List[str] = field(default_factory=list)
     evidence: Dict[str, Any] = field(default_factory=dict)
     merge_belief_ids: List[str] = field(default_factory=list)
+    topic: str = ""
+    strategy_application: str = "unclear"
+    attribution_strength: str = "unclear"
+    evidence_reliability: str = "unverifiable"
+    outcome_improvement: str = "unclear"
+    strategy_applied_probability: float = 0.5
+    attribution_probability: float = 0.5
+    reliability_probability: float = 0.5
+    improvement: float = 0.5
+    reflection_call: str = ""
 
 
 class ReflectionScopePayload(BaseModel):
     roles: List[Literal["Orchestrator", "Coder", "AnimationPlanner", "ScriptWriter"]] = Field(
         min_length=1
     )
+    stages: List[str] = Field(min_length=1, max_length=5)
+    problem_description: str = Field(min_length=10, max_length=500)
+    context_conditions: List[str] = Field(min_length=1, max_length=8)
 
 
 class ReflectionAssessmentPayload(BaseModel):
     belief_id: Optional[str] = None
-    instruction: str
+    instruction: str = Field(min_length=10, max_length=500)
     scope: ReflectionScopePayload
     applicable: bool
     compliance: Literal["followed", "violated", "mixed", "unclear", "observed_pattern"]
@@ -278,15 +372,34 @@ class ReflectionAssessmentPayload(BaseModel):
     action: Literal["ADD", "SUPPORT", "CONTRADICT", "IRRELEVANT", "REVISE", "MERGE"]
     merge_belief_ids: List[str] = Field(default_factory=list)
     evidence_confidence: float = Field(ge=0.0, le=1.0)
+    strategy_application: Literal["full", "partial", "unclear", "none"]
+    attribution_strength: Literal["strong", "moderate", "weak", "unclear", "none"]
+    evidence_reliability: Literal[
+        "direct", "corroborated", "indirect", "inferred", "unverifiable"
+    ]
+    outcome_improvement: Literal["resolved", "improved", "unchanged", "worsened", "unclear"]
     impact: Literal["low", "medium", "high", "critical"]
     belief_type: Literal["confirmed", "precaution", "hypothesis", "quality"]
     timing: Literal["preventative", "reactive", "both"]
     agent: Optional[Literal["Orchestrator", "Coder", "AnimationPlanner", "ScriptWriter"]] = None
     section_id: Optional[str] = None
-    reason: str
+    reason: str = Field(min_length=10, max_length=500)
     # Gemini structured output does not support free-form object schemas because
     # Pydantic represents them with JSON Schema `additionalProperties`.
-    evidence: str = ""
+    evidence: str = Field(min_length=10, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_action_target(self) -> "ReflectionAssessmentPayload":
+        if self.action == ACTION_ADD and self.belief_id is not None:
+            raise ValueError("ADD assessments must set belief_id to null")
+        if self.action in {
+            ACTION_SUPPORT,
+            ACTION_CONTRADICT,
+            ACTION_REVISE,
+            ACTION_MERGE,
+        } and not self.belief_id:
+            raise ValueError(f"{self.action} assessments must identify an existing belief_id")
+        return self
 
 
 class ReflectionResponsePayload(BaseModel):
@@ -360,6 +473,232 @@ def _bounded_code_diff(code_before: str, code_after: str, *, max_chars: int = 50
     return diff if len(diff) <= max_chars else diff[: max_chars - 3] + "..."
 
 
+def _code_fingerprint(code: str, *, include_full_source: bool = False) -> Dict[str, Any]:
+    calls = _summarize_code_calls(code, max_calls=12)
+    fingerprint = {
+        "sha1": hashlib.sha1(code.encode("utf-8")).hexdigest() if code else None,
+        "char_count": len(code),
+        "line_count": len(code.splitlines()),
+        "calls": [
+            {"name": call.get("name"), "count": call.get("count")}
+            for call in calls
+        ],
+    }
+    if include_full_source and code:
+        fingerprint["full_source"] = code
+    return fingerprint
+
+
+def _state_code_by_section(path: Path) -> Dict[str, str]:
+    if not path.exists():
+        return {}
+    payload = _read_json(path)
+    storyboard = payload.get("storyboard") or []
+    code = payload.get("code") or []
+    return {
+        str(section.get("id")): str(code[index] or "")
+        for index, section in enumerate(storyboard)
+        if isinstance(section, dict) and section.get("id") and index < len(code)
+    }
+
+
+def _phase_turn(phase: str) -> Optional[str]:
+    match = re.match(r"turn_(\d+)", phase)
+    if match:
+        return str(int(match.group(1)))
+    if phase.startswith("final_render"):
+        return "final_render"
+    return None
+
+
+def _turn_state_codes(run_dir: Path, turn: str) -> Tuple[Dict[str, str], Dict[str, str]]:
+    state_dir = run_dir / "mas_state"
+    if turn == "final_render":
+        numeric_turns = []
+        for path in state_dir.glob("turn_*_video_state.json"):
+            match = re.fullmatch(r"turn_(\d+)_video_state\.json", path.name)
+            if match:
+                numeric_turns.append(int(match.group(1)))
+        numeric_turns.sort()
+        start = (
+            _state_code_by_section(state_dir / f"turn_{numeric_turns[-1]:02d}_video_state.json")
+            if numeric_turns
+            else {}
+        )
+        end = _state_code_by_section(state_dir / "final_render_pass_video_state.json")
+        return start, end
+
+    turn_number = int(turn)
+    end = _state_code_by_section(state_dir / f"turn_{turn_number:02d}_video_state.json")
+    if turn_number <= 1:
+        return {}, end
+    previous = turn_number - 1
+    start_path = state_dir / f"turn_{previous:02d}_orchestrator_video_state.json"
+    if not start_path.exists():
+        start_path = state_dir / f"turn_{previous:02d}_video_state.json"
+    return _state_code_by_section(start_path), end
+
+
+def _build_turn_code_trajectories(run_dir: Path) -> Dict[str, Dict[str, Any]]:
+    """Reconstruct compact per-turn code histories without sending whole source files."""
+    final_state_path = _find_final_state_json(run_dir)
+    final_state = _read_json(final_state_path) if final_state_path is not None else {}
+    section_metadata = {
+        str(section.get("id")): {
+            "title": str(section.get("title") or ""),
+            "lecture_lines": [
+                str(line) for line in (section.get("lecture_lines") or [])
+            ],
+        }
+        for section in (final_state.get("storyboard") or [])
+        if isinstance(section, dict) and section.get("id")
+    }
+
+    replacements: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for sequence, event in enumerate(_read_jsonl(run_dir / "agent_function_calls.jsonl"), start=1):
+        if event.get("tool_name") != "replace_code" or event.get("status") != "success":
+            continue
+        turn_number = event.get("turn_number")
+        section_id = str((event.get("output") or {}).get("section_id") or "")
+        raw_code = str((event.get("input") or {}).get("code") or "")
+        if turn_number is None or not section_id or not raw_code:
+            continue
+        metadata = section_metadata.get(section_id, {})
+        normalized_code = normalize_code_to_code2video(
+            raw_code,
+            section_id=section_id,
+            section_title=str(metadata.get("title") or ""),
+            lecture_lines=list(metadata.get("lecture_lines") or []),
+        )
+        replacements.setdefault((str(int(turn_number)), section_id), []).append(
+            {
+                "sequence": sequence,
+                "timestamp": event.get("timestamp"),
+                "agent": _normalize_role_label(event.get("agent")),
+                "raw_code_sha1": hashlib.sha1(raw_code.encode("utf-8")).hexdigest(),
+                "normalization_changed_code": normalized_code != raw_code,
+                "code": normalized_code,
+            }
+        )
+
+    attempts: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for attempt_path in sorted(run_dir.glob("coder_debugger/section_*/attempt_*/attempt.json")):
+        payload = _read_json(attempt_path)
+        phase = str(payload.get("phase") or "")
+        turn = _phase_turn(phase)
+        if turn is None:
+            continue
+        section_id = attempt_path.parent.parent.name
+        code = str(payload.get("code_before") or "")
+        render_outcome = payload.get("render_outcome") or {}
+        render_error = str(payload.get("render_error") or "")
+        attempts.setdefault((turn, section_id), []).append(
+            {
+                "attempt_number": payload.get("attempt_number"),
+                "phase": phase,
+                "code_sha1": hashlib.sha1(code.encode("utf-8")).hexdigest() if code else None,
+                "outcome": {
+                    "success": bool(
+                        render_outcome.get("success", render_outcome.get("ok", False))
+                    ),
+                    "returncode": render_outcome.get("returncode"),
+                    "timed_out": bool(render_outcome.get("timed_out", False)),
+                    "elapsed_seconds": round(
+                        float(payload.get("elapsed_seconds", 0.0) or 0.0), 3
+                    ),
+                },
+                "error": _truncate_text(render_error, max_chars=1800),
+                "error_code_excerpt": _error_code_excerpt(code, render_error),
+                "repair_strategy": str(payload.get("repair_strategy") or ""),
+                "incident_type": (
+                    "infrastructure" if _is_manim_cache_race(render_error) else "code_or_render"
+                ),
+            }
+        )
+
+    keys = set(replacements) | set(attempts)
+    trajectories: Dict[str, Dict[str, Any]] = {}
+    sections_with_full_source: set[str] = set()
+    for turn, section_id in sorted(
+        keys, key=lambda item: (999999 if item[0] == "final_render" else int(item[0]), item[1])
+    ):
+        start_codes, end_codes = _turn_state_codes(run_dir, turn)
+        start_code = start_codes.get(section_id, "")
+        end_code = end_codes.get(section_id, "")
+        current_code = start_code
+        include_start_full_source = (
+            bool(start_code)
+            and turn != "final_render"
+            and section_id not in sections_with_full_source
+        )
+        if include_start_full_source:
+            sections_with_full_source.add(section_id)
+        modifications: List[Dict[str, Any]] = []
+        for replacement in replacements.get((turn, section_id), []):
+            next_code = replacement["code"]
+            if next_code == current_code:
+                continue
+            is_initial_generation = not current_code.strip()
+            include_initial_full_source = (
+                is_initial_generation and section_id not in sections_with_full_source
+            )
+            modification = {
+                "sequence": len(modifications) + 1,
+                "source_event_sequence": replacement["sequence"],
+                "timestamp": replacement["timestamp"],
+                "agent": replacement["agent"],
+                "change_type": "initial_generation" if is_initial_generation else "agent_edit",
+                "raw_agent_code_sha1": replacement["raw_code_sha1"],
+                "normalization_changed_code": replacement["normalization_changed_code"],
+                "before_sha1": _code_fingerprint(current_code)["sha1"],
+                "after": _code_fingerprint(
+                    next_code,
+                    include_full_source=include_initial_full_source,
+                ),
+                "diff": _bounded_code_diff(current_code, next_code, max_chars=2500),
+            }
+            if include_initial_full_source:
+                sections_with_full_source.add(section_id)
+                modification["diff"] = ""
+                modification["note"] = (
+                    "Initial code generation; this section's complete normalized source is included once in after.full_source."
+                )
+            modifications.append(modification)
+            current_code = next_code
+
+        if end_code and end_code != current_code:
+            modifications.append(
+                {
+                    "sequence": len(modifications) + 1,
+                    "agent": "System/Unattributed",
+                    "change_type": "turn_boundary_reconciliation",
+                    "before_sha1": _code_fingerprint(current_code)["sha1"],
+                    "after": _code_fingerprint(end_code),
+                    "diff": _bounded_code_diff(current_code, end_code, max_chars=2500),
+                    "note": "Observed in end-of-turn state but not attributable to a replace_code event.",
+                }
+            )
+
+        turn_attempts = sorted(
+            attempts.get((turn, section_id), []),
+            key=lambda item: int(item.get("attempt_number") or 0),
+        )
+        trajectories.setdefault(turn, {})[section_id] = {
+            "start_code": _code_fingerprint(
+                start_code,
+                include_full_source=include_start_full_source,
+            ),
+            "modifications": modifications,
+            "render_attempts": turn_attempts,
+            "end_code": _code_fingerprint(end_code or current_code),
+            "association_note": (
+                "Render attempts are linked to code versions exactly by code_sha1. "
+                "A chronological edit after an error is not automatically claimed to be caused by it."
+            ),
+        }
+    return trajectories
+
+
 def _error_code_excerpt(code: str, render_error: str, *, radius: int = 10) -> str:
     """Include source around the final traceback line when one is available."""
     if not code or not render_error:
@@ -405,6 +744,7 @@ class RunSummary:
     belief_assessments: List[BeliefAssessment] = field(default_factory=list)
     reflection_model: Optional[str] = None
     reflection_usage: Dict[str, int] = field(default_factory=dict)
+    reflection_calls: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def render_success_rate(self) -> float:
@@ -418,7 +758,14 @@ def _belief_scope_from_dict(payload: Dict[str, Any]) -> BeliefScope:
     # MAS generation roles.
     if not roles and str(payload.get("level") or "").strip() == "general":
         roles = ["Orchestrator", "Coder", "AnimationPlanner", "ScriptWriter"]
-    return BeliefScope(roles=roles)
+    return BeliefScope(
+        roles=roles,
+        stages=[str(item) for item in payload.get("stages", []) if str(item).strip()],
+        problem_description=str(payload.get("problem_description") or ""),
+        context_conditions=[
+            str(item) for item in payload.get("context_conditions", []) if str(item).strip()
+        ],
+    )
 
 
 def _record_from_dict(payload: Dict[str, Any]) -> BeliefRecord:
@@ -444,6 +791,11 @@ def _record_from_dict(payload: Dict[str, Any]) -> BeliefRecord:
         timing=_normalize_belief_timing(payload.get("timing", "both")),
         created_from_run=payload.get("created_from_run"),
         observed_runs=[str(item) for item in payload.get("observed_runs", [])],
+        independent_topics=[str(item) for item in payload.get("independent_topics", [])],
+        topic_evidence_weights={
+            str(key): float(value)
+            for key, value in (payload.get("topic_evidence_weights") or {}).items()
+        },
         evidence=list(payload.get("evidence", [])),
     )
     record.update_confidence()
@@ -478,6 +830,25 @@ def save_library(path: Path, beliefs: Dict[str, BeliefRecord], metadata: Dict[st
         "beliefs": [asdict(belief) for belief in sorted(beliefs.values(), key=lambda item: item.belief_id)],
     }
     _write_json(path, payload)
+
+
+def save_evidence(path: Path, beliefs: Dict[str, BeliefRecord]) -> None:
+    """Persist denormalised immutable-style evidence rows for audit and analysis."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.tmp")
+    with temporary_path.open("w", encoding="utf-8") as handle:
+        for belief in sorted(beliefs.values(), key=lambda item: item.belief_id):
+            for index, evidence in enumerate(belief.evidence, start=1):
+                row = {
+                    "evidence_id": f"{belief.belief_id}-E{index:04d}",
+                    "belief_id": belief.belief_id,
+                    **evidence,
+                }
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary_path, path)
 
 
 def _iter_run_dirs_from_pipeline(pipeline_dir: Path) -> List[Path]:
@@ -751,9 +1122,23 @@ def _summarize_function_trace(
     if not events:
         return []
 
-    selected = events
-    if max_events is not None and len(events) > max_events:
-        selected = events[: max_events // 2] + events[-(max_events - max_events // 2) :]
+    informative_events = [
+        event
+        for event in events
+        if (
+            event.get("text_parts")
+            or event.get("function_calls")
+            or event.get("function_responses")
+            or event.get("error")
+            or event.get("error_message")
+        )
+    ]
+    selected = informative_events
+    if max_events is not None and len(informative_events) > max_events:
+        selected = (
+            informative_events[: max_events // 2]
+            + informative_events[-(max_events - max_events // 2) :]
+        )
     trace_summary: List[Dict[str, Any]] = []
     for event in selected:
         text_parts = event.get("text_parts") or []
@@ -761,15 +1146,14 @@ def _summarize_function_trace(
         cleaned_text = _truncate_text(_strip_code_blocks(joined_text), max_chars=500)
         function_calls = event.get("function_calls") or []
         function_responses = event.get("function_responses") or []
-        trace_summary.append(
-            {
+        summary_item = {
                 "timestamp": event.get("timestamp"),
                 "event_type": event.get("event_type"),
                 "agent": _normalize_role_label(event.get("agent")),
                 "model": event.get("model"),
                 "summary": cleaned_text,
                 "usage": event.get("usage") or {},
-                "function_call_count": len(event.get("function_calls") or []),
+                "function_call_count": len(function_calls),
                 "function_calls": [
                     {
                         "name": (
@@ -804,8 +1188,12 @@ def _summarize_function_trace(
                     }
                     for response in function_responses[:12]
                 ],
-            }
-        )
+        }
+        error = event.get("error") or event.get("error_message")
+        if error:
+            summary_item["error"] = _compact_jsonish(error, max_chars=500)
+            summary_item["retrying"] = bool(event.get("retrying"))
+        trace_summary.append(summary_item)
     return trace_summary
 
 
@@ -848,23 +1236,15 @@ def _build_reflection_context(run: RunSummary, state_payload: Dict[str, Any], be
         for belief in sorted(beliefs.values(), key=lambda item: item.belief_id)
     ]
 
-    section_attempts = {}
+    section_outcomes = {}
     for section_id, summary in sorted(run.section_attempts.items()):
-        # Preserve both early and late evidence when a section has a long repair
-        # history while keeping the reflection prompt bounded.
-        if len(summary.attempt_evidence) > 12:
-            selected_attempts = summary.attempt_evidence[:4] + summary.attempt_evidence[-8:]
-        else:
-            selected_attempts = summary.attempt_evidence
-        section_attempts[section_id] = {
+        section_outcomes[section_id] = {
             "attempts": summary.attempts,
             "scope_refine_attempts": summary.scope_refine_attempts,
             "infrastructure_attempts": summary.infrastructure_attempts,
             "successful": summary.successful,
             "elapsed_seconds": round(summary.elapsed_seconds, 3),
             "render_errors": summary.render_errors[:5],
-            "attempt_evidence": selected_attempts,
-            "omitted_attempt_evidence_count": summary.attempts - len(selected_attempts),
         }
 
     return {
@@ -900,15 +1280,186 @@ def _build_reflection_context(run: RunSummary, state_payload: Dict[str, Any], be
         "evaluation_summary": _summarize_evaluation(
             _read_json(eval_path) if (eval_path := _find_eval_json(Path(run.run_dir))) is not None else {}
         ),
-        "section_attempts": section_attempts,
+        "section_outcomes": section_outcomes,
+        "turn_code_trajectories": _build_turn_code_trajectories(Path(run.run_dir)),
         "video_review_summary": _summarize_video_review(state_payload.get("video_review")),
-        "function_trace_summary": _summarize_function_trace(Path(run.run_dir)),
+        "function_trace_summary": _global_trace_events(
+            _summarize_function_trace(Path(run.run_dir))
+        ),
         "existing_beliefs": existing_beliefs,
     }
 
 
+def _issues_for_section(issues: Dict[str, Any], section_id: str) -> Dict[str, Any]:
+    return {
+        status: [
+            item
+            for item in (issues.get(status) or [])
+            if item.get("section_id") == section_id
+        ]
+        for status in ("unresolved", "resolved")
+    }
+
+
+def _compact_section_attempts(section_summary: Dict[str, Any]) -> Dict[str, Any]:
+    attempts = list(section_summary.get("attempt_evidence") or [])
+    if len(attempts) > 6:
+        attempts = attempts[:2] + attempts[-4:]
+
+    compact_attempts = []
+    for attempt in attempts:
+        compact = dict(attempt)
+        for key in ("calls_before", "calls_after"):
+            if isinstance(compact.get(key), list):
+                compact[key] = compact[key][:10]
+        diagnostics = compact.get("timeout_diagnostics")
+        if isinstance(diagnostics, dict):
+            compact["timeout_diagnostics"] = {
+                "elapsed_seconds": diagnostics.get("elapsed_seconds"),
+                "timeout_seconds": diagnostics.get("timeout_seconds"),
+                "command": diagnostics.get("command"),
+                "stdout_tail": _truncate_text(
+                    str(diagnostics.get("stdout_tail") or ""), 500
+                ),
+                "stderr_tail": _truncate_text(
+                    str(diagnostics.get("stderr_tail") or ""), 1400
+                ),
+            }
+        for key in ("code_diff", "repair_diff", "error_code_excerpt"):
+            if compact.get(key):
+                compact[key] = _truncate_text(str(compact[key]), 2500)
+        compact_attempts.append(compact)
+
+    result = {
+        key: value
+        for key, value in section_summary.items()
+        if key != "attempt_evidence"
+    }
+    result["attempt_evidence"] = compact_attempts
+    result["split_prompt_omitted_attempt_count"] = max(
+        0, len(section_summary.get("attempt_evidence") or []) - len(compact_attempts)
+    )
+    return result
+
+
+def _section_reflection_context(
+    full_context: Dict[str, Any],
+    section_id: str,
+) -> Dict[str, Any]:
+    storyboard = full_context.get("storyboard_summary") or {}
+    section_storyboards = [
+        item
+        for item in (storyboard.get("sections") or [])
+        if item.get("section_id") == section_id
+    ]
+    section_reviews = [
+        item
+        for item in (full_context.get("video_review_summary") or [])
+        if item.get("section_id") == section_id
+    ]
+    section_trajectories = {
+        turn: sections[section_id]
+        for turn, sections in (full_context.get("turn_code_trajectories") or {}).items()
+        if section_id in sections
+    }
+    return {
+        "reflection_scope": {
+            "type": "section",
+            "section_id": section_id,
+            "instruction": (
+                "Assess every distinct reusable mechanism evidenced in this section only. "
+                "Do not infer topic-wide pedagogical conclusions from section evidence."
+            ),
+        },
+        "run_summary": full_context.get("run_summary") or {},
+        "coder_assignments": {
+            section_id: (full_context.get("coder_assignments") or {}).get(section_id)
+        },
+        "issues": _issues_for_section(full_context.get("issues") or {}, section_id),
+        "storyboard_summary": {
+            "section_count": len(section_storyboards),
+            "sections": section_storyboards,
+        },
+        "section_outcome": {
+            key: value
+            for key, value in (
+                (full_context.get("section_outcomes") or {}).get(section_id, {})
+            ).items()
+        },
+        "turn_code_trajectories": section_trajectories,
+        "video_review_summary": section_reviews,
+        # The turn trajectories replace raw Coder source, duplicate agent
+        # responses, and isolated attempt evidence with ordered changes and
+        # the render outcomes for the exact code hashes.
+        "existing_beliefs": full_context.get("existing_beliefs") or [],
+    }
+
+
+def _global_trace_events(events: List[Dict[str, Any]], *, max_events: int = 60) -> List[Dict[str, Any]]:
+    allowed_roles = {"ScriptWriter", "AnimationPlanner", "Orchestrator"}
+    informative = [
+        event
+        for event in events
+        if event.get("agent") in allowed_roles
+        and (
+            event.get("summary")
+            or event.get("function_calls")
+            or event.get("function_responses")
+        )
+    ]
+    if len(informative) <= max_events:
+        return informative
+    split = max_events // 2
+    return informative[:split] + informative[-(max_events - split) :]
+
+
+def _topic_reflection_context(full_context: Dict[str, Any]) -> Dict[str, Any]:
+    issues = full_context.get("issues") or {}
+    global_issues = {
+        status: [
+            item
+            for item in (issues.get(status) or [])
+            if not item.get("section_id") or item.get("to_role") != "Coder"
+        ]
+        for status in ("unresolved", "resolved")
+    }
+    section_outcomes = {
+        section_id: {
+            key: value
+            for key, value in summary.items()
+            if key != "attempt_evidence"
+        }
+        for section_id, summary in (full_context.get("section_outcomes") or {}).items()
+    }
+    return {
+        "reflection_scope": {
+            "type": "topic",
+            "instruction": (
+                "Assess topic-wide ScriptWriter, AnimationPlanner, Orchestrator, "
+                "pedagogical, evaluation, consistency, and cross-section mechanisms. "
+                "Do not repeat section-specific Coder repair mechanisms."
+            ),
+        },
+        "run_summary": full_context.get("run_summary") or {},
+        "issues": global_issues,
+        "storyboard_summary": full_context.get("storyboard_summary") or {},
+        "evaluation_summary": full_context.get("evaluation_summary") or {},
+        "section_outcomes": section_outcomes,
+        "function_trace_summary": _global_trace_events(
+            full_context.get("function_trace_summary") or []
+        ),
+        "existing_beliefs": full_context.get("existing_beliefs") or [],
+    }
+
+
 def _build_reflection_prompt(run: RunSummary, context_payload: Dict[str, Any]) -> str:
-    context_json = json.dumps(context_payload, ensure_ascii=False, indent=2)
+    # Gemini can parse compact JSON; pretty-print whitespace materially inflates
+    # large turn trajectories without adding evidence.
+    context_json = json.dumps(
+        context_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
     return f"""
 You are maintaining a reusable belief library for a multi-agent MAS pipeline.
 
@@ -922,8 +1473,8 @@ Important rules:
 - Do not rely on predefined starter beliefs.
 - Scope beliefs by role, not by agent instance. Example: use "Coder", never "Coder3".
 - Every belief must list one or more explicitly applicable roles. A cross-role belief lists every applicable role; there is no "general" scope.
-- Scope schema must be exactly: {{"roles": ["Coder"]}} or, for a cross-role belief, {{"roles": ["ScriptWriter", "AnimationPlanner"]}}.
-- Do not leave roles empty and do not add extra scope fields.
+- Scope every belief with roles, stages, a reusable problem description, and machine-readable context conditions.
+- Do not leave roles empty. Use lowercase stage labels such as "planning", "coding", "debugging", "rendering", or "evaluation".
 - Each belief must be actionable, general, concise, and reusable across runs.
 - Base every belief on explicit evidence in the supplied context. Clearly distinguish observed facts from inferred causes.
 - Only claim that an action fixed a problem when the evidence shows that action occurred and was followed by an improved outcome. A later success alone does not prove causation.
@@ -945,6 +1496,11 @@ Important rules:
   3. Is the exact same action, without changing its conditions or strength, appropriate both before execution and after a matching failure?
 - Choose reactive when either of the first two answers is yes. Choose both only when the third answer is clearly yes. Otherwise choose preventative.
 - Set evidence_confidence from the strength of the causal evidence. Set impact from the likely consequence if the event recurs. The system calculates final injection priority separately.
+- Classify strategy_application as "full", "partial", "none", or "unclear" according to whether the observed action implemented the stated strategy.
+- Classify attribution_strength as "strong", "moderate", "weak", "none", or "unclear" after accounting for simultaneous unrelated changes.
+- Classify evidence_reliability as "direct", "corroborated", "indirect", "inferred", or "unverifiable". Exact matching render/error/code evidence is direct; semantic interpretation without direct verification is inferred.
+- Classify outcome_improvement as "resolved", "improved", "unchanged", "worsened", or "unclear" for the targeted problem.
+- Do not output numeric values for these four classifications. Deterministic local code maps the options to BBN inputs and performs the Bayesian update.
 - Assign impact using these consequence-based definitions:
   - critical: can terminate the pipeline, corrupt or lose outputs, make a run unrecoverable, or create an uncontrolled external effect;
   - high: causes a timeout, exhausts or is likely to exhaust retries, repeatedly blocks progress, or creates substantial compute or API cost;
@@ -952,6 +1508,7 @@ Important rules:
   - low: affects presentation quality, style, clarity, or minor efficiency without preventing successful completion.
 - Do not mark a belief high or critical merely because an exception occurred. Base impact on the observed or reasonably expected operational consequence, independently of confidence and frequency.
 - Prefer a small set of distinct, high-value beliefs over many overlapping low-impact beliefs.
+- Keep instruction, reason, evidence, and problem_description concise.
 - Perform a consolidation pass before returning assessments. Compare proposed beliefs with every existing belief and with each other by underlying mechanism and mitigation, not merely by wording.
 - If an existing belief already covers the same mechanism, use SUPPORT instead of ADD.
 - If new evidence changes the appropriate scope, specificity, or wording of an existing belief, use REVISE instead of adding a variant.
@@ -966,7 +1523,9 @@ Important rules:
 - For MERGE, belief_id must identify the surviving belief, merge_belief_ids must identify the other existing beliefs to absorb, and instruction must contain the complete consolidated instruction.
 - Evidence confidence must be between 0 and 1.
 - Keep evidence short and grounded in the supplied run context only.
-- Inspect section_attempts.attempt_evidence for code-specific patterns, including call sites, traceback-adjacent source, timeouts, and before/after repair diffs.
+- Inspect turn_code_trajectories for code-specific patterns. Each section is organised by turn as start code metadata, ordered modifications, renders of exact code hashes, and end code metadata.
+- The complete normalized source appears only once per section across the run: in the earliest start_code.full_source, or in the first initial_generation modification's after.full_source when that section starts with no code. Later versions and later turns are represented by continuous diffs and boundary hashes only.
+- Use modification diffs, call summaries, error excerpts, and matching code_sha1 values together. Do not treat chronological proximity alone as proof that an edit fixed an error.
 - Prefer actionable Coder beliefs that name the relevant Manim/Python API or coding pattern when repeated evidence or a successful repair supports that conclusion.
 - Do not claim that a function caused a timeout merely because it appears in the code. Require repeated association, traceback evidence, or a before/after change followed by a successful render.
 - Treat a repair as successful evidence only when a later attempt for the same section renders successfully.
@@ -988,7 +1547,10 @@ Return JSON only in this exact shape:
       "belief_id": "B001" or null,
       "instruction": "Actionable belief text",
       "scope": {{
-        "roles": ["Orchestrator"] or ["Coder"] or ["AnimationPlanner"] or ["ScriptWriter"] or a multi-role list
+        "roles": ["Orchestrator"] or ["Coder"] or ["AnimationPlanner"] or ["ScriptWriter"] or a multi-role list,
+        "stages": ["debugging", "rendering"],
+        "problem_description": "Reusable description of the problem this belief addresses",
+        "context_conditions": ["short_machine_readable_condition"]
       }},
       "applicable": true,
       "compliance": "followed" or "violated" or "mixed" or "unclear" or "observed_pattern",
@@ -996,6 +1558,10 @@ Return JSON only in this exact shape:
       "action": "ADD" or "SUPPORT" or "CONTRADICT" or "IRRELEVANT" or "REVISE" or "MERGE",
       "merge_belief_ids": ["L002", "L003"] or [],
       "evidence_confidence": 0.0,
+      "strategy_application": "full" or "partial" or "none" or "unclear",
+      "attribution_strength": "strong" or "moderate" or "weak" or "none" or "unclear",
+      "evidence_reliability": "direct" or "corroborated" or "indirect" or "inferred" or "unverifiable",
+      "outcome_improvement": "resolved" or "improved" or "unchanged" or "worsened" or "unclear",
       "impact": "low" or "medium" or "high" or "critical",
       "belief_type": "confirmed" or "precaution" or "hypothesis" or "quality",
       "timing": "preventative" or "reactive" or "both",
@@ -1017,27 +1583,73 @@ Run context:
 """.strip()
 
 
-def _llm_reflect_run(
+def _llm_reflect_context(
     run: RunSummary,
-    beliefs: Dict[str, BeliefRecord],
     *,
-    state_payload: Dict[str, Any],
-) -> Tuple[List[BeliefAssessment], Dict[str, int]]:
-    context_payload = _build_reflection_context(run, state_payload, beliefs)
+    context_payload: Dict[str, Any],
+    client: Client,
+    call_label: str,
+) -> Tuple[List[BeliefAssessment], Dict[str, int], Dict[str, Any]]:
     prompt = _build_reflection_prompt(run, context_payload)
-    api_key = cfg("gemini", "api_key")
-    if not api_key:
-        raise ValueError("Missing gemini.api_key in api_config.json or GEMINI_API_KEY")
-    client = Client(api_key=api_key)
-    response = create_interaction(
-        client,
-        model=DEFAULT_REFLECTION_MODEL,
-        input_value=prompt,
-        response_schema=ReflectionResponsePayload,
-        max_output_tokens=12000,
-    )
-    parsed = ReflectionResponsePayload.model_validate_json(response.output_text)
-    usage = response_usage_dict(response)
+    usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    parsed: Optional[ReflectionResponsePayload] = None
+    last_error: Optional[ValidationError] = None
+    attempts_made = 0
+    for attempt in range(1, 3):
+        attempts_made = attempt
+        attempt_prompt = prompt
+        if attempt > 1:
+            validation_feedback = ""
+            if last_error is not None:
+                compact_errors = [
+                    {
+                        "location": ".".join(str(value) for value in error.get("loc", [])),
+                        "message": str(error.get("msg") or "")[:240],
+                        "type": error.get("type"),
+                    }
+                    for error in last_error.errors()[:12]
+                ]
+                validation_feedback = (
+                    "\nValidation errors to correct:\n"
+                    + json.dumps(compact_errors, ensure_ascii=False, separators=(",", ":"))
+                )
+            attempt_prompt += """
+
+RETRY REQUIREMENT:
+The previous structured response was invalid or truncated. Return a fresh,
+complete JSON object from the beginning. Do not omit relevant distinct
+assessments, but consolidate duplicates and keep every prose field under 400
+characters. Use only the listed categorical evidence options. Do not include
+commentary outside the JSON object.
+""".rstrip() + validation_feedback
+        response = create_interaction(
+            client,
+            model=DEFAULT_REFLECTION_MODEL,
+            input_value=attempt_prompt,
+            response_schema=ReflectionResponsePayload,
+            max_output_tokens=12000,
+        )
+        attempt_usage = response_usage_dict(response)
+        for key in usage:
+            usage[key] += attempt_usage.get(key, 0)
+        try:
+            response_text = _extract_structured_json(response.output_text)
+            parsed = ReflectionResponsePayload.model_validate_json(response_text)
+            break
+        except ValidationError as exc:
+            last_error = exc
+            safe_label = re.sub(r"[^A-Za-z0-9_.-]+", "_", call_label)
+            invalid_path = (
+                Path(run.run_dir)
+                / f"belief_reflection_{safe_label}_invalid_response_{attempt}.txt"
+            )
+            invalid_path.write_text(response.output_text, encoding="utf-8")
+
+    if parsed is None:
+        raise ValueError(
+            "Gemini returned invalid structured belief reflection JSON twice. "
+            f"Raw responses were saved under {run.run_dir}."
+        ) from last_error
 
     assessments: List[BeliefAssessment] = []
     for item in parsed.assessments:
@@ -1045,6 +1657,12 @@ def _llm_reflect_run(
         if action not in VALID_ACTIONS:
             raise ValueError(f"Unsupported belief assessment action: {action}")
         evidence_confidence = item.evidence_confidence
+        evidence_values = _evidence_categories_to_values(
+            item.strategy_application,
+            item.attribution_strength,
+            item.evidence_reliability,
+            item.outcome_improvement,
+        )
         assessments.append(
             BeliefAssessment(
                 run_id=run.run_id,
@@ -1055,7 +1673,12 @@ def _llm_reflect_run(
                 outcome=item.outcome,
                 action=action,
                 weight=evidence_confidence,
-                scope=BeliefScope(roles=list(item.scope.roles)),
+                scope=BeliefScope(
+                    roles=list(item.scope.roles),
+                    stages=list(item.scope.stages),
+                    problem_description=item.scope.problem_description,
+                    context_conditions=list(item.scope.context_conditions),
+                ),
                 evidence_confidence=evidence_confidence,
                 impact=item.impact,
                 belief_type=item.belief_type,
@@ -1065,9 +1688,47 @@ def _llm_reflect_run(
                 reason=item.reason,
                 evidence=_coerce_evidence_payload(item.evidence),
                 merge_belief_ids=list(item.merge_belief_ids),
+                topic=run.topic,
+                strategy_application=item.strategy_application,
+                attribution_strength=item.attribution_strength,
+                evidence_reliability=item.evidence_reliability,
+                outcome_improvement=item.outcome_improvement,
+                **evidence_values,
+                reflection_call=call_label,
             )
         )
-    return assessments, usage
+    call_metrics = {
+        "call_label": call_label,
+        "scope_type": (context_payload.get("reflection_scope") or {}).get("type"),
+        "section_id": (context_payload.get("reflection_scope") or {}).get("section_id"),
+        "prompt_characters": len(prompt),
+        "prompt_words": len(prompt.split()),
+        "api_attempts": attempts_made,
+        "assessment_count": len(assessments),
+        **usage,
+    }
+    return assessments, usage, call_metrics
+
+
+def _llm_reflect_run(
+    run: RunSummary,
+    beliefs: Dict[str, BeliefRecord],
+    *,
+    state_payload: Dict[str, Any],
+) -> Tuple[List[BeliefAssessment], Dict[str, int], List[Dict[str, Any]]]:
+    context_payload = _build_reflection_context(run, state_payload, beliefs)
+    api_key = cfg("gemini", "api_key")
+    if not api_key:
+        raise ValueError("Missing gemini.api_key in api_config.json or GEMINI_API_KEY")
+    client = Client(api_key=api_key)
+
+    assessments, usage, metrics = _llm_reflect_context(
+        run,
+        context_payload=context_payload,
+        client=client,
+        call_label="topic",
+    )
+    return assessments, usage, [metrics]
 
 
 def _find_belief_by_instruction(
@@ -1246,22 +1907,64 @@ def apply_assessments(
                 "belief_type": assessment.belief_type,
                 "timing": assessment.timing,
                 "reason": assessment.reason,
+                "compliance": assessment.compliance,
+                "outcome": assessment.outcome,
                 "agent": assessment.agent,
                 "section_id": assessment.section_id,
+                "topic": assessment.topic,
+                "strategy_application": assessment.strategy_application,
+                "attribution_strength": assessment.attribution_strength,
+                "evidence_reliability": assessment.evidence_reliability,
+                "outcome_improvement": assessment.outcome_improvement,
+                "strategy_applied_probability": assessment.strategy_applied_probability,
+                "attribution_probability": assessment.attribution_probability,
+                "reliability_probability": assessment.reliability_probability,
+                "improvement": assessment.improvement,
+                "reflection_call": assessment.reflection_call,
                 "previous_instruction": previous_instruction,
                 "merge_belief_ids": assessment.merge_belief_ids,
                 "evidence": assessment.evidence,
             }
         )
 
-        if assessment.action in {ACTION_ADD, ACTION_SUPPORT, ACTION_REVISE, ACTION_MERGE}:
-            record.support_count += 1
-            record.weighted_support += assessment.evidence_confidence
-            record.alpha += assessment.evidence_confidence
-        elif assessment.action == ACTION_CONTRADICT:
-            record.contradiction_count += 1
-            record.weighted_contradiction += assessment.evidence_confidence
-            record.beta += assessment.evidence_confidence
+        if assessment.action in {
+            ACTION_ADD,
+            ACTION_SUPPORT,
+            ACTION_REVISE,
+            ACTION_MERGE,
+            ACTION_CONTRADICT,
+        } and assessment.outcome_improvement != "unclear":
+            topic_key = assessment.topic or assessment.run_id
+            consumed_topic_weight = record.topic_evidence_weights.get(topic_key, 0.0)
+            transition = TransitionEvidence(
+                p_applicable=1.0 if assessment.applicable else 0.0,
+                p_strategy_applied=assessment.strategy_applied_probability,
+                p_attributable=assessment.attribution_probability,
+                p_reliable=assessment.reliability_probability,
+                improvement=assessment.improvement,
+            )
+            posterior = update_beta_posterior(
+                record.alpha,
+                record.beta,
+                transition,
+                remaining_topic_weight=max(0.0, 1.0 - consumed_topic_weight),
+            )
+            record.alpha = posterior["alpha"]
+            record.beta = posterior["beta"]
+            record.topic_evidence_weights[topic_key] = (
+                consumed_topic_weight + posterior["evidence_weight"]
+            )
+            if topic_key not in record.independent_topics:
+                record.independent_topics.append(topic_key)
+
+            if assessment.action == ACTION_CONTRADICT or assessment.improvement < 0.5:
+                record.contradiction_count += 1
+                record.weighted_contradiction += posterior["beta_increment"]
+            else:
+                record.support_count += 1
+                record.weighted_support += posterior["alpha_increment"]
+
+            record.evidence[-1]["bayesian_update"] = posterior
 
         record.update_confidence()
 
@@ -1281,48 +1984,120 @@ def analyse_single_run(run_dir: Path, beliefs: Dict[str, BeliefRecord]) -> Dict[
     baseline = _load_pipeline_paper_average(run_dir.parent) if pipeline_id else None
     run_summary = summarise_run(run_dir, baseline)
     state_payload = _state_for_run(run_dir)
-    assessments, usage = _llm_reflect_run(run_summary, beliefs, state_payload=state_payload)
+    assessments, usage, call_metrics = _llm_reflect_run(
+        run_summary, beliefs, state_payload=state_payload
+    )
     run_summary.belief_assessments = assessments
     run_summary.reflection_model = DEFAULT_REFLECTION_MODEL
     run_summary.reflection_usage = usage
+    run_summary.reflection_calls = call_metrics
     return {
         "mode": "single_run",
         "run_summary": _run_summary_to_json(run_summary),
     }
 
 
-def analyse_pipeline(pipeline_dir: Path, beliefs: Dict[str, BeliefRecord]) -> Dict[str, Any]:
+def _pipeline_analysis_payload(
+    pipeline_dir: Path,
+    runs: List[RunSummary],
+    *,
+    expected_run_count: int,
+    complete: bool,
+) -> Dict[str, Any]:
+    pipeline_scores = [run.combined_score for run in runs if run.combined_score is not None]
+    return {
+        "mode": "pipeline",
+        "pipeline_dir": str(pipeline_dir),
+        "run_count": len(runs),
+        "expected_run_count": expected_run_count,
+        "complete": complete,
+        "average_combined_score": round(mean(pipeline_scores), 3) if pipeline_scores else None,
+        "average_aes_overall": _safe_mean(run.aes_overall for run in runs),
+        "average_tq_learning_gain": _safe_mean(run.tq_learning_gain for run in runs),
+        "runs": [_run_summary_to_json(run) for run in runs],
+    }
+
+
+def analyse_pipeline(
+    pipeline_dir: Path,
+    beliefs: Dict[str, BeliefRecord],
+    *,
+    checkpoint_callback: Optional[
+        Callable[[List[RunSummary], Dict[str, BeliefRecord], Dict[str, Any]], None]
+    ] = None,
+) -> Dict[str, Any]:
     run_dirs = _iter_run_dirs_from_pipeline(pipeline_dir)
-    provisional_runs = [summarise_run(run_dir, None) for run_dir in run_dirs if _find_final_state_json(run_dir)]
+    eligible_run_dirs = [
+        run_dir for run_dir in run_dirs if _find_final_state_json(run_dir)
+    ]
+    provisional_runs = [summarise_run(run_dir, None) for run_dir in eligible_run_dirs]
     baseline = _safe_mean(
         run.combined_score for run in provisional_runs if run.combined_score is not None
     )
 
     final_runs: List[RunSummary] = []
     working_beliefs = {belief_id: deepcopy(record) for belief_id, record in beliefs.items()}
-    for run_dir in run_dirs:
-        if _find_final_state_json(run_dir) is None:
-            continue
+    total_runs = len(eligible_run_dirs)
+    print(
+        f"[belief-pipeline] Found {total_runs} eligible topic runs. "
+        f"Starting with {len(working_beliefs)} beliefs.",
+        flush=True,
+    )
+    for run_index, run_dir in enumerate(eligible_run_dirs, start=1):
         run_summary = summarise_run(run_dir, baseline)
+        topic_started_at = time.perf_counter()
+        progress_prefix = f"[belief-pipeline][{run_index}/{total_runs}]"
+        print(
+            f"{progress_prefix} Starting: {run_summary.topic} "
+            f"(run={run_summary.run_id})",
+            flush=True,
+        )
         state_payload = _state_for_run(run_dir)
-        assessments, usage = _llm_reflect_run(run_summary, working_beliefs, state_payload=state_payload)
+        try:
+            assessments, usage, call_metrics = _llm_reflect_run(
+                run_summary, working_beliefs, state_payload=state_payload
+            )
+        except Exception as exc:
+            elapsed_seconds = time.perf_counter() - topic_started_at
+            print(
+                f"{progress_prefix} FAILED after {elapsed_seconds:.1f}s: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            raise
         run_summary.belief_assessments = assessments
         run_summary.reflection_model = DEFAULT_REFLECTION_MODEL
         run_summary.reflection_usage = usage
-        apply_assessments(working_beliefs, assessments)
+        run_summary.reflection_calls = call_metrics
+        topic_update_summary = apply_assessments(working_beliefs, assessments)
         final_runs.append(run_summary)
+        if checkpoint_callback is not None:
+            checkpoint_callback(final_runs, working_beliefs, topic_update_summary)
+        elapsed_seconds = time.perf_counter() - topic_started_at
+        prompt_characters = sum(
+            int(call.get("prompt_characters", 0) or 0) for call in call_metrics
+        )
+        api_attempts = sum(
+            int(call.get("api_attempts", 0) or 0) for call in call_metrics
+        )
+        print(
+            f"{progress_prefix} Completed in {elapsed_seconds:.1f}s | "
+            f"prompt_chars={prompt_characters} | "
+            f"input_tokens={int(usage.get('prompt_tokens', 0) or 0)} | "
+            f"output_tokens={int(usage.get('completion_tokens', 0) or 0)} | "
+            f"api_attempts={api_attempts} | "
+            f"assessments={len(assessments)} | "
+            f"beliefs={len(working_beliefs)} | "
+            f"updates={json.dumps(topic_update_summary, ensure_ascii=False, sort_keys=True)}",
+            flush=True,
+        )
 
-    pipeline_scores = [run.combined_score for run in final_runs if run.combined_score is not None]
-    payload = {
-        "mode": "pipeline",
-        "pipeline_dir": str(pipeline_dir),
-        "run_count": len(final_runs),
-        "average_combined_score": round(mean(pipeline_scores), 3) if pipeline_scores else None,
-        "average_aes_overall": _safe_mean(run.aes_overall for run in final_runs),
-        "average_tq_learning_gain": _safe_mean(run.tq_learning_gain for run in final_runs),
-        "runs": [_run_summary_to_json(run) for run in final_runs],
-    }
-    return payload
+    return _pipeline_analysis_payload(
+        pipeline_dir,
+        final_runs,
+        expected_run_count=total_runs,
+        complete=True,
+    )
 
 
 def _run_summary_to_json(run: RunSummary) -> Dict[str, Any]:
@@ -1384,9 +2159,32 @@ def main() -> int:
         help="JSON path for run/pipeline analysis output. Defaults to the target run/pipeline folder.",
     )
     parser.add_argument(
+        "--evidence-output",
+        default=None,
+        help="JSONL evidence path. Defaults to belief_evidence.jsonl beside the library.",
+    )
+    parser.add_argument(
+        "--bbn-parameters-output",
+        default=None,
+        help="Shared BBN parameter path. Defaults to bbn_parameters.json beside the library.",
+    )
+    parser.add_argument(
+        "--belief-embedding-model",
+        default=None,
+        help="Optional BGE sentence-transformers model/path used to persist belief embeddings.",
+    )
+    parser.add_argument(
         "--write-library",
         action="store_true",
         help="Apply generated assessments and write the updated belief library.",
+    )
+    parser.add_argument(
+        "--fresh-library",
+        action="store_true",
+        help=(
+            "Start from an empty belief bank and remove prior analysis, evidence, "
+            "BBN, and embedding outputs at the selected paths before processing."
+        ),
     )
     args = parser.parse_args()
 
@@ -1403,8 +2201,33 @@ def main() -> int:
         target_path=target_path,
         default_filename=DEFAULT_ANALYSIS_FILENAME,
     )
-    if mode == "pipeline":
-        _clear_pipeline_outputs(analysis_output_path, library_path)
+    evidence_output_path = _resolve_output_path(
+        requested_path=args.evidence_output,
+        mode=mode,
+        target_path=target_path,
+        default_filename=DEFAULT_EVIDENCE_FILENAME,
+    )
+    bbn_parameters_output_path = _resolve_output_path(
+        requested_path=args.bbn_parameters_output,
+        mode=mode,
+        target_path=target_path,
+        default_filename=DEFAULT_BBN_PARAMETERS_FILENAME,
+    )
+    embeddings_output_path = library_path.with_name("belief_embeddings.npz")
+    embedding_metadata_output_path = library_path.with_name(
+        "belief_embedding_metadata.json"
+    )
+    progress_output_path = library_path.with_name(DEFAULT_PROGRESS_FILENAME)
+    if args.fresh_library:
+        _clear_pipeline_outputs(
+            analysis_output_path,
+            library_path,
+            evidence_output_path,
+            bbn_parameters_output_path,
+            embeddings_output_path,
+            embedding_metadata_output_path,
+            progress_output_path,
+        )
         beliefs: Dict[str, BeliefRecord] = {}
     else:
         beliefs = load_library(library_path)
@@ -1414,7 +2237,76 @@ def main() -> int:
         run_payload = analysis["run_summary"]
         assessment_payloads = run_payload.get("belief_assessments", [])
     else:
-        analysis = analyse_pipeline(target_path, beliefs)
+        expected_run_count = sum(
+            1
+            for run_dir in _iter_run_dirs_from_pipeline(target_path)
+            if _find_final_state_json(run_dir) is not None
+        )
+
+        def _checkpoint_pipeline(
+            completed_runs: List[RunSummary],
+            working_beliefs: Dict[str, BeliefRecord],
+            topic_update_summary: Dict[str, Any],
+        ) -> None:
+            if not args.write_library:
+                return
+            completed_count = len(completed_runs)
+            last_run = completed_runs[-1]
+            save_library(
+                library_path,
+                working_beliefs,
+                metadata={
+                    "source_mode": mode,
+                    "source_path": str(target_path),
+                    "belief_count": len(working_beliefs),
+                    "checkpoint": True,
+                    "completed_run_count": completed_count,
+                    "expected_run_count": expected_run_count,
+                    "last_completed_run_id": last_run.run_id,
+                    "last_topic_update_summary": topic_update_summary,
+                },
+            )
+            save_evidence(evidence_output_path, working_beliefs)
+            if not bbn_parameters_output_path.exists():
+                _write_json(
+                    bbn_parameters_output_path,
+                    BBNParameters().to_payload(),
+                )
+            _write_json(
+                analysis_output_path,
+                _pipeline_analysis_payload(
+                    target_path,
+                    completed_runs,
+                    expected_run_count=expected_run_count,
+                    complete=False,
+                ),
+            )
+            _write_json(
+                progress_output_path,
+                {
+                    "status": "running",
+                    "completed_run_count": completed_count,
+                    "expected_run_count": expected_run_count,
+                    "completed_run_ids": [run.run_id for run in completed_runs],
+                    "last_completed_run_id": last_run.run_id,
+                    "last_completed_topic": last_run.topic,
+                    "belief_count": len(working_beliefs),
+                    "updated_at_utc": time.strftime(
+                        "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+                    ),
+                },
+            )
+            print(
+                f"[belief-pipeline][{completed_count}/{expected_run_count}] "
+                f"Checkpoint saved: {library_path}",
+                flush=True,
+            )
+
+        analysis = analyse_pipeline(
+            target_path,
+            beliefs,
+            checkpoint_callback=_checkpoint_pipeline,
+        )
         assessment_payloads = []
         for run_payload in analysis["runs"]:
             assessment_payloads.extend(run_payload.get("belief_assessments", []))
@@ -1446,6 +2338,18 @@ def main() -> int:
                 evidence_event_ids=[str(value) for value in item.get("evidence_event_ids", [])],
                 evidence=_coerce_evidence_payload(item.get("evidence")),
                 merge_belief_ids=[str(value) for value in item.get("merge_belief_ids", [])],
+                topic=str(item.get("topic") or ""),
+                strategy_application=str(item.get("strategy_application", "unclear")),
+                attribution_strength=str(item.get("attribution_strength", "unclear")),
+                evidence_reliability=str(item.get("evidence_reliability", "unverifiable")),
+                outcome_improvement=str(item.get("outcome_improvement", "unclear")),
+                strategy_applied_probability=float(
+                    item.get("strategy_applied_probability", 0.5)
+                ),
+                attribution_probability=float(item.get("attribution_probability", 0.5)),
+                reliability_probability=float(item.get("reliability_probability", 0.5)),
+                improvement=float(item.get("improvement", 0.5)),
+                reflection_call=str(item.get("reflection_call") or ""),
             )
             for item in assessment_payloads
         ]
@@ -1460,6 +2364,43 @@ def main() -> int:
                 "update_summary": update_summary,
             },
         )
+        save_evidence(evidence_output_path, beliefs)
+        if not bbn_parameters_output_path.exists():
+            _write_json(
+                bbn_parameters_output_path,
+                BBNParameters().to_payload(),
+            )
+        if args.belief_embedding_model:
+            BeliefEmbeddingIndex.build(
+                [asdict(belief) for belief in beliefs.values()],
+                model_name_or_path=args.belief_embedding_model,
+                embeddings_path=embeddings_output_path,
+                metadata_path=embedding_metadata_output_path,
+            )
+        if mode == "pipeline":
+            _write_json(
+                progress_output_path,
+                {
+                    "status": "complete",
+                    "completed_run_count": analysis["run_count"],
+                    "expected_run_count": analysis.get(
+                        "expected_run_count", analysis["run_count"]
+                    ),
+                    "completed_run_ids": [
+                        run["run_id"] for run in analysis.get("runs", [])
+                    ],
+                    "last_completed_run_id": (
+                        analysis["runs"][-1]["run_id"] if analysis.get("runs") else None
+                    ),
+                    "last_completed_topic": (
+                        analysis["runs"][-1]["topic"] if analysis.get("runs") else None
+                    ),
+                    "belief_count": len(beliefs),
+                    "updated_at_utc": time.strftime(
+                        "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+                    ),
+                },
+            )
 
     if mode == "single_run":
         run = analysis["run_summary"]
@@ -1468,14 +2409,36 @@ def main() -> int:
         print(f"Combined score: {run['combined_score']}")
         print(f"Baseline combined score: {run['baseline_combined_score']}")
         print(f"Assessments generated: {len(run['belief_assessments'])}")
+        for call in run.get("reflection_calls", []):
+            print(
+                "Reflection call "
+                f"{call['call_label']}: chars={call['prompt_characters']}, "
+                f"input_tokens={call['prompt_tokens']}, "
+                f"output_tokens={call['completion_tokens']}, "
+                f"assessments={call['assessment_count']}, "
+                f"attempts={call['api_attempts']}"
+            )
     else:
         print(f"Pipeline: {analysis['pipeline_dir']}")
         print(f"Runs analysed: {analysis['run_count']}")
         print(f"Average combined score: {analysis['average_combined_score']}")
         print(f"Assessments generated: {sum(len(run['belief_assessments']) for run in analysis['runs'])}")
+        print(
+            "Reflection API calls: "
+            f"{sum(len(run.get('reflection_calls', [])) for run in analysis['runs'])}"
+        )
 
     if args.write_library:
         print(f"Belief library written to: {library_path}")
+        print(f"Belief evidence written to: {evidence_output_path}")
+        print(f"BBN parameters written to: {bbn_parameters_output_path}")
+        if args.belief_embedding_model:
+            print(
+                "Belief embeddings written to: "
+                f"{embeddings_output_path}"
+            )
+        if mode == "pipeline":
+            print(f"Belief generation progress written to: {progress_output_path}")
         print(f"Update summary: {json.dumps(update_summary, ensure_ascii=False)}")
 
     print(f"Analysis output written to: {analysis_output_path}")

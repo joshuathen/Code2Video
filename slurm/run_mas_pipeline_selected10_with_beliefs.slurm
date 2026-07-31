@@ -91,6 +91,11 @@ INJECT_BELIEFS_INTO_PROMPTS="${INJECT_BELIEFS_INTO_PROMPTS:-1}"
 BELIEF_LIBRARY_PATH="${BELIEF_LIBRARY_PATH:-}"
 TOP_GENERAL_BELIEFS="${TOP_GENERAL_BELIEFS:-10}"
 TOP_SPECIALIZED_BELIEFS="${TOP_SPECIALIZED_BELIEFS:-10}"
+CONTEXTUAL_BELIEF_SELECTION="${CONTEXTUAL_BELIEF_SELECTION:-1}"
+BELIEF_USEFULNESS_THRESHOLD="${BELIEF_USEFULNESS_THRESHOLD:-0.60}"
+BELIEF_CANDIDATE_LIMIT="${BELIEF_CANDIDATE_LIMIT:-20}"
+BELIEF_EMBEDDING_MODEL="${BELIEF_EMBEDDING_MODEL:-}"
+BBN_PARAMETERS_PATH="${BBN_PARAMETERS_PATH:-}"
 
 CMD=(
   "${PYTHON_CMD[@]}" src/main.py
@@ -111,12 +116,28 @@ CMD=(
   --orchestrator_model "$ORCHESTRATOR_MODEL"
   --top_general_beliefs "$TOP_GENERAL_BELIEFS"
   --top_specialized_beliefs "$TOP_SPECIALIZED_BELIEFS"
+  --belief_usefulness_threshold "$BELIEF_USEFULNESS_THRESHOLD"
+  --belief_candidate_limit "$BELIEF_CANDIDATE_LIMIT"
 )
 
 if [ "${INJECT_BELIEFS_INTO_PROMPTS:-0}" = "1" ]; then
   CMD+=(--inject_beliefs_into_prompts)
 else
   CMD+=(--no_inject_beliefs_into_prompts)
+fi
+
+if [ "$CONTEXTUAL_BELIEF_SELECTION" = "1" ]; then
+  CMD+=(--contextual_belief_selection)
+else
+  CMD+=(--no_contextual_belief_selection)
+fi
+
+if [ -n "$BELIEF_EMBEDDING_MODEL" ]; then
+  CMD+=(--belief_embedding_model "$BELIEF_EMBEDDING_MODEL")
+fi
+
+if [ -n "$BBN_PARAMETERS_PATH" ]; then
+  CMD+=(--bbn_parameters_path "$BBN_PARAMETERS_PATH")
 fi
 
 if [ -n "$BELIEF_LIBRARY_PATH" ]; then
@@ -174,6 +195,10 @@ else
 fi
 echo "Top general beliefs: $TOP_GENERAL_BELIEFS"
 echo "Top specialized beliefs: $TOP_SPECIALIZED_BELIEFS"
+echo "Contextual belief selection: $CONTEXTUAL_BELIEF_SELECTION"
+echo "Belief usefulness threshold: $BELIEF_USEFULNESS_THRESHOLD"
+echo "Belief candidate limit: $BELIEF_CANDIDATE_LIMIT"
+echo "Belief embedding model: ${BELIEF_EMBEDDING_MODEL:-<load stored cache or lexical fallback>}"
 echo "Command: ${CMD[*]}"
 
 "${CMD[@]}"

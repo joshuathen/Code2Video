@@ -590,6 +590,11 @@ def _build_mas_generation_result(args: argparse.Namespace, idx: int) -> Dict[str
         belief_library_path=args.belief_library_path,
         top_general_beliefs=args.top_general_beliefs,
         top_specialized_beliefs=args.top_specialized_beliefs,
+        contextual_belief_selection=args.contextual_belief_selection,
+        belief_usefulness_threshold=args.belief_usefulness_threshold,
+        belief_candidate_limit=args.belief_candidate_limit,
+        bbn_parameters_path=args.bbn_parameters_path,
+        belief_embedding_model=args.belief_embedding_model,
     )
 
     final_video_state = run_mas_for_video_state(
@@ -865,6 +870,11 @@ def run_mas_generation_and_evaluation_pipeline(
     belief_library_path: Optional[str] = None,
     top_general_beliefs: int = 10,
     top_specialized_beliefs: int = 10,
+    contextual_belief_selection: bool = True,
+    belief_usefulness_threshold: float = 0.60,
+    belief_candidate_limit: int = 20,
+    bbn_parameters_path: Optional[str] = None,
+    belief_embedding_model: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Run MAS generation plus evaluation for the first N topics, or all topics when max_topics is None/-1."""
     knowledge_points = load_knowledge_points(knowledge_file=knowledge_file, max_topics=max_topics)
@@ -892,6 +902,11 @@ def run_mas_generation_and_evaluation_pipeline(
         belief_library_path=belief_library_path,
         top_general_beliefs=top_general_beliefs,
         top_specialized_beliefs=top_specialized_beliefs,
+        contextual_belief_selection=contextual_belief_selection,
+        belief_usefulness_threshold=belief_usefulness_threshold,
+        belief_candidate_limit=belief_candidate_limit,
+        bbn_parameters_path=bbn_parameters_path,
+        belief_embedding_model=belief_embedding_model,
     )
     _resolve_mas_pipeline_output_root(base_args)
 
@@ -952,6 +967,11 @@ def _run_pipeline_from_cli(args: argparse.Namespace) -> int:
             belief_library_path=args.belief_library_path,
             top_general_beliefs=args.top_general_beliefs,
             top_specialized_beliefs=args.top_specialized_beliefs,
+            contextual_belief_selection=args.contextual_belief_selection,
+            belief_usefulness_threshold=args.belief_usefulness_threshold,
+            belief_candidate_limit=args.belief_candidate_limit,
+            bbn_parameters_path=args.bbn_parameters_path,
+            belief_embedding_model=args.belief_embedding_model,
         )
 
     if not results:
@@ -1093,6 +1113,31 @@ def build_and_parse_args() -> argparse.Namespace:
         dest="top_specialized_beliefs",
         type=int,
         default=10,
+    )
+    _add_bool_flag(parser, "contextual_belief_selection", True)
+    parser.add_argument(
+        "--belief_usefulness_threshold",
+        type=float,
+        default=0.60,
+        help="Minimum BBN applicability × posterior effectiveness required for injection.",
+    )
+    parser.add_argument(
+        "--belief_candidate_limit",
+        type=int,
+        default=20,
+        help="Maximum semantically ranked candidates evaluated by the BBN per opportunity.",
+    )
+    parser.add_argument(
+        "--bbn_parameters_path",
+        type=str,
+        default=None,
+        help="Optional bbn_parameters.json; defaults beside the belief library.",
+    )
+    parser.add_argument(
+        "--belief_embedding_model",
+        type=str,
+        default=None,
+        help="Optional local/Hugging Face BGE sentence-transformers model; lexical similarity is the offline fallback.",
     )
     parser.add_argument("--clear_logs", action="store_true", default=False)
     parser.add_argument("--case_index", type=int, default=None)
