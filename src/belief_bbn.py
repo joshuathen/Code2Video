@@ -238,10 +238,11 @@ def build_bge_similarity(
             normalize_embeddings=True,
             convert_to_numpy=True,
         )
-        # Cosine for normalized vectors lies in [-1, 1]. Map it to [0, 1]
-        # pending project-specific calibration against labelled pairs.
+        # Negative semantic similarity is not useful evidence of a match. Keep
+        # the positive cosine on its natural scale rather than shifting every
+        # mediocre match upward with ``(cosine + 1) / 2``.
         cosine = float(vectors[0] @ vectors[1])
-        return (cosine + 1.0) / 2.0
+        return clamp_probability(cosine, default=0.0)
 
     return _similarity
 
@@ -277,6 +278,8 @@ class BeliefEmbeddingIndex:
         self.belief_ids = list(belief_ids)
         self.embeddings = embeddings
         self.text_hashes = dict(text_hashes)
+        self._embedding_lock = Lock()
+        self._text_vector_cache: Dict[str, Any] = {}
 
     @classmethod
     def build(
@@ -402,9 +405,55 @@ class BeliefEmbeddingIndex:
         )[0]
         cosine_scores = self.embeddings @ query_vector
         return {
-            belief_id: clamp_probability((float(score) + 1.0) / 2.0)
+            belief_id: clamp_probability(float(score), default=0.0)
             for belief_id, score in zip(self.belief_ids, cosine_scores)
         }
+
+    def similarities_with_context(
+        self,
+        query: str,
+        context_texts: Dict[str, str],
+    ) -> tuple[Dict[str, float], Dict[str, float]]:
+        """Score problem descriptions and context conditions with one BGE query."""
+        if not self.belief_ids:
+            return {}, {}
+        with self._embedding_lock:
+            query_vector = self.model.encode(
+                [query or ""],
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )[0]
+            missing_texts = [
+                text
+                for text in dict.fromkeys(context_texts.values())
+                if text and text not in self._text_vector_cache
+            ]
+            if missing_texts:
+                encoded = self.model.encode(
+                    missing_texts,
+                    normalize_embeddings=True,
+                    convert_to_numpy=True,
+                    show_progress_bar=False,
+                )
+                self._text_vector_cache.update(zip(missing_texts, encoded))
+
+        problem_scores = self.embeddings @ query_vector
+        problem_similarities = {
+            belief_id: clamp_probability(float(score), default=0.0)
+            for belief_id, score in zip(self.belief_ids, problem_scores)
+        }
+        context_similarities = {}
+        for belief_id, text in context_texts.items():
+            if not text:
+                context_similarities[belief_id] = 1.0
+                continue
+            vector = self._text_vector_cache.get(text)
+            if vector is not None:
+                context_similarities[belief_id] = clamp_probability(
+                    float(vector @ query_vector), default=0.0
+                )
+        return problem_similarities, context_similarities
 
 
 def context_match(required: Iterable[str], observed: Iterable[str]) -> float:
@@ -418,6 +467,17 @@ def context_match(required: Iterable[str], observed: Iterable[str]) -> float:
 def normalize_role(value: Any) -> str:
     role = re.sub(r"\d+$", "", str(value or "").strip())
     return "Orchestrator" if role == "OrchestratorAgent" else role
+
+
+def normalize_stage(value: Any) -> str:
+    stage = str(value or "").strip().lower()
+    aliases = {
+        "writing": "planning",
+        "revision": "planning",
+        "debugging": "coding",
+        "evaluation": "coordination",
+    }
+    return aliases.get(stage, stage)
 
 
 class BeliefSelector:
@@ -444,33 +504,64 @@ class BeliefSelector:
         situation: BeliefSituation,
         *,
         top_k: int = 3,
-        threshold: float = 0.60,
+        threshold: float = 0.0,
         candidate_limit: int = 20,
     ) -> List[Dict[str, Any]]:
         role = normalize_role(situation.agent_role)
-        stage = situation.pipeline_stage.strip().lower()
+        stage = normalize_stage(situation.pipeline_stage)
         timing = situation.timing.strip().lower()
         evaluated: List[Dict[str, Any]] = []
-        stored_similarities = (
-            self.embedding_index.similarities(situation.problem_text)
-            if self.embedding_index is not None
-            else {}
-        )
+        context_query = "\n".join(
+            [
+                situation.problem_text,
+                "Observed context tags: " + ", ".join(situation.context_tags),
+            ]
+        ).strip()
+        context_texts = {}
+        for belief in self.beliefs:
+            belief_id = str(
+                belief.get("belief_id", belief.get("lesson_id")) or ""
+            )
+            scope = belief.get("scope") if isinstance(belief.get("scope"), dict) else {}
+            conditions = [
+                str(item).strip()
+                for item in scope.get("context_conditions", [])
+                if str(item).strip()
+            ]
+            context_texts[belief_id] = "\n".join(conditions)
+
+        if (
+            self.embedding_index is not None
+            and hasattr(self.embedding_index, "similarities_with_context")
+        ):
+            stored_similarities, semantic_context_similarities = (
+                self.embedding_index.similarities_with_context(
+                    context_query,
+                    context_texts,
+                )
+            )
+        else:
+            stored_similarities = (
+                self.embedding_index.similarities(situation.problem_text)
+                if self.embedding_index is not None
+                else {}
+            )
+            semantic_context_similarities = {}
 
         for belief in self.beliefs:
-            if str(belief.get("status") or "active") != "active":
+            status = str(belief.get("status") or "active")
+            # Probation represents uncertainty, not inapplicability. Let its
+            # alpha-beta posterior influence ranking so probationary beliefs can
+            # gather prospective evidence in any selection context.
+            if status not in {"active", "probation"}:
                 continue
             if str(belief.get("belief_type") or "confirmed") == "hypothesis":
                 continue
 
             scope = belief.get("scope") if isinstance(belief.get("scope"), dict) else {}
             roles = {normalize_role(item) for item in scope.get("roles", [])}
-            stages = {str(item).strip().lower() for item in scope.get("stages", [])}
+            stages = {normalize_stage(item) for item in scope.get("stages", [])}
             belief_timing = str(belief.get("timing") or "both").lower()
-            if roles and role not in roles:
-                continue
-            if stages and stage not in stages:
-                continue
             if timing != "both" and belief_timing not in {timing, "both"}:
                 continue
 
@@ -490,16 +581,32 @@ class BeliefSelector:
                     situation.problem_text, problem_description
                 )
             similarity = clamp_probability(raw_similarity, default=0.0)
+            exact_context = context_match(
+                scope.get("context_conditions", []),
+                situation.context_tags,
+            )
+            semantic_context = semantic_context_similarities.get(belief_id)
+            if semantic_context is None:
+                context_text = context_texts.get(belief_id, "")
+                semantic_context = (
+                    lexical_similarity(context_query, context_text)
+                    if context_text
+                    else 1.0
+                )
+            context_score = max(
+                clamp_probability(exact_context, default=0.0),
+                clamp_probability(semantic_context, default=0.0),
+            )
             evaluated.append(
                 {
                     "belief": belief,
+                    "status": status,
                     "problem_similarity": similarity,
                     "role_match": 1.0 if not roles or role in roles else 0.0,
                     "stage_match": 1.0 if not stages or stage in stages else 0.0,
-                    "context_match": context_match(
-                        scope.get("context_conditions", []),
-                        situation.context_tags,
-                    ),
+                    "context_match": context_score,
+                    "context_match_exact": exact_context,
+                    "context_match_semantic": semantic_context,
                 }
             )
 
@@ -525,11 +632,18 @@ class BeliefSelector:
             result = {
                 "belief_id": belief.get("belief_id", belief.get("lesson_id")),
                 "instruction": str(belief.get("instruction") or ""),
+                "status": item["status"],
                 "p_applicable": round(applicability, 6),
                 "p_effective": round(effectiveness, 6),
                 "usefulness": round(usefulness, 6),
                 "problem_similarity": round(item["problem_similarity"], 6),
+                "role_match": round(item["role_match"], 6),
+                "stage_match": round(item["stage_match"], 6),
                 "context_match": round(item["context_match"], 6),
+                "context_match_exact": round(item["context_match_exact"], 6),
+                "context_match_semantic": round(
+                    item["context_match_semantic"], 6
+                ),
                 "selected": usefulness >= threshold,
             }
             results.append(result)
@@ -539,13 +653,23 @@ class BeliefSelector:
         selected_ids = {item["belief_id"] for item in selected}
         for item in results:
             item["selected"] = item["belief_id"] in selected_ids
-        self._log_selection(situation, results)
+        self._log_selection(
+            situation,
+            results,
+            top_k=top_k,
+            threshold=threshold,
+            candidate_limit=candidate_limit,
+        )
         return selected
 
     def _log_selection(
         self,
         situation: BeliefSituation,
         candidates: Sequence[Dict[str, Any]],
+        *,
+        top_k: int,
+        threshold: float,
+        candidate_limit: int,
     ) -> None:
         if self.log_path is None:
             return
@@ -553,6 +677,12 @@ class BeliefSelector:
         payload = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "situation": asdict(situation),
+            "bbn_parameters": asdict(self.parameters),
+            "decision_policy": {
+                "top_k": top_k,
+                "threshold": threshold,
+                "candidate_limit": candidate_limit,
+            },
             "candidates": list(candidates),
             "selected_belief_ids": [
                 item["belief_id"] for item in candidates if item.get("selected")

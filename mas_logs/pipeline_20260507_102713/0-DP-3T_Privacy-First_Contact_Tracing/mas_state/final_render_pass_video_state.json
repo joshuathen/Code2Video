@@ -1,0 +1,1146 @@
+{
+  "topic": "DP-3T: Privacy-First Contact Tracing",
+  "target_audience": "University students (Computer Science or Cybersecurity) and Tech Enthusiasts",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with specific lines\n        lines = [\n            \"Digital contact tracing helps stop virus spread quickly.\",\n            \"But centralized databases risk mass government surveillance.\",\n            \"Can we trace contacts without knowing locations or identities?\"\n        ]\n        self.setup_layout(\"The Tracing Dilemma\", lines)\n        \n        # Internal helper for person icons\n        def create_person_icon(color=WHITE):\n            head = Circle(radius=0.15, color=color, fill_opacity=1)\n            # Body as a trapezoid\n            body = Polygon(\n                [-0.2, 0, 0], [0.2, 0, 0], [0.3, -0.4, 0], [-0.3, -0.4, 0], \n                color=color, fill_opacity=1\n            ).next_to(head, DOWN, buff=0.05)\n            return VGroup(head, body)\n\n        # === Animation for Lecture Line 1 ===\n        # Line 1 Highlight: Yellow. Virus spread: Red elements.\n        self.lecture[0].set_color(YELLOW)\n        \n        people_group = VGroup()\n        grid_positions = [\"B2\", \"B4\", \"B6\", \"D2\", \"D4\", \"D6\", \"F2\", \"F4\", \"F6\"]\n        for pos in grid_positions:\n            p = create_person_icon(BLUE_A)\n            self.place_at_grid(p, pos, scale_factor=0.6)\n            people_group.add(p)\n            \n        self.play(Create(people_group))\n        self.wait(0.5)\n        \n        # Virus spread animation\n        infected_indices = [1, 3, 4, 8]\n        virus_color = \"#e74c3c\"\n        self.play(*[people_group[i].animate.set_color(virus_color) for i in infected_indices], run_time=1.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE) # Revert prev\n        self.lecture[1].set_color(\"#e74c3c\") # Red for risk\n        \n        # Transition to a central 'Big Brother' server icon [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/server.svg]\n        server = SVGMobject(\"/mmfs1/data/home/jthen/Code2Video/assets/icon/server.svg\")\n        server.set_color(GRAY_B)\n        self.place_at_grid(server, \"D4\", scale_factor=0.8)\n        \n        # Surveillance label - Issue 38, 40: Positioned at A4 to avoid overlap and act as header\n        surv_label = Text(\"Surveillance Risk\", color=\"#e74c3c\", font_size=20, weight=BOLD)\n        self.place_at_grid(surv_label, \"A4\", scale_factor=1.0)\n\n        # Centralized connections\n        connections = VGroup()\n        for i, p in enumerate(people_group):\n            if i == 4: continue # Skip person at D4 as it's replaced by server\n            l = Line(p.get_center(), server.get_center(), color=\"#e74c3c\", stroke_width=1.5, stroke_opacity=0.6)\n            connections.add(l)\n\n        self.play(\n            FadeIn(server),\n            FadeIn(surv_label),\n            Create(connections),\n            # Icons turn grey to indicate being monitored\n            people_group.animate.set_color(GRAY).scale(0.8),\n            people_group[4].animate.set_opacity(0)\n        )\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE) # Revert prev\n        self.lecture[2].set_color(\"#2ecc71\") # Green for privacy\n        \n        # Reset scene for Alice and Bob\n        alice = create_person_icon(WHITE)\n        bob = create_person_icon(WHITE)\n        self.place_at_grid(alice, \"D2\", scale_factor=0.8)\n        self.place_at_grid(bob, \"D6\", scale_factor=0.8)\n        \n        a_label = Text(\"Alice\", font_size=18).next_to(alice, UP, buff=0.1)\n        b_label = Text(\"Bob\", font_size=18).next_to(bob, UP, buff=0.1)\n        \n        # Encounter distance line\n        encounter_line = DoubleArrow(alice.get_right(), bob.get_left(), color=YELLOW, buff=0.1)\n        \n        # Privacy shield icon - Issue 39: Increased scale to 1.2\n        shield_pts = [[-0.4, 0.4, 0], [0.4, 0.4, 0], [0.4, -0.1, 0], [0, -0.5, 0], [-0.4, -0.1, 0]]\n        shield = Polygon(*shield_pts, color=\"#2ecc71\", fill_opacity=1)\n        self.place_at_grid(shield, \"D4\", scale_factor=1.2)\n        shield_text = Text(\"Privacy\\nFirst\", font_size=14, color=WHITE).move_to(shield.get_center())\n\n        self.play(\n            FadeOut(server), FadeOut(connections), FadeOut(surv_label), FadeOut(people_group),\n            FadeIn(alice), FadeIn(bob), FadeIn(a_label), FadeIn(b_label)\n        )\n        self.play(Create(encounter_line))\n        self.play(DrawBorderThenFill(shield), Write(shield_text))\n        self.wait(3)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Setup layout with specific DP-3T prerequisite text\n        title = \"Prerequisite: The One-Way Hash & Bluetooth RSSI\"\n        lines = [\n            \"Cryptographic hashes create unique, irreversible digital fingerprints.\",\n            \"Bluetooth RSSI measures signal strength to estimate distance.\",\n            \"These tools enable privacy-preserving proximity detection.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # === Animation for Lecture Line 1: Cryptographic Hash ===\n        # Highlight first line\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n\n        # 1. Create Input Box - Fixed Position (Issue 41)\n        input_box = VGroup(\n            RoundedRectangle(corner_radius=0.1, width=2, height=1, color=WHITE),\n            Text(\"Data\", font_size=24)\n        )\n        self.place_at_grid(input_box, \"A3\", scale_factor=0.8)\n        \n        # 2. Create Gear\n        gear_color = \"#95a5a6\"\n        gear_core = Circle(radius=0.5, color=gear_color, fill_opacity=1)\n        teeth = VGroup(*[\n            Rectangle(width=0.2, height=0.2, color=gear_color, fill_opacity=1)\n            .move_to(gear_core.get_center() + [0.6 * np.cos(TAU * i / 8), 0.6 * np.sin(TAU * i / 8), 0])\n            .rotate(TAU * i / 8)\n            for i in range(8)\n        ])\n        gear = VGroup(gear_core, teeth)\n        self.place_at_grid(gear, \"B3\", scale_factor=0.8)\n\n        # 3. Create Output Hash - Fixed Position and Scale (Issue 42)\n        output_hash = Text(\"a7b2...6f8c\", font=\"Monospace\", font_size=24, color=GRAY)\n        self.place_at_grid(output_hash, \"D3\", scale_factor=0.7)\n\n        # Sequence Line 1\n        self.play(FadeIn(input_box))\n        self.wait(0.5)\n        self.play(input_box.animate.move_to(gear.get_center()), gear.animate.rotate(PI), run_time=1)\n        self.remove(input_box)\n        self.play(FadeIn(output_hash), gear.animate.rotate(PI))\n        self.wait(1)\n\n        # Reversal Attempt (The \"One-way\" property)\n        no_entry_color = \"#e74c3c\"\n        cross = Cross(gear, stroke_color=no_entry_color, stroke_width=8)\n        \n        self.play(output_hash.animate.move_to(gear.get_center()), run_time=1)\n        self.play(\n            gear.animate.set_color(no_entry_color),\n            Create(cross),\n            run_time=0.5\n        )\n        self.wait(2)\n\n        # Clean up Line 1\n        self.play(\n            FadeOut(gear), FadeOut(cross), FadeOut(output_hash),\n            self.lecture[0].animate.set_color(WHITE)\n        )\n\n        # === Animation for Lecture Line 2: Bluetooth RSSI ===\n        self.play(self.lecture[1].animate.set_color(BLUE))\n\n        # Phone Icons - Fixed Position (Issue 43)\n        def get_phone(label):\n            body = RoundedRectangle(corner_radius=0.1, width=1, height=1.8, color=WHITE, fill_opacity=1, fill_color=BLACK)\n            screen = Rectangle(width=0.8, height=1.4, color=WHITE).move_to(body.get_center())\n            lbl = Text(label, font_size=18).move_to(screen.get_center())\n            return VGroup(body, screen, lbl)\n\n        phone_a = get_phone(\"Phone A\")\n        phone_b = get_phone(\"Phone B\")\n        self.place_at_grid(phone_a, \"E2\", scale_factor=0.7)\n        self.place_at_grid(phone_b, \"E5\", scale_factor=0.7)\n\n        # Bluetooth Expanding Rings\n        def get_rings(source):\n            rings = VGroup(*[Circle(color=\"#3498db\", stroke_width=2) for _ in range(3)])\n            for i, ring in enumerate(rings):\n                ring.scale(0.1)\n                ring.set_stroke(opacity=0)\n                ring.time_offset = i * (1/3)\n            \n            def update_rings(m, dt):\n                for ring in m:\n                    if not hasattr(ring, \"t\"): ring.t = ring.time_offset\n                    ring.t += dt * 0.5\n                    if ring.t > 1: ring.t -= 1\n                    \n                    new_radius = 0.1 + ring.t * 1.5\n                    ring.scale_to_fit_width(new_radius * 2)\n                    ring.set_stroke(opacity=1 - ring.t)\n                    ring.move_to(source.get_center())\n            \n            rings.add_updater(update_rings)\n            return rings\n\n        rings_a = get_rings(phone_a)\n        rings_b = get_rings(phone_b)\n\n        # RSSI Label\n        rssi_val = DecimalNumber(-40, num_decimal_places=0, font_size=24, color=BLUE, mob_class=Text)\n        rssi_text = Text(\"RSSI: \", font_size=24, color=BLUE)\n        rssi_unit = Text(\" dBm\", font_size=24, color=BLUE)\n        rssi_group = VGroup(rssi_text, rssi_val, rssi_unit).arrange(RIGHT, buff=0.1)\n        \n        # Link RSSI label to phone_b position\n        rssi_group.add_updater(lambda m: m.next_to(phone_b, UP, buff=0.2))\n\n        self.play(FadeIn(phone_a), FadeIn(phone_b), FadeIn(rings_a), FadeIn(rings_b), FadeIn(rssi_group))\n\n        # Animation logic for RSSI decrease\n        def update_rssi_val(m):\n            dist = np.linalg.norm(phone_b.get_center() - phone_a.get_center())\n            # Simplified RSSI formula for visual: starts at ~-55 at E5, drops as distance increases\n            new_val = -40 - (dist - 1.0) * 10\n            m.set_value(max(new_val, -95))\n\n        rssi_val.add_updater(update_rssi_val)\n\n        # Move phone B further away\n        self.play(\n            phone_b.animate.move_to(self.grid[\"E6\"]),\n            run_time=4,\n            rate_func=linear\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3: Conclusion ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(GREEN)\n        )\n        \n        # Pulse everything for emphasis\n        self.play(\n            phone_a.animate.scale(1.1),\n            phone_b.animate.scale(1.1),\n            rate_func=there_and_back,\n            run_time=1\n        )\n        \n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            'Each phone generates a secret daily key locally.',\n            'Every 15 minutes, it derives a new Ephemeral ID.',\n            'Hashing the secret key ensures IDs are unlinkable.',\n            'Alice broadcasts these rotating nicknames via Bluetooth.',\n            'Frequent rotation prevents long-term tracking of individuals.'\n        ]\n        self.setup_layout(\"Phase 1: Generating Ephemeral IDs (The Nicknames)\", lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(\"#3498db\"))\n        \n        phone_body = RoundedRectangle(height=4, width=2.5, corner_radius=0.2, color=GRAY)\n        self.place_in_area(phone_body, \"B2\", \"E4\")\n        \n        key_box = Rectangle(height=0.8, width=1.5, color=\"#3498db\", fill_opacity=0.3)\n        key_label = Text(\"Secret Key\", font_size=20, color=\"#3498db\")\n        key_group = VGroup(key_box, key_label)\n        self.place_at_grid(key_group, \"C3\", scale_factor=0.8)\n        \n        self.play(Create(phone_body), FadeIn(key_group))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(WHITE)\n        )\n        \n        clock_face = Circle(radius=0.4, color=WHITE)\n        clock_hand = Line(ORIGIN, UP * 0.35, color=WHITE)\n        clock = VGroup(clock_face, clock_hand)\n        self.place_at_grid(clock, \"A4\", scale_factor=0.8)\n        \n        timer_label_base = Text(\"00:\", font_size=24)\n        timer_seconds = DecimalNumber(0, num_decimal_places=0, font_size=24, include_sign=False, mob_class=Text)\n        timer_group = VGroup(timer_label_base, timer_seconds).arrange(RIGHT, buff=0.1)\n        self.place_at_grid(timer_group, \"A5\", scale_factor=0.8)\n        \n        self.play(Create(clock), Write(timer_group))\n        self.play(\n            Rotate(clock_hand, -2*PI, about_point=clock_face.get_center()),\n            ChangeDecimalToValue(timer_seconds, 15),\n            run_time=2,\n            rate_func=linear\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(\"#2ecc71\")\n        )\n        \n        hash_box = Rectangle(height=0.8, width=1.2, color=\"#2ecc71\", fill_opacity=0.3)\n        hash_label = Text(\"Hash\", font_size=24, color=\"#2ecc71\")\n        hash_group = VGroup(hash_box, hash_label)\n        self.place_at_grid(hash_group, \"D5\", scale_factor=0.7)\n        \n        # Merge animation\n        key_copy = key_group.copy()\n        time_copy = VGroup(clock.copy(), timer_group.copy())\n        \n        self.play(FadeIn(hash_group))\n        self.play(\n            key_copy.animate.move_to(hash_group.get_center()).scale(0.1).set_opacity(0),\n            time_copy.animate.move_to(hash_group.get_center()).scale(0.1).set_opacity(0),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(\"#f1c40f\")\n        )\n        \n        ephid_label = Text(\"EphID_1\", font_size=32, color=\"#f1c40f\")\n        self.place_at_grid(ephid_label, \"D6\", scale_factor=0.6)\n        \n        # Output from Hash\n        self.play(ReplacementTransform(hash_group.copy(), ephid_label))\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 5 ===\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(\"#f1c40f\")\n        )\n        \n        # Pulse EphID\n        self.play(ephid_label.animate.scale(1.2), rate_func=there_and_back)\n        \n        # Bluetooth waves (arcs)\n        waves = VGroup()\n        for i in range(3):\n            wave = Arc(\n                radius=0.4 + i*0.4, \n                start_angle=-PI/3, \n                angle=2*PI/3, \n                color=\"#f1c40f\", \n                stroke_width=2\n            )\n            wave.move_to(ephid_label.get_center())\n            waves.add(wave)\n        \n        self.play(\n            LaggedStart(\n                *[\n                    VGroup(w).animate(run_time=1.5).scale(2).set_stroke(opacity=0)\n                    for w in waves\n                ],\n                lag_ratio=0.3\n            )\n        )\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Initialize the layout with updated lines from prompt\n        lecture_lines = [\n            'Phones exchange nicknames when in close proximity.',\n            \"Alice broadcasts her ephemeral ID to Bob's phone.\",\n            'Bob reciprocates by sending his ID to Alice.',\n            'Alice records Bob’s ID in her local diary.',\n            'Bob stores Alice’s ID privately on his device.'\n        ]\n        self.setup_layout(\"Phase 2: The Digital Handshake\", lecture_lines)\n\n        # Create Alice and Bob Icons\n        def create_person(color, label_text):\n            head = Circle(radius=0.25, color=color, fill_opacity=0.8)\n            body = Polygon([-0.4, -0.6, 0], [0.4, -0.6, 0], [0, 0, 0], color=color, fill_opacity=0.8)\n            phone = Rectangle(width=0.2, height=0.35, color=GREY_B, fill_opacity=1).shift(RIGHT*0.3 + DOWN*0.2)\n            label = Text(label_text, font_size=18, color=WHITE).next_to(body, DOWN, buff=0.1)\n            return VGroup(head, body, phone, label)\n\n        alice = create_person(color=PINK, label_text=\"Alice\")\n        bob = create_person(color=BLUE, label_text=\"Bob\")\n        \n        self.place_at_grid(alice, \"B1\", scale_factor=0.8)\n        self.place_at_grid(bob, \"B6\", scale_factor=0.8)\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        self.play(FadeIn(alice), FadeIn(bob))\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW)\n        )\n        packet_a = VGroup(\n            Rectangle(width=0.8, height=0.4, color=WHITE, fill_opacity=1),\n            Text(\"EphID_A\", font_size=14, color=BLACK)\n        )\n        self.place_at_grid(packet_a, \"B2\", scale_factor=0.7)\n        self.play(packet_a.animate.move_to(self.grid[\"B5\"]), run_time=1.5)\n        self.play(FadeOut(packet_a))\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW)\n        )\n        packet_b = VGroup(\n            Rectangle(width=0.8, height=0.4, color=WHITE, fill_opacity=1),\n            Text(\"EphID_B\", font_size=14, color=BLACK)\n        )\n        self.place_at_grid(packet_b, \"B5\", scale_factor=0.7)\n        self.play(packet_b.animate.move_to(self.grid[\"B2\"]), run_time=1.5)\n        self.play(FadeOut(packet_b))\n\n        # === Animation for Lecture Line 4 ===\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(YELLOW)\n        )\n\n        def create_diary(title):\n            box = Rectangle(width=1.8, height=2.0, color=GREY_A)\n            header = Text(title, font_size=16, color=WHITE).shift(UP*0.7)\n            line = Line(LEFT*0.8, RIGHT*0.8).next_to(header, DOWN, buff=0.1)\n            entries = VGroup(\n                Text(\"Contact Diary\", font_size=12, color=GREY_C),\n                Text(\"...\", font_size=12, color=GREY_C)\n            ).arrange(DOWN, buff=0.2).next_to(line, DOWN, buff=0.2)\n            return VGroup(box, header, line, entries)\n\n        alice_diary = create_diary(\"Alice's Phone\")\n        # Fix Issue 47 & 49: D2-E3, scale 0.8\n        self.place_in_area(alice_diary, \"D2\", \"E3\", scale_factor=0.8)\n        \n        self.play(FadeIn(alice_diary))\n        entry_b = Text(\"EphID_B\", font_size=14, color=GREEN_B)\n        entry_b.move_to(alice_diary[3].get_bottom() + DOWN*0.2)\n        self.play(Write(entry_b))\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 5 ===\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(YELLOW)\n        )\n        \n        bob_diary = create_diary(\"Bob's Phone\")\n        # Fix Issue 48 & 49: D4-E5, scale 0.8\n        self.place_in_area(bob_diary, \"D4\", \"E5\", scale_factor=0.8)\n        \n        self.play(FadeIn(bob_diary))\n        entry_a = Text(\"EphID_A\", font_size=14, color=GREEN_B)\n        entry_a.move_to(bob_diary[3].get_bottom() + DOWN*0.2)\n        self.play(Write(entry_a))\n        \n        # Final wait\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout\n        lines = [\n            'If Bob tests positive, he uploads his daily key.',\n            'The central server acts as a public bulletin board.',\n            'Others download the keys and reconstruct potential IDs.',\n            \"Alice's phone matches downloaded IDs against her local diary.\",\n            'Matching IDs trigger a private local exposure alert.'\n        ]\n        self.setup_layout(\"Phase 3: Exposure Notification (The Bulletin Board)\", lines)\n\n        # Common Colors\n        BOB_COLOR = \"#e74c3c\"\n        KEY_COLOR = \"#3498db\"\n        SERVER_COLOR = \"#95a5a6\"\n        ALICE_COLOR = \"#2ecc71\"\n        ID_COLOR = \"#f1c40f\"\n        ALERT_COLOR = \"#e74c3c\"\n\n        # === Animation for Lecture Line 1 ===\n        # Bob uploads Daily Key\n        self.lecture[0].set_color(BOB_COLOR)\n        \n        bob_phone = RoundedRectangle(corner_radius=0.1, height=1.2, width=0.8, color=WHITE)\n        bob_label = Text(\"Bob\", font_size=16).next_to(bob_phone, UP, buff=0.1)\n        bob_group = VGroup(bob_phone, bob_label)\n        self.place_at_grid(bob_group, \"B2\") # Updated position\n        \n        server = Rectangle(height=1.5, width=2.5, color=SERVER_COLOR, fill_opacity=0.2)\n        server_label = Text(\"Public Server\", font_size=18).move_to(server.get_center())\n        server_group = VGroup(server, server_label)\n        self.place_in_area(server_group, \"B4\", \"C6\")\n\n        daily_key = Text(\"Key_Bob\", font_size=14, color=KEY_COLOR)\n        self.place_at_grid(daily_key, \"B2\")\n\n        self.play(FadeIn(bob_group), FadeIn(server_group))\n        self.wait(0.5)\n        \n        # Bob tests positive (turns red)\n        self.play(bob_phone.animate.set_fill(BOB_COLOR, opacity=0.5))\n        \n        # Upload key\n        self.play(daily_key.animate.move_to(self.grid[\"B4\"]), run_time=1.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Server as bulletin board\n        self.lecture[1].set_color(SERVER_COLOR)\n        \n        bulletin_board_text = Text(\"Public Bulletin Board\", font_size=14, color=SERVER_COLOR)\n        self.place_at_grid(bulletin_board_text, \"A5\")\n        \n        self.play(Write(bulletin_board_text))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Others (Alice) download keys and reconstruct IDs\n        self.lecture[2].set_color(ID_COLOR)\n        \n        alice_phone = RoundedRectangle(corner_radius=0.1, height=1.2, width=0.8, color=WHITE)\n        alice_label = Text(\"Alice\", font_size=16).next_to(alice_phone, UP, buff=0.1)\n        alice_group = VGroup(alice_phone, alice_label)\n        self.place_at_grid(alice_group, \"E2\") # Updated position\n        \n        download_arrow = Arrow(start=self.grid[\"C5\"], end=self.grid[\"E2\"], color=WHITE, buff=0.5)\n        \n        self.play(FadeIn(alice_group))\n        self.play(GrowArrow(download_arrow))\n        \n        downloaded_key = daily_key.copy()\n        self.play(downloaded_key.animate.move_to(self.grid[\"E2\"]), run_time=1)\n        self.play(FadeOut(download_arrow))\n\n        # Reconstruct IDs inside phone\n        potential_ids_title = Text(\"Potential EphIDs\", font_size=16, color=ID_COLOR)\n        self.place_at_grid(potential_ids_title, \"D4\") # Updated position\n        \n        id_list = VGroup(\n            Text(\"B2z8\", font_size=14, color=ID_COLOR),\n            Text(\"X9a1\", font_size=14, color=ID_COLOR),\n            Text(\"Q4p0\", font_size=14, color=ID_COLOR)\n        ).arrange(DOWN, buff=0.15)\n        self.place_at_grid(id_list, \"E4\") # Updated position\n\n        self.play(Write(potential_ids_title), FadeIn(id_list))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Match against local diary\n        self.lecture[3].set_color(ALICE_COLOR)\n        \n        diary_title = Text(\"Local Diary\", font_size=16, color=ALICE_COLOR)\n        self.place_at_grid(diary_title, \"D6\") # Updated position\n        \n        diary_list = VGroup(\n            Text(\"M7v2\", font_size=14, color=WHITE),\n            Text(\"B2z8\", font_size=14, color=WHITE), # This is the match\n            Text(\"K3j5\", font_size=14, color=WHITE)\n        ).arrange(DOWN, buff=0.15)\n        self.place_at_grid(diary_list, \"E6\") # Updated position\n        \n        self.play(Write(diary_title), FadeIn(diary_list))\n        self.wait(0.5)\n        \n        # Highlight matches\n        match_highlight_1 = SurroundingRectangle(id_list[0], color=ALERT_COLOR, buff=0.05)\n        match_highlight_2 = SurroundingRectangle(diary_list[1], color=ALERT_COLOR, buff=0.05)\n        \n        self.play(Create(match_highlight_1), Create(match_highlight_2))\n        self.play(\n            id_list[0].animate.set_color(ALERT_COLOR),\n            diary_list[1].animate.set_color(ALERT_COLOR)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Exposure Alert\n        self.lecture[4].set_color(ALERT_COLOR)\n        \n        alert_box = Rectangle(height=0.4, width=1.4, color=ALERT_COLOR, fill_opacity=0.9)\n        alert_text = Text(\"EXPOSURE!\", font_size=12, color=WHITE, weight=BOLD)\n        alert_group = VGroup(alert_box, alert_text)\n        self.place_at_grid(alert_group, \"E2\") # On top of Alice's phone\n        \n        self.play(FadeIn(alert_group))\n        self.play(Flash(alert_group, color=ALERT_COLOR, flash_radius=0.5))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Initialize the layout\n        lecture_lines = [\n            \"DP-3T keeps data local and identities anonymous.\",\n            \"The server never learns location or social graphs.\",\n            \"Privacy and public health can coexist through decentralization.\"\n        ]\n        self.setup_layout(\"Summary & Privacy Benefits\", lecture_lines)\n\n        # Assets\n        PHONE_ASSET = \"/mmfs1/data/home/jthen/Code2Video/assets/icon/phone.svg\"\n\n        # Colors\n        CENTRAL_COLOR = RED_A\n        DP3T_COLOR = BLUE_A\n        SHIELD_COLOR = \"#2ecc71\"\n        TEXT_COLOR = WHITE\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n\n        # Centralized Setup\n        central_label = Text(\"Centralized\", font_size=20, color=CENTRAL_COLOR)\n        self.place_at_grid(central_label, \"A1\")\n        \n        server_cent = VGroup(\n            Circle(radius=0.4, color=CENTRAL_COLOR),\n            Text(\"Server\", font_size=16, color=TEXT_COLOR)\n        )\n        self.place_at_grid(server_cent, \"B2\")\n        \n        # Phones for Centralized\n        phone_c1 = SVGMobject(PHONE_ASSET, color=WHITE)\n        phone_c2 = SVGMobject(PHONE_ASSET, color=WHITE)\n        self.place_at_grid(phone_c1, \"C1\", scale_factor=0.5)\n        self.place_at_grid(phone_c2, \"C3\", scale_factor=0.5)\n        \n        line_c1 = Line(phone_c1.get_top(), server_cent.get_bottom(), color=CENTRAL_COLOR)\n        line_c2 = Line(phone_c2.get_top(), server_cent.get_bottom(), color=CENTRAL_COLOR)\n        social_graph_line = Line(phone_c1.get_right(), phone_c2.get_left(), color=RED).set_stroke(opacity=0.5)\n        graph_label = Text(\"Graph visible\", font_size=12, color=RED).next_to(social_graph_line, UP, buff=0.1)\n        \n        central_group = VGroup(central_label, server_cent, phone_c1, phone_c2, line_c1, line_c2, social_graph_line, graph_label)\n\n        # DP-3T Setup\n        dp3t_label = Text(\"DP-3T\", font_size=20, color=DP3T_COLOR)\n        self.place_at_grid(dp3t_label, \"D2\") # Issue 50 fix\n        \n        server_dp = VGroup(\n            Circle(radius=0.4, color=DP3T_COLOR),\n            Text(\"Server\", font_size=16, color=TEXT_COLOR)\n        )\n        self.place_at_grid(server_dp, \"E2\")\n        \n        # Phones for DP-3T (Issue 37)\n        phone_d1 = SVGMobject(PHONE_ASSET, color=WHITE)\n        phone_d2 = SVGMobject(PHONE_ASSET, color=WHITE)\n        self.place_at_grid(phone_d1, \"F1\", scale_factor=0.5)\n        self.place_at_grid(phone_d2, \"F3\", scale_factor=0.5)\n        \n        # Local interaction (Issue 37: lines only between phones for DP-3T)\n        local_link = DoubleArrow(phone_d1.get_right(), phone_d2.get_left(), buff=0.1, color=DP3T_COLOR, tip_length=0.1)\n        local_text = Text(\"Local Exchange\", font_size=12, color=DP3T_COLOR).next_to(local_link, DOWN, buff=0.1)\n        \n        dp3t_group = VGroup(dp3t_label, server_dp, phone_d1, phone_d2, local_link, local_text)\n\n        self.play(FadeIn(central_group), FadeIn(dp3t_group))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n\n        # Highlight DP-3T Server as Bulletin Board\n        self.play(FadeOut(central_group))\n        self.play(dp3t_group.animate.scale(1.2).move_to(self.grid[\"C3\"]))\n        \n        bulletin_label = Text(\"Bulletin Board\", font_size=24, color=YELLOW)\n        self.place_in_area(bulletin_label, \"A2\", \"A5\", scale_factor=0.8) # Issue 51 fix\n        \n        # Show \"Random Keys\" instead of \"Identities\"\n        key1 = Text(\"0x1A2B...\", font_size=14, color=DP3T_COLOR)\n        key2 = Text(\"0x9F8E...\", font_size=14, color=DP3T_COLOR)\n        self.place_at_grid(key1, \"D3\")\n        self.place_at_grid(key2, \"D4\")\n        \n        no_link_rect = Rectangle(height=1, width=3, color=RED).move_to(self.grid[\"E3\"])\n        no_link_text = Text(\"No Social Graph\", font_size=18, color=RED).move_to(no_link_rect.get_center())\n\n        self.play(Write(bulletin_label))\n        self.play(FadeIn(key1), FadeIn(key2))\n        self.play(Create(no_link_rect), Write(no_link_text))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n\n        self.play(FadeOut(dp3t_group), FadeOut(bulletin_label), FadeOut(key1), FadeOut(key2), FadeOut(no_link_rect), FadeOut(no_link_text))\n\n        # Final visual: Icons within Privacy Shield\n        shield_rect = RoundedRectangle(corner_radius=0.3, height=4.5, width=5.5, color=SHIELD_COLOR, stroke_width=4)\n        self.place_in_area(shield_rect, \"A1\", \"F6\")\n        shield_label = Text(\"PRIVACY PRESERVED\", font_size=28, color=SHIELD_COLOR, weight=BOLD)\n        self.place_at_grid(shield_label, \"A3\", scale_factor=0.8)\n\n        # Summary Icons (Issue 52 fixes)\n        icon1_box = Rectangle(height=0.8, width=3.5, color=BLUE_B)\n        icon1_text = Text(\"Key Generation\", font_size=16, color=WHITE)\n        icon1 = VGroup(icon1_box, icon1_text)\n        self.place_in_area(icon1, 'B2', 'B5')\n\n        icon2_box = Rectangle(height=0.8, width=3.5, color=BLUE_B)\n        icon2_text = Text(\"Local Storage\", font_size=16, color=WHITE)\n        icon2 = VGroup(icon2_box, icon2_text)\n        self.place_in_area(icon2, 'C2', 'C5')\n\n        icon3_box = Rectangle(height=0.8, width=3.5, color=BLUE_B)\n        icon3_text = Text(\"Local Matching\", font_size=16, color=WHITE)\n        icon3 = VGroup(icon3_box, icon3_text)\n        self.place_in_area(icon3, 'D2', 'D5')\n\n        self.play(Create(shield_rect), Write(shield_label))\n        self.play(\n            FadeIn(icon1, shift=UP),\n            FadeIn(icon2, shift=UP),\n            FadeIn(icon3, shift=UP)\n        )\n        self.wait(3)\n\n        # Cleanup\n        self.lecture[2].set_color(WHITE)\n        self.wait(1)\n"
+  ],
+  "outline": {
+    "topic": "DP-3T: Privacy-First Contact Tracing",
+    "target_audience": "University students (Computer Science or Cybersecurity) and Tech Enthusiasts",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Tracing Dilemma",
+        "content": "Introduction to the conflict between public health (tracking virus spread) and individual privacy (data security). Explain why centralized databases are risky (potential for government surveillance).",
+        "example": "Imagine Alice and Bob are in a park. If Bob gets sick later, how can Alice be notified without a central server knowing exactly where they were or who they are?"
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The One-Way Hash & Bluetooth RSSI",
+        "content": "Briefly explain Cryptographic Hash Functions (generating a unique digital fingerprint that can't be reversed) and Bluetooth Low Energy (using signal strength/RSSI to estimate distance between devices).",
+        "example": "Visual: A meat grinder icon. Put in a secret word (Input), get out a random string (Hash). You can't turn the string back into the word."
+      },
+      {
+        "id": "section_3",
+        "title": "Phase 1: Generating Ephemeral IDs (The Nicknames)",
+        "content": "Each phone generates a rotating Secret Key daily. From this, it derives 'Ephemeral IDs' (EphIDs) that change every 15 minutes using a hash function. This prevents 'stalking' because the ID is constantly changing.",
+        "example": "Alice's phone creates a daily secret 'Sunlight'. Every 15 mins, it calculates Hash('Sunlight' + Time) to create IDs like 'A1x9', then 'B2z8'. She broadcasts these 'nicknames' via Bluetooth."
+      },
+      {
+        "id": "section_4",
+        "title": "Phase 2: The Digital Handshake",
+        "content": "When two phones are close, they exchange and store these EphIDs locally on the device (not a server). This is the 'Decentralized' part—the 'diary' of contacts stays on the phone.",
+        "example": "Alice and Bob sit on a bench. Alice's phone hears 'B2z8' and writes it in a private digital diary. Bob's phone hears 'A1x9' and does the same. Neither knows the other's real identity."
+      },
+      {
+        "id": "section_5",
+        "title": "Phase 3: Exposure Notification (The Bulletin Board)",
+        "content": "If Bob tests positive, he uploads his 'Secret Key' (not his location or contact list) to a public server. Everyone else's phone downloads the list of 'Infected Keys' and reconstructs the EphIDs to see if any match their local diary.",
+        "example": "Bob uploads his key 'Moonlight'. Alice's phone downloads it, calculates all possible IDs 'Moonlight' would have produced, and sees 'B2z8' matches an entry in her diary. Her phone alerts her: 'Potential Exposure!'"
+      },
+      {
+        "id": "section_6",
+        "title": "Summary & Privacy Benefits",
+        "content": "Recap the flow: Local Generation -> Local Storage -> Voluntary Disclosure -> Local Matching. Emphasize that the server never knows 'who met whom' or 'where'.",
+        "example": "Comparison Chart: Centralized (Server knows all) vs. DP-3T (Server is just a bulletin board, intelligence stays at the edge/phones)."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Tracing Dilemma",
+      "lecture_lines": [
+        "Digital contact tracing helps stop virus spread quickly.",
+        "But centralized databases risk mass government surveillance.",
+        "Can we trace contacts without knowing locations or identities?"
+      ],
+      "animations": [
+        "Show a grid of person icons. Gradually turn some icons red (#e74c3c) to represent virus spread.",
+        "Transition to a central 'Big Brother' server icon [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/server.svg] collecting lines from all icons. Add a red 'Surveillance' label.",
+        "Remove the server. Show Alice and Bob icons with a distance line between them. A 'Privacy-First' shield (#2ecc71) appears."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The One-Way Hash & Bluetooth RSSI",
+      "lecture_lines": [
+        "Cryptographic hashes create unique, irreversible digital fingerprints.",
+        "Bluetooth RSSI measures signal strength to estimate distance.",
+        "These tools enable privacy-preserving proximity detection."
+      ],
+      "animations": [
+        "A 'Input' box takes in 'Data'. It passes through a 'Hash Function' gear (#95a5a6) and produces a hex string 'a7b2...'.",
+        "Attempt to reverse the 'a7b2...' string through the gear. The gear turns red (#e74c3c) and a 'No Entry' sign appears.",
+        "Two phone icons with expanding blue rings (#3498db). A label shows 'RSSI' decreasing as distance increases."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "Phase 1: Generating Ephemeral IDs (The Nicknames)",
+      "lecture_lines": [
+        "Each phone generates a secret daily key locally.",
+        "Every 15 minutes, it derives a new Ephemeral ID.",
+        "Hashing the secret key ensures IDs are unlinkable.",
+        "Alice broadcasts these rotating nicknames via Bluetooth.",
+        "Frequent rotation prevents long-term tracking of individuals."
+      ],
+      "animations": [
+        "Display a 'Secret Key' box (#3498db) inside a phone.",
+        "A clock icon rotates. A timer increments from 00:00 to 00:15.",
+        "The 'Secret Key' and 'Time' merge into a 'Hash' box (#2ecc71).",
+        "Out of the 'Hash' box comes 'EphID_1' (#f1c40f). It replaces the previous ID.",
+        "The 'EphID_1' label pulses and broadcasts outward-moving arcs to simulate Bluetooth signal."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Phase 2: The Digital Handshake",
+      "lecture_lines": [
+        "Phones exchange nicknames when in close proximity.",
+        "Alice broadcasts her ephemeral ID to Bob's phone.",
+        "Bob reciprocates by sending his ID to Alice.",
+        "Alice records Bob’s ID in her local diary.",
+        "Bob stores Alice’s ID privately on his device."
+      ],
+      "animations": [
+        "Place Alice and Bob icons on left/right. Each has a phone.",
+        "A small packet labeled 'EphID_A' moves from Alice to Bob.",
+        "A small packet labeled 'EphID_B' moves from Bob to Alice.",
+        "Zoom into Alice's phone. A list titled 'Contact Diary' scrolls up, adding 'EphID_B' to the bottom row.",
+        "Zoom into Bob's phone. A similar 'Contact Diary' adds 'EphID_A'. Both phones remain disconnected from any server."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Phase 3: Exposure Notification (The Bulletin Board)",
+      "lecture_lines": [
+        "If Bob tests positive, he uploads his daily key.",
+        "The central server acts as a public bulletin board.",
+        "Others download the keys and reconstruct potential IDs.",
+        "Alice's phone matches downloaded IDs against her local diary.",
+        "Matching IDs trigger a private local exposure alert."
+      ],
+      "animations": [
+        "Bob's icon turns red (#e74c3c). An arrow sends his 'Daily Key' (#3498db) to a central 'Public Server' icon.",
+        "Alice's phone draws a 'Download' arrow from the Public Server, receiving the 'Daily Key'.",
+        "Inside Alice's phone, the 'Daily Key' is hashed with various times to create a set of 'Possible IDs' (#f1c40f).",
+        "A comparison animation: 'Possible IDs' side-by-side with 'Local Diary'. 'EphID_B' highlights in both.",
+        "A red warning banner (#e74c3c) 'Exposure Detected!' flashes on Alice's screen."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Summary & Privacy Benefits",
+      "lecture_lines": [
+        "DP-3T keeps data local and identities anonymous.",
+        "The server never learns location or social graphs.",
+        "Privacy and public health can coexist through decentralization."
+      ],
+      "animations": [
+        "Display a split screen: 'Centralized' (lines to a cloud) vs 'DP-3T' (lines only between [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/phone.svg] icons).",
+        "The 'Public Server' in DP-3T is highlighted as a 'Bulletin Board' that holds no personal data.",
+        "Final visual: Three icons - 'Key Generation', 'Local Storage', and 'Local Matching' - all within a 'Privacy Shield' (#2ecc71)."
+      ]
+    }
+  ],
+  "turns_run": 3,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Created 3 animation steps for Section 1 aligned with the high-level plan. Awaiting matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated initial Manim code for Section 1 including virus spread, centralized server surveillance, and the transition to a privacy-first Alice-Bob encounter."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Created 3 animation steps for Section 2 aligned with the high-level plan. Awaiting matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generating full Manim code for section 2 including Hash and RSSI visuals."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for key Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Created 5 animation steps for Section 3 aligned with the high-level plan. Awaiting matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Phase 1: Generating Ephemeral IDs including Phone, Secret Key, Hash function, and Bluetooth broadcasting animation."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Expanded lecture lines to 5 to match the AnimationPlanner's steps for section_4. Each line is under 10 words and aligns with the exchange and local storage process."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Created 5 animation steps for Section 4 aligned with the high-level plan. Awaiting matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 4: Phase 2: The Digital Handshake. The animation includes Alice and Bob icons, packet exchange between their phones, local diary updates, and a visual representation of the decentralized nature (no server connection)."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for key Section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Created 5 animation steps for Section 5 aligned with the high-level plan. Awaiting matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generating the Manim code for Section 5 covering the Exposure Notification phase."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Created 3 animation steps for Section 6 aligned with the high-level plan. Awaiting matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generating complete Manim code for Section 6 following the visual anchor system and lecture line requirements."
+    },
+    {
+      "id": 19,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for Section 1 are ready. Please design 3 corresponding animation steps.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 20,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for Section 2 are ready. Please design 3 corresponding animation steps.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 21,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for Section 3 are ready. Please design 5 corresponding animation steps.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 22,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for Section 4 are ready. Please design 3 corresponding animation steps.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for Section 5 are ready. Please design 5 corresponding animation steps.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for Section 6 are ready. Please design 3 corresponding animation steps.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Write 3 concise lecture lines (max 10 words each) that match the planned animation steps: 1. Virus spread. 2. Centralized surveillance risk. 3. Privacy-first peer-to-peer approach.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Write 3 concise lecture lines (max 10 words each) that match the planned animation steps: 1. Input hashing. 2. One-way property. 3. Bluetooth RSSI for distance.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Write 5 concise lecture lines (max 10 words each) that match the planned animation steps: 1. Secret Key. 2. 15-min intervals. 3. Hashing process. 4. Ephemeral ID creation. 5. Bluetooth broadcast.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Write 5 concise lecture lines (max 10 words each) that match the planned animation steps: 1. Proximity exchange. 2. Alice to Bob. 3. Bob to Alice. 4. Alice's local diary. 5. Bob's local diary.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Write 5 concise lecture lines (max 10 words each) that match the planned animation steps: 1. Uploading secret key. 2. Downloading keys. 3. Local ID reconstruction. 4. Diary comparison. 5. Exposure alert.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Write 3 concise lecture lines (max 10 words each) that match the planned animation steps: 1. Centralized vs DP-3T. 2. Server as anonymous bulletin board. 3. Privacy preserved summary.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[section_1] Generate Manim code for 'The Tracing Dilemma'.\nLecture Lines:\n1. Virus spread.\n2. Centralized surveillance risk.\n3. Privacy-first peer-to-peer approach.\n\nAnimation Steps:\n1. Show a network of nodes where a virus icon spreads between them.\n2. Highlight a central server collecting all data with a warning/surveillance icon.\n3. Transition to a decentralized model where phones talk directly and the server is empty/minimized.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented the Tracing Dilemma scene with a grid of nodes for virus spread, a central server for surveillance risk, and a decentralized Alice/Bob model with a privacy shield."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[section_2] Generate Manim code for 'Prerequisite: The One-Way Hash & Bluetooth RSSI'.\nLecture Lines:\n1. Input hashing.\n2. One-way property.\n3. Bluetooth RSSI for distance.\n\nAnimation Steps:\n1. Show a clear text input being transformed into a scrambled hash string.\n2. Demonstrate that the hash cannot be reversed back to the original input.\n3. Visualize Bluetooth waves with RSSI values translating to a proximity meter.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implementing visual steps for cryptographic hash (forward and failed reverse) and Bluetooth RSSI proximity."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[section_3] Generate Manim code for 'Phase 1: Generating Ephemeral IDs'.\nLecture Lines:\n1. Alice starts with a secret Daily Key.\n2. Time is divided into 15-minute intervals.\n3. Each interval, the Daily Key is hashed.\n4. This creates a temporary, ephemeral Nickname or ID.\n5. Alice's phone broadcasts this ID via Bluetooth.\n\nAnimation Steps:\n1. Display 'Daily Key' as a master key icon.\n2. Show a timeline bar split into 15-minute segments.\n3. Animate the Daily Key passing through a 'Hash' function block.\n4. Out pops a short, random ID (e.g., 'EphID_1').\n5. Alice's phone sends out pulsing waves labeled with the EphID.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Phase 1: Generating Ephemeral IDs including Phone, Secret Key, Hash function, and Bluetooth broadcasting animation."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[section_5] Generate Manim code for 'Phase 3: Exposure Notification'.\nLecture Lines:\n1. If infected, Alice uploads her Daily Keys only.\n2. Others download the list of keys from the server.\n3. Bob's phone reconstructs all IDs from those keys locally.\n4. Bob's phone compares these to his own local diary.\n5. If a match is found, Bob receives an alert.\n\nAnimation Steps:\n1. Show Alice's phone sending a 'Daily Key' to a central cloud (Bulletin Board).\n2. Show Bob's phone downloading a list of keys from that cloud.\n3. Animate Bob's phone hashing the keys to produce a list of 'Potential EphIDs'.\n4. Visualize a 'Match' process between 'Potential IDs' and 'Diary IDs'.\n5. Trigger a 'Risk of Exposure' notification on Bob's screen.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generating the Manim code for Section 5 covering the Exposure Notification phase."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[section_6] Generate Manim code for 'Summary & Privacy Benefits'.\nLecture Lines:\n1. Centralized systems know who you met; DP-3T doesn't.\n2. The server acts only as an anonymous bulletin board.\n3. Your identity stays on your device, ensuring privacy.\n\nAnimation Steps:\n1. Side-by-side: Centralized (server sees connections) vs DP-3T (server sees random keys).\n2. Highlight the server as a simple, passive storage for keys, not a tracker.\n3. Final shot: A shield over a smartphone, emphasizing 'Privacy Preserved'.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generating complete Manim code for Section 6 following the visual anchor system and lecture line requirements."
+    },
+    {
+      "id": 36,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Transition to a central 'Big Brother' server icon [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/server.svg] collecting lines from all icons. Add a red 'Surveillance' label.\"]",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated server SVG asset /mmfs1/data/home/jthen/Code2Video/assets/icon/server.svg at grid position D4."
+    },
+    {
+      "id": 37,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Display a split screen: 'Centralized' (lines to a cloud) vs 'DP-3T' (lines only between [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/phone.svg] icons).\"]",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated phone.svg asset into both Centralized and DP-3T setups as requested. Modified DP-3T visual to show lines primarily between phone icons to match storyboard description."
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'surv_label' (Surveillance Risk) at B4 overlaps with the top-middle person icon in the 3x3 grid, creating visual noise and obstruction. Fix: Line 101: self.place_in_area(surv_label, 'A3', 'A5', scale_factor=0.8) (line=101, object=surv_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved surv_label to A4 to avoid overlap with person icons, fulfilling both Issue 38 and 40 requirements."
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'shield' asset at D4 is scaled too small, making the internal 'Privacy First' text difficult to read when centered between Alice and Bob. Fix: Line 138: self.place_at_grid(shield, 'D4', scale_factor=1.2) (line=138, object=shield)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Increased shield scale factor to 1.2 at position D4 for better readability."
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'surv_label' at B4 violates the clear hierarchy by being too close to the grid elements it labels, rather than acting as a scene header. Fix: Line 101: self.place_at_grid(surv_label, 'A4', scale_factor=1.0) (line=101, object=surv_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved surv_label to A4 and adjusted scale to 1.0 to establish a clear scene hierarchy."
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The input_box (A2) and gear (B3) are diagonally misaligned, creating a disjointed visual flow for the hashing process. Fix: Line 65: self.place_at_grid(input_box, 'A3', scale_factor=0.8) (line=65, object=input_box)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved input_box to A3 to align vertically with the gear at B3."
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The output_hash at C4 is too close to the gear and diagonally offset, which leads to visual clutter and poor vertical alignment. Fix: Line 81: self.place_at_grid(output_hash, 'D3', scale_factor=0.7) (line=81, object=output_hash)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved output_hash to D3 and scaled to 0.7 to align vertically with the gear and reduce clutter."
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Phone A and Phone B are placed too close together at E2 and E4, crowding the RSSI label and restricting the space for distance demonstration. Fix: Line 122: self.place_at_grid(phone_b, 'E5', scale_factor=0.7) (line=122, object=phone_b)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved phone_b to E5 to increase space for distance demonstration and RSSI label."
+    },
+    {
+      "id": 44,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The phone_body (B1-E3) is positioned too far to the left, encroaching on the lecture text area and creating visual crowding. Fix: Line 60: self.place_in_area(phone_body, 'B2', 'E4'); Line 65: self.place_at_grid(key_group, 'C3', scale_factor=0.8) (line=60, object=phone_body)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved phone body to B2-E4 and key group to C3 to avoid crowding lecture text."
+    },
+    {
+      "id": 45,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The clock and timer_group (B4, B5) are positioned in the middle of the vertical space, disrupting the visual flow of the derivation process. Fix: Line 79: self.place_at_grid(clock, 'A4', scale_factor=0.8); Line 84: self.place_at_grid(timer_group, 'A5', scale_factor=0.8) (line=79, object=clock)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved clock to A4 and timer to A5 to improve visual flow."
+    },
+    {
+      "id": 46,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The ephid_label (D6) is placed at the edge of the grid, which causes the subsequent Bluetooth broadcasting waves to be cut off screen. Fix: Line 104: self.place_at_grid(hash_group, 'D5', scale_factor=0.7); Line 125: self.place_at_grid(ephid_label, 'D6', scale_factor=0.6) (line=125, object=ephid_label)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted hash_group to D5 (scale 0.7) and ephid_label to D6 (scale 0.6) to prevent Bluetooth waves from clipping."
+    },
+    {
+      "id": 47,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: Alice's diary (D1-E2) is positioned too far to the left, which creates visual crowding against the lecture text area. Fix: Line 115: self.place_in_area(alice_diary, 'D2', 'E3', scale_factor=0.8) (line=115, object=alice_diary)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved Alice's diary to 'D2'-'E3' and set scale_factor to 0.8 to avoid crowding and ensure visual hierarchy."
+    },
+    {
+      "id": 48,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: Bob's diary (D5-E6) is pushed too far to the right edge, creating an unbalanced layout and leaving excessive empty space in the center. Fix: Line 116: self.place_in_area(bob_diary, 'D4', 'E5', scale_factor=0.8) (line=116, object=bob_diary)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved Bob's diary to 'D4'-'E5' and set scale_factor to 0.8 to balance the layout and improve visual hierarchy."
+    },
+    {
+      "id": 49,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The current scale of the diaries (0.9) is larger than the main actors (0.8), creating a poor visual hierarchy and making the bottom half feel cramped. Fix: Line 115 & 116: Reduce scale_factor to 0.8 for both alice_diary and bob_diary to match the scale of Alice and Bob. (line=115, object=alice_diary/bob_diary)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced scale_factor of both diaries to 0.8 to match the actors and reduce visual clutter in the bottom half."
+    },
+    {
+      "id": 50,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'dp3t_label' at position D1 is too close to the lecture notes on the left, causing visual crowding and potential overlap. Fix: Line 89: self.place_at_grid(dp3t_label, 'D2') (line=89, object=dp3t_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved 'dp3t_label' from D1 to D2 to reduce visual crowding with lecture notes."
+    },
+    {
+      "id": 51,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'bulletin_label' ('Bulletin Board') is a long text element that appears off-center and risks clipping the left-side text when anchored to a single point at A3. Fix: Line 124: self.place_in_area(bulletin_label, 'A2', 'A5', scale_factor=0.8) (line=124, object=bulletin_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Used place_in_area across A2-A5 for 'bulletin_label' to ensure centering and prevent clipping of left-side text."
+    },
+    {
+      "id": 52,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The summary icons (icon1, icon2, icon3) consist of wide rectangular boxes that appear cramped when restricted to column 3, risking overlap with the lecture area. Fix: Line 156: self.place_in_area(icon1, 'B2', 'B5'); Line 161: self.place_in_area(icon2, 'C2', 'C5'); Line 166: self.place_in_area(icon3, 'D2', 'D5') (line=156, object=icon1, icon2, icon3)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated summary icons (icon1, icon2, icon3) to use place_in_area across columns 2-5, preventing overlap and visual cramping."
+    },
+    {
+      "id": 53,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[section_5] Improve visual layout to reduce crowding.\n1. Alice (at E2) and the ID list (at E3) are currently too close.\n2. Bob is at B2. The Server is in B4-C6.\n3. Update placements:\n   - Alice: E2\n   - Potential IDs Title: D4\n   - ID list: E4\n   - Diary Title: D6\n   - Diary list: E6\nEnsure all elements are properly spaced and the 'Risk of Exposure' notification is clearly visible at the end.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated grid positions for Bob, Alice, and lists to reduce crowding. Bob is now at B2, Alice at E2, potential IDs at D4/E4, and diary at D6/E6. Increased list item spacing for clarity and ensured alert is clearly visible on Alice's phone."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 171889,
+        "video_mtime_ns": 1778121042498281639,
+        "code_sha1": "75754ae03767eca84f0953446c7ac36493729039"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'surv_label' (Surveillance Risk) at B4 overlaps with the top-middle person icon in the 3x3 grid, creating visual noise and obstruction.",
+              "solution": "Line 101: self.place_in_area(surv_label, 'A3', 'A5', scale_factor=0.8)",
+              "line_number": 101,
+              "object_affected": "surv_label"
+            },
+            {
+              "problem": "The 'shield' asset at D4 is scaled too small, making the internal 'Privacy First' text difficult to read when centered between Alice and Bob.",
+              "solution": "Line 138: self.place_at_grid(shield, 'D4', scale_factor=1.2)",
+              "line_number": 138,
+              "object_affected": "shield"
+            },
+            {
+              "problem": "The 'surv_label' at B4 violates the clear hierarchy by being too close to the grid elements it labels, rather than acting as a scene header.",
+              "solution": "Line 101: self.place_at_grid(surv_label, 'A4', scale_factor=1.0)",
+              "line_number": 101,
+              "object_affected": "surv_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        38,
+        39,
+        40
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 317287,
+        "video_mtime_ns": 1778121223381480891,
+        "code_sha1": "63dbc67f36d364f20d9913b902801d43344ebeab"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The input_box (A2) and gear (B3) are diagonally misaligned, creating a disjointed visual flow for the hashing process.",
+              "solution": "Line 65: self.place_at_grid(input_box, 'A3', scale_factor=0.8)",
+              "line_number": 65,
+              "object_affected": "input_box"
+            },
+            {
+              "problem": "The output_hash at C4 is too close to the gear and diagonally offset, which leads to visual clutter and poor vertical alignment.",
+              "solution": "Line 81: self.place_at_grid(output_hash, 'D3', scale_factor=0.7)",
+              "line_number": 81,
+              "object_affected": "output_hash"
+            },
+            {
+              "problem": "Phone A and Phone B are placed too close together at E2 and E4, crowding the RSSI label and restricting the space for distance demonstration.",
+              "solution": "Line 122: self.place_at_grid(phone_b, 'E5', scale_factor=0.7)",
+              "line_number": 122,
+              "object_affected": "phone_b"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        41,
+        42,
+        43
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 402178,
+        "video_mtime_ns": 1778121084242411091,
+        "code_sha1": "b0cdac72a0c0a3f63df999ee9ec2a6b4f8cc0640"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The phone_body (B1-E3) is positioned too far to the left, encroaching on the lecture text area and creating visual crowding.",
+              "solution": "Line 60: self.place_in_area(phone_body, 'B2', 'E4'); Line 65: self.place_at_grid(key_group, 'C3', scale_factor=0.8)",
+              "line_number": 60,
+              "object_affected": "phone_body"
+            },
+            {
+              "problem": "The clock and timer_group (B4, B5) are positioned in the middle of the vertical space, disrupting the visual flow of the derivation process.",
+              "solution": "Line 79: self.place_at_grid(clock, 'A4', scale_factor=0.8); Line 84: self.place_at_grid(timer_group, 'A5', scale_factor=0.8)",
+              "line_number": 79,
+              "object_affected": "clock"
+            },
+            {
+              "problem": "The ephid_label (D6) is placed at the edge of the grid, which causes the subsequent Bluetooth broadcasting waves to be cut off screen.",
+              "solution": "Line 104: self.place_at_grid(hash_group, 'D5', scale_factor=0.7); Line 125: self.place_at_grid(ephid_label, 'D6', scale_factor=0.6)",
+              "line_number": 125,
+              "object_affected": "ephid_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        44,
+        45,
+        46
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 233276,
+        "video_mtime_ns": 1778121047269104900,
+        "code_sha1": "d6463c3eaec67e2fa7074ec13cba7b2f2a8c1211"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Alice's diary (D1-E2) is positioned too far to the left, which creates visual crowding against the lecture text area.",
+              "solution": "Line 115: self.place_in_area(alice_diary, 'D2', 'E3', scale_factor=0.8)",
+              "line_number": 115,
+              "object_affected": "alice_diary"
+            },
+            {
+              "problem": "Bob's diary (D5-E6) is pushed too far to the right edge, creating an unbalanced layout and leaving excessive empty space in the center.",
+              "solution": "Line 116: self.place_in_area(bob_diary, 'D4', 'E5', scale_factor=0.8)",
+              "line_number": 116,
+              "object_affected": "bob_diary"
+            },
+            {
+              "problem": "The current scale of the diaries (0.9) is larger than the main actors (0.8), creating a poor visual hierarchy and making the bottom half feel cramped.",
+              "solution": "Line 115 & 116: Reduce scale_factor to 0.8 for both alice_diary and bob_diary to match the scale of Alice and Bob.",
+              "line_number": 115,
+              "object_affected": "alice_diary/bob_diary"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        47,
+        48,
+        49
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 479117,
+        "video_mtime_ns": 1778121051760048334,
+        "code_sha1": "cd22ced2682d09ee4850ce3403807f2376e60fbe"
+      },
+      "analysis": {
+        "raw_response": "F5), leaving row D empty and risking the list items being cut off.\"\n    *   Problem 3 solution: \"Line 122: self.place_at_grid(potential_ids_title, 'D3'); Line 129: self.place_at_grid(id_list, 'E3'); Line 139: self.place_at_grid(diary_title, 'D5'); Line 146: self.place_at_grid(diary_list, 'E5')\"\n\n    *   Actually, let's verify if `daily_key` at Line 80 is Bob's key. Yes.\n    *   Does Alice's `diary_list` (F5) have an issue?\n    *   In the video, Bob's key is \"Key_Bob\".\n    *   The ID lists contain strings like \"B2z8\".\n\n    *   Wait, the solution for Problem 1 uses `place_in_area` for a single text object. This is allowed and centers it.\n\n    *   Check for overlaps again.\n    *   Bob at B2. Server at B4-C6. Gap at B3. Perfect.\n    *   Alice at E2. ID list at E3. Titles at D3/D5.\n    *   Wait, Alice (E2) and ID list (E3) are very close.\n    *   Phone icons are usually about 1 grid unit wide.\n    *   Maybe move ID list to E4?\n    *   Alice E2, ID list E4, Diary list E6.\n    *   Titles D4, D6.\n    *   Is Column 6 safe? Yes, it's the edge.\n    *   This gives more space.\n    *   Let'"
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 263850,
+        "video_mtime_ns": 1778121045222523087,
+        "code_sha1": "3d98928267d4607cd0c4881bf451bb6b4f89118c"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'dp3t_label' at position D1 is too close to the lecture notes on the left, causing visual crowding and potential overlap.",
+              "solution": "Line 89: self.place_at_grid(dp3t_label, 'D2')",
+              "line_number": 89,
+              "object_affected": "dp3t_label"
+            },
+            {
+              "problem": "The 'bulletin_label' ('Bulletin Board') is a long text element that appears off-center and risks clipping the left-side text when anchored to a single point at A3.",
+              "solution": "Line 124: self.place_in_area(bulletin_label, 'A2', 'A5', scale_factor=0.8)",
+              "line_number": 124,
+              "object_affected": "bulletin_label"
+            },
+            {
+              "problem": "The summary icons (icon1, icon2, icon3) consist of wide rectangular boxes that appear cramped when restricted to column 3, risking overlap with the lecture area.",
+              "solution": "Line 156: self.place_in_area(icon1, 'B2', 'B5'); Line 161: self.place_in_area(icon2, 'C2', 'C5'); Line 166: self.place_in_area(icon3, 'D2', 'D5')",
+              "line_number": 156,
+              "object_affected": "icon1, icon2, icon3"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        50,
+        51,
+        52
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/0-DP-3T_Privacy-First_Contact_Tracing",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 253981,
+      "completion_tokens": 40914,
+      "total_tokens": 380219,
+      "call_count": 41
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 279,
+        "completion_tokens": 827,
+        "total_tokens": 1698,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 9971,
+        "completion_tokens": 401,
+        "total_tokens": 10660,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 8693,
+        "completion_tokens": 294,
+        "total_tokens": 9116,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 25147,
+        "completion_tokens": 741,
+        "total_tokens": 26120,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 19805,
+        "completion_tokens": 4948,
+        "total_tokens": 25152,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 16093,
+        "completion_tokens": 2402,
+        "total_tokens": 21429,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 17191,
+        "completion_tokens": 4250,
+        "total_tokens": 22156,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 21459,
+        "completion_tokens": 5476,
+        "total_tokens": 27196,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 18192,
+        "completion_tokens": 4922,
+        "total_tokens": 23878,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 29443,
+        "completion_tokens": 4395,
+        "total_tokens": 34066,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 4501,
+        "completion_tokens": 749,
+        "total_tokens": 14917,
+        "call_count": 12
+      },
+      "scope_refine:section_3": {
+        "prompt_tokens": 12971,
+        "completion_tokens": 1999,
+        "total_tokens": 17626,
+        "call_count": 1
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 50773,
+        "completion_tokens": 7222,
+        "total_tokens": 85262,
+        "call_count": 4
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2838,
+        "completion_tokens": 356,
+        "total_tokens": 11259,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 3312,
+        "completion_tokens": 334,
+        "total_tokens": 10452,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3361,
+        "completion_tokens": 425,
+        "total_tokens": 9440,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3050,
+        "completion_tokens": 368,
+        "total_tokens": 5981,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3569,
+        "completion_tokens": 400,
+        "total_tokens": 13565,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 3333,
+        "completion_tokens": 405,
+        "total_tokens": 10246,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 253981,
+        "completion_tokens": 40914,
+        "total_tokens": 380219,
+        "call_count": 41
+      }
+    }
+  }
+}

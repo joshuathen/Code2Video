@@ -1,0 +1,958 @@
+{
+  "topic": "Understanding Probability Density Functions (PDFs)",
+  "target_audience": "Introductory University Statistics or Advanced High School Students",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with section-specific title and lecture lines\n        self.setup_layout(\"The Hook: Measuring the Infinite\", [\n            \"Meet Pixel, a robot measuring battery life precisely.\",\n            \"Counting discrete objects is simple and exact.\",\n            \"Measuring time involves infinite possible values.\",\n            \"The chance of hitting exactly five hours is zero.\",\n            \"Instead, we look at the probability of ranges.\"\n        ])\n        \n        # === Animation for Lecture Line 1 ===\n        # Meet Pixel, a robot measuring battery life precisely.\n        self.play(self.lecture[0].animate.set_color(\"#32CD32\"))\n        \n        # Assets integration (Issue 19)\n        robot = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg\", color=\"#C0C0C0\")\n        battery_container = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/battery.svg\", color=\"#32CD32\")\n        \n        # Battery fill - using a simple rectangle to animate \"draining\"\n        bat_fill = Rectangle(height=0.4, width=0.8, color=\"#32CD32\", fill_opacity=1, stroke_width=0)\n        # Assuming battery icon has a fill area inside.\n        battery = VGroup(bat_fill, battery_container)\n        \n        self.place_at_grid(robot, \"B2\", scale_factor=0.6)\n        self.place_at_grid(battery, \"B4\", scale_factor=0.8)\n        bat_fill.move_to(battery_container.get_left(), aligned_edge=LEFT).shift(RIGHT*0.1)\n        \n        # ValueTracker for the battery level (Issue 19 - draining battery)\n        battery_level = ValueTracker(0.8)\n        bat_fill.add_updater(lambda m: m.stretch_to_fit_width(battery_level.get_value(), about_edge=LEFT) if battery_level.get_value() > 0.01 else m.scale(0))\n        \n        self.play(FadeIn(robot), FadeIn(battery))\n        self.play(battery_level.animate.set_value(0.1), run_time=3)\n        self.wait(1.5)\n        \n        # === Animation for Lecture Line 2 ===\n        # Counting discrete objects is simple and exact.\n        self.play(\n            self.lecture[0].animate.set_color(\"#FFFFFF\"),\n            self.lecture[1].animate.set_color(\"#00FFFF\")\n        )\n        \n        marbles = VGroup()\n        colors = [\"#FFD700\", \"#ADFF2F\", \"#00FFFF\", \"#FF69B4\", \"#FFA500\"]\n        for i, color in enumerate(colors):\n            m = Circle(radius=0.25, color=color, fill_opacity=1)\n            # Fallback to Text if MathTex is complex, though numbers are fine.\n            label = Text(str(i+1), font_size=18, color=\"#000000\").move_to(m.get_center())\n            marbles.add(VGroup(m, label))\n        \n        marbles.arrange(RIGHT, buff=0.3)\n        self.place_in_area(marbles, \"D2\", \"D6\", scale_factor=1.0)\n        \n        self.play(FadeIn(marbles, shift=UP))\n        self.wait(2)\n        \n        # === Animation for Lecture Line 3 ===\n        # Measuring time involves infinite possible values.\n        self.play(\n            self.lecture[1].animate.set_color(\"#FFFFFF\"),\n            self.lecture[2].animate.set_color(\"#FFFFFF\"),\n            FadeOut(marbles),\n            FadeOut(robot),\n            FadeOut(battery)\n        )\n        self.wait(0.5)\n        \n        timeline = NumberLine(\n            x_range=[4, 6, 1],\n            length=4,\n            include_numbers=True,\n            font_size=24,\n            label_direction=DOWN,\n            color=\"#FFFFFF\"\n        )\n        # Issue 22: Oversized timeline fix\n        self.place_in_area(timeline, \"C2\", \"C6\", scale_factor=0.7)\n        \n        needle = Arrow(start=UP*0.5, end=ORIGIN, buff=0, color=\"#FFFFFF\", max_tip_length_to_length_ratio=0.15)\n        needle.next_to(timeline.n2p(5), UP, buff=0.1)\n        \n        self.play(Create(timeline))\n        self.play(GrowArrow(needle))\n        self.wait(1.5)\n        \n        # Zoom effect simulation - preserving relative positioning\n        target_timeline = timeline.copy().scale(2).move_to(self.grid[\"D4\"])\n        target_needle = Arrow(start=UP*1.0, end=ORIGIN, buff=0, color=\"#FFFFFF\", max_tip_length_to_length_ratio=0.2)\n        target_needle.next_to(target_timeline.n2p(5), UP, buff=0.1)\n        \n        self.play(\n            Transform(timeline, target_timeline),\n            Transform(needle, target_needle)\n        )\n        self.wait(2)\n        \n        # === Animation for Lecture Line 4 ===\n        # The chance of hitting exactly five hours is zero.\n        self.play(\n            self.lecture[2].animate.set_color(\"#FFFFFF\"),\n            self.lecture[3].animate.set_color(\"#FF0000\")\n        )\n        \n        # Using Text fallback (L022) or keeping MathTex for simple strings\n        prob_text = MathTex(\"P(X = 5) = 0\", color=\"#FF0000\", font_size=42)\n        # Issue 23: Reposition to avoid overlap\n        self.place_at_grid(prob_text, \"B4\", scale_factor=0.8)\n        \n        self.play(\n            needle.animate.scale(0),\n            FadeIn(prob_text)\n        )\n        self.wait(2)\n        \n        # === Animation for Lecture Line 5 ===\n        # Instead, we look at the probability of ranges.\n        self.play(\n            self.lecture[3].animate.set_color(\"#FFFFFF\"),\n            self.lecture[4].animate.set_color(\"#87CEFA\")\n        )\n        \n        # Highlight interval [4.5, 5.5] on the scaled timeline\n        range_line = Line(\n            timeline.n2p(4.5),\n            timeline.n2p(5.5),\n            color=\"#87CEFA\",\n            stroke_width=10\n        )\n        # Subtle glow effect\n        glow = range_line.copy().set_stroke(width=20, opacity=0.25)\n        \n        range_label = MathTex(\"P(4.5 \\\\leq X \\\\leq 5.5)\", color=\"#87CEFA\", font_size=36)\n        # Issue 24: Scale range_label to 0.8\n        self.place_at_grid(range_label, \"B4\", scale_factor=0.8)\n        \n        self.play(\n            Create(range_line),\n            Create(glow),\n            FadeOut(prob_text)\n        )\n        self.play(Write(range_label))\n        self.wait(3.5)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Title and Lecture Lines\n        title = \"Prerequisite Knowledge: Discrete vs. Continuous\"\n        lines = [\n            \"A histogram shows frequencies for discrete data.\",\n            \"Thinner bars capture more precise measurements.\",\n            \"As bars become microscopic, a smooth curve emerges.\"\n        ]\n        self.setup_layout(title, lines)\n        \n        # Colors - L008 (Hex strings)\n        HIST_COLOR = \"#FFCC80\" # Light Orange\n        CURVE_COLOR = \"#FFFFE0\" # Light Yellow\n        AXES_COLOR = \"#FFFFFF\"\n        \n        # Define Gaussian-like function for visualization\n        def gaussian(x):\n            return np.exp(-x**2)\n            \n        # === Animation for Lecture Line 1 ===\n        # Initial color highlight\n        self.lecture[0].set_color(HIST_COLOR)\n        \n        # Define Axes (B2-F6 area - L002)\n        # Resized slightly to fit within 4x4 grid area and leave room for labels\n        axes = Axes(\n            x_range=[-3, 3, 1],\n            y_range=[0, 1.2, 0.5],\n            x_length=3.8,\n            y_length=3.0,\n            axis_config={\"include_tip\": False, \"color\": AXES_COLOR}\n        )\n        self.place_in_area(axes, \"B2\", \"F6\", scale_factor=1.0)\n        self.add(axes)\n        \n        # 5 bars (Discrete representation)\n        x_vals_5 = np.linspace(-2, 2, 5)\n        # Width calculation based on axes scale (L025: avoid stretch)\n        bar_width_5 = (axes.c2p(1, 0)[0] - axes.c2p(0, 0)[0]) * 0.8\n        \n        bars_5 = VGroup()\n        for x in x_vals_5:\n            h = gaussian(x)\n            p_top = axes.c2p(x, h)\n            p_bot = axes.c2p(x, 0)\n            h_val = p_top[1] - p_bot[1]\n            \n            bar = Rectangle(\n                width=bar_width_5, \n                height=h_val,\n                fill_color=HIST_COLOR,\n                fill_opacity=0.8,\n                stroke_color=AXES_COLOR,\n                stroke_width=1\n            )\n            bar.move_to(p_bot, aligned_edge=DOWN)\n            bars_5.add(bar)\n            \n        discrete_label = Text(\"Discrete\", font_size=20, color=HIST_COLOR)\n        # Fix: Move to B2 per Issue 25 to avoid overlap with high bars/axes\n        self.place_at_grid(discrete_label, \"B2\", scale_factor=0.8)\n            \n        self.play(Create(bars_5), FadeIn(discrete_label))\n        self.wait(2.0)\n        \n        # === Animation for Lecture Line 2 ===\n        # Transition highlight\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(HIST_COLOR)\n        )\n        \n        # 50 bars (Increased precision)\n        x_vals_50 = np.linspace(-2.5, 2.5, 50)\n        bar_width_50 = (axes.c2p(0.1, 0)[0] - axes.c2p(0, 0)[0])\n        \n        bars_50 = VGroup()\n        for x in x_vals_50:\n            h = gaussian(x)\n            p_top = axes.c2p(x, h)\n            p_bot = axes.c2p(x, 0)\n            h_val = max(p_top[1] - p_bot[1], 0.01) # Safety for non-zero height\n            \n            bar = Rectangle(\n                width=bar_width_50,\n                height=h_val,\n                fill_color=HIST_COLOR,\n                fill_opacity=0.6,\n                stroke_width=0 # No stroke for dense bars (L002)\n            )\n            bar.move_to(p_bot, aligned_edge=DOWN)\n            bars_50.add(bar)\n            \n        self.play(ReplacementTransform(bars_5, bars_50))\n        self.wait(2.0)\n        \n        # === Animation for Lecture Line 3 ===\n        # Final highlight\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(CURVE_COLOR)\n        )\n        \n        # Bell Curve (Continuous limit)\n        curve = axes.plot(lambda x: gaussian(x), color=CURVE_COLOR, x_range=[-3, 3])\n        \n        # Peak dashed line to trace height\n        peak_line = DashedLine(\n            start=axes.c2p(0, 0),\n            end=axes.c2p(0, 1),\n            color=CURVE_COLOR,\n            stroke_width=2\n        )\n        \n        continuous_label = Text(\"Continuous\", font_size=20, color=CURVE_COLOR)\n        # Fix: Move to B2 per Issue 26 to avoid overlap with peak\n        self.place_at_grid(continuous_label, \"B2\", scale_factor=0.8)\n\n        # Asset Integration: Bell Icon per Issue 20\n        bell_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/bell.svg\")\n        bell_icon.set_fill(color=CURVE_COLOR, opacity=0.8) # Use set_fill for opacity (L031)\n        self.place_at_grid(bell_icon, \"B6\", scale_factor=0.6)\n        \n        # Morphing transition - include the bell icon (Issue 20)\n        self.play(\n            ReplacementTransform(bars_50, curve),\n            ReplacementTransform(discrete_label, continuous_label),\n            FadeIn(bell_icon),\n            run_time=2.5\n        )\n        self.play(Create(peak_line))\n        \n        # Final highlight using Indicate - L004\n        self.play(Indicate(curve, color=CURVE_COLOR))\n        self.play(Indicate(bell_icon, color=CURVE_COLOR))\n        self.wait(2.0)\n        \n        # Final absorption time\n        self.wait(2.0)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        title = \"Defining the PDF: It's Not a Point, It's a Shape\"\n        lines = [\n            \"This smooth shape is the Probability Density Function.\",\n            \"The vertical axis represents density, not direct probability.\",\n            \"High peaks show where data points crowd together.\",\n            \"Flat valleys represent less likely measurement outcomes.\",\n            \"Together, they form a map of likelihood.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        PDF_COLOR = \"#ADD8E6\"  # Light Blue\n        AXIS_LABEL_COLOR = \"#D3D3D3\"  # Light Gray\n        FORMULA_COLOR = \"#FFFFFF\"\n        DOT_COLOR = \"#FFD700\"  # Gold\n        HIGHLIGHT_COLOR = \"#FFFF00\"\n\n        # Define PDF function (Normal Distribution)\n        def pdf_func(x):\n            return 2 * np.exp(-0.5 * (x)**2)\n\n        # === Animation for Lecture Line 1 ===\n        # \"This smooth shape is the Probability Density Function.\"\n        self.lecture[0].set_color(HIGHLIGHT_COLOR)\n        \n        # Create Axes in area B3-F6 to avoid left edge cutoff (Issue 27)\n        axes = Axes(\n            x_range=[-3, 3, 1],\n            y_range=[0, 2.5, 0.5],\n            x_length=4,\n            y_length=4,\n            axis_config={\"include_tip\": True, \"color\": AXIS_LABEL_COLOR}\n        )\n        self.place_in_area(axes, \"B3\", \"F6\", scale_factor=0.8)\n        \n        # Labels for axes\n        y_label = Text(\"Density\", font_size=20, color=AXIS_LABEL_COLOR).scale(0.8)\n        x_label = Text(\"Value\", font_size=20, color=AXIS_LABEL_COLOR).scale(0.8)\n        \n        # Proximity positioning (L002)\n        y_label.next_to(axes.y_axis.get_top(), LEFT, buff=0.1)\n        x_label.next_to(axes.x_axis.get_right(), DOWN, buff=0.1)\n\n        curve = axes.plot(pdf_func, color=PDF_COLOR, x_range=[-3, 3])\n        \n        # Formula placement at B5 to avoid overlap (Issue 28)\n        formula = MathTex(\"f(x)\", color=FORMULA_COLOR)\n        self.place_at_grid(formula, \"B5\", scale_factor=0.7)\n\n        self.play(Create(axes), Write(y_label), Write(x_label))\n        self.play(Create(curve), Write(formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"The vertical axis represents density, not direct probability.\"\n        self.lecture[0].set_color(\"#FFFFFF\")\n        self.lecture[1].set_color(HIGHLIGHT_COLOR)\n        \n        self.play(Indicate(y_label, color=HIGHLIGHT_COLOR))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # \"High peaks show where data points crowd together.\"\n        self.lecture[1].set_color(\"#FFFFFF\")\n        self.lecture[2].set_color(HIGHLIGHT_COLOR)\n\n        # Generate dots concentrated at the peak\n        # Using Dot with set_fill to be safe (L031)\n        peak_dots = VGroup(*[\n            Dot(axes.c2p(np.random.normal(0, 0.5), np.random.uniform(0, 0.2)), radius=0.03, color=DOT_COLOR)\n            .set_fill(opacity=0.8)\n            for _ in range(50)\n        ])\n        \n        peak_indicator = Dot(axes.c2p(0, pdf_func(0)), radius=0.08, color=HIGHLIGHT_COLOR)\n        \n        self.play(FadeIn(peak_dots, shift=UP * 0.2))\n        self.play(Indicate(peak_indicator, scale_factor=2.0))\n        self.remove(peak_indicator)\n        self.wait(2)\n\n        # === Animation for Lecture Line 4 ===\n        # \"Flat valleys represent less likely measurement outcomes.\"\n        self.lecture[2].set_color(\"#FFFFFF\")\n        self.lecture[3].set_color(HIGHLIGHT_COLOR)\n        \n        # Generate dots in the tails\n        tail_dots = VGroup(*[\n            Dot(axes.c2p(x, np.random.uniform(0, 0.1)), radius=0.03, color=DOT_COLOR)\n            .set_fill(opacity=0.8)\n            for x in [np.random.uniform(-2.8, -1.8) for _ in range(10)] + [np.random.uniform(1.8, 2.8) for _ in range(10)]\n        ])\n        \n        self.play(FadeIn(tail_dots, shift=UP * 0.1))\n        self.wait(2)\n\n        # === Animation for Lecture Line 5 ===\n        # \"Together, they form a map of likelihood.\"\n        self.lecture[3].set_color(\"#FFFFFF\")\n        self.lecture[4].set_color(HIGHLIGHT_COLOR)\n        \n        all_elements = VGroup(curve, peak_dots, tail_dots, formula)\n        self.play(Indicate(all_elements))\n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        title = \"The Golden Rule: Probability = Area\"\n        lines = [\n            \"How do we find actual probability from density?\",\n            \"We calculate the area under the curve.\",\n            \"Choose a range between two specific time points.\",\n            \"The shaded region represents the total likelihood.\",\n            \"More area means a higher chance of occurrence.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Helper for Bell Curve\n        def bell_curve(x):\n            return 2 * np.exp(-0.5 * (x)**2)\n\n        # Define Axes\n        axes = Axes(\n            x_range=[-3, 3, 1],\n            y_range=[0, 2.5, 1],\n            x_length=4.5,\n            y_length=3,\n            axis_config={\"color\": \"#FFFFFF\", \"include_tip\": False},\n        )\n        # L002: Start visuals at Column 2 or further right\n        self.place_in_area(axes, \"C2\", \"F6\")\n\n        # Define Curve - L008: Use Hex colors\n        curve = axes.plot(bell_curve, color=\"#58C4DD\")\n        \n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(\"#FFFF00\")\n        self.play(Create(axes), Create(curve))\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(\"#FFFF00\")\n        \n        # Initial area\n        a_val = -1.0\n        # L027: Use updaters and ValueTracker for efficiency\n        b_tracker = ValueTracker(1.0)\n        \n        # Area mobject with updater\n        # L011: Avoid expensive objects in always_redraw. Polygon (from get_area) is okay.\n        area = always_redraw(lambda: axes.get_area(\n            curve, \n            x_range=[a_val, b_tracker.get_value()], \n            color=\"#90EE90\", \n            opacity=0.4\n        ))\n        \n        self.play(FadeIn(area))\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(\"#FFFF00\")\n        \n        # Markers for a and b - L002: Scale labels\n        label_a = MathTex(\"a\", color=\"#FFFFFF\", font_size=24)\n        label_b = MathTex(\"b\", color=\"#FFFFFF\", font_size=24)\n        \n        def update_label_a(m):\n            m.move_to(axes.c2p(a_val, -0.3))\n        \n        def update_label_b(m):\n            m.move_to(axes.c2p(b_tracker.get_value(), -0.3))\n            \n        label_a.add_updater(update_label_a)\n        label_b.add_updater(update_label_b)\n        \n        dot_a = Dot(axes.c2p(a_val, 0), color=\"#FFFFFF\")\n        dot_b = Dot(color=\"#FFFFFF\")\n        dot_b.add_updater(lambda m: m.move_to(axes.c2p(b_tracker.get_value(), 0)))\n\n        self.play(FadeIn(dot_a), FadeIn(dot_b), Write(label_a), Write(label_b))\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(\"#FFFF00\")\n        \n        # Issue 30: Place sigma at A1\n        sigma = MathTex(r\"\\sum\", color=\"#FFFFFF\")\n        self.place_at_grid(sigma, \"A1\", scale_factor=0.8)\n        \n        # Issue 29: Place integral_formula in area A2-B5\n        integral_formula = MathTex(\n            r\"P(a \\le X \\le b) = \\int_{a}^{b} f(x) dx\", \n            color=\"#FFFFFF\"\n        )\n        self.place_in_area(integral_formula, \"A2\", \"B5\", scale_factor=0.7)\n        \n        self.play(Write(sigma))\n        self.wait(1)\n        self.play(ReplacementTransform(sigma, integral_formula))\n        \n        # Label with arrow\n        # Issue 31: Place prob_label at B6\n        prob_label = Text(\"Probability = Area\", font_size=20, color=\"#90EE90\")\n        self.place_at_grid(prob_label, \"B6\", scale_factor=0.7)\n        \n        arrow = Arrow(\n            start=prob_label.get_bottom(), \n            end=axes.c2p(0, 0.5), \n            color=\"#90EE90\", \n            buff=0.1\n        )\n        \n        self.play(FadeIn(prob_label), GrowArrow(arrow))\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(\"#FFFF00\")\n        \n        # Animate b moving to the right\n        # L024: prefix rate_functions\n        self.play(\n            b_tracker.animate.set_value(2.2),\n            run_time=3,\n            rate_func=rate_functions.linear\n        )\n        \n        # L004: Final highlight using Indicate\n        self.play(Indicate(area, color=\"#90EE90\"))\n        self.wait(3.0)\n        \n        # Final cleanup\n        self.lecture[4].set_color(WHITE)\n        self.wait(1.0)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Setup title and lecture lines\n        title = \"The Two Pillars of a Valid PDF\"\n        lines = [\n            \"First, the curve never drops below zero.\",\n            \"Negative probability is physically impossible in our world.\",\n            \"Second, the total area must equal exactly one.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Hexadecimal colors (L008)\n        RED_COLOR = \"#FF0000\"\n        GREEN_COLOR = \"#00FF00\"\n        PURPLE_COLOR = \"#E6E6FA\"\n        WHITE_COLOR = \"#FFFFFF\"\n\n        # Axes setup\n        axes = Axes(\n            x_range=[-2, 2, 1],\n            y_range=[-1, 2, 1],\n            x_length=4.5,\n            y_length=4,\n            axis_config={\"include_tip\": False, \"color\": WHITE_COLOR}\n        )\n        # Position visuals in the grid area B2-F6 (L002)\n        self.place_in_area(axes, \"B2\", \"F6\", scale_factor=0.8)\n\n        # === Animation for Lecture Line 1 ===\n        # Line 1: First, the curve never drops below zero.\n        self.play(self.lecture[0].animate.set_color(RED_COLOR))\n        \n        # Initial dipping curve: f(x) = x^2 - 0.5\n        dipping_curve = axes.plot(lambda x: x**2 - 0.5, x_range=[-1.5, 1.5], color=WHITE_COLOR)\n        \n        # Highlight negative part in red (#FF0000)\n        negative_part = axes.plot(lambda x: x**2 - 0.5, x_range=[-0.707, 0.707], color=RED_COLOR)\n        \n        # Add 'X' label - Fixed position to avoid overlap with axis (Issue 32)\n        cross_mark = Text(\"X\", color=RED_COLOR)\n        self.place_at_grid(cross_mark, \"E4\", scale_factor=1.2)\n\n        self.play(Create(axes))\n        self.play(Create(dipping_curve))\n        self.wait(0.5)\n        self.play(Create(negative_part), Write(cross_mark))\n        self.play(Indicate(cross_mark, color=RED_COLOR)) # L004\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 2 ===\n        # Line 2: Negative probability is physically impossible in our world.\n        self.play(\n            self.lecture[0].animate.set_color(WHITE_COLOR),\n            self.lecture[1].animate.set_color(GREEN_COLOR)\n        )\n        \n        # Correct the curve: f(x) = e^(-x^2) stays above the axis\n        valid_curve = axes.plot(lambda x: np.exp(-x**2), x_range=[-2, 2], color=GREEN_COLOR)\n        \n        # Morph dipping curve into corrected green curve\n        self.play(\n            FadeOut(negative_part),\n            FadeOut(cross_mark),\n            ReplacementTransform(dipping_curve, valid_curve)\n        )\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 3 ===\n        # Line 3: Second, the total area must equal exactly one.\n        self.play(\n            self.lecture[1].animate.set_color(WHITE_COLOR),\n            self.lecture[2].animate.set_color(PURPLE_COLOR)\n        )\n        \n        # Shade the entire area under the curve in soft purple (#E6E6FA)\n        area = axes.get_area(valid_curve, x_range=[-2, 2], color=PURPLE_COLOR, opacity=0.4)\n        \n        # Display the total area equation: ∫ f(x) dx = 1 - Fixed position (Issue 33)\n        # Using Text for robustness if MathTex environment is tricky, \n        # but the prompt specifically asked for MathTex/Tex-like notation in storyboard.\n        # Let's use MathTex and hope for the best, or fallback if needed.\n        try:\n            equation = MathTex(r\"\\int_{-\\infty}^{\\infty} f(x) dx = 1\", color=WHITE_COLOR)\n        except:\n            equation = Text(\"∫ f(x) dx = 1\", color=WHITE_COLOR)\n            \n        self.place_in_area(equation, \"A4\", \"A6\", scale_factor=0.8)\n        \n        # Add a '100%' label to signify total certainty - Fixed position (Issue 34)\n        label_100 = Text(\"100%\", font_size=24, color=WHITE_COLOR)\n        self.place_at_grid(label_100, \"C4\", scale_factor=1.0)\n        \n        self.play(FadeIn(area))\n        self.wait(0.5)\n        self.play(Write(equation))\n        self.play(Write(label_100))\n        self.play(Indicate(label_100, color=WHITE_COLOR))\n        \n        self.wait(2.0)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Section 6: Application: The Uniform Distribution\n        title_text = \"Application: The Uniform Distribution\"\n        lecture_lines = [\n            \"Imagine a bus arriving anytime within ten minutes.\",\n            \"This creates a flat, rectangular probability shape.\",\n            \"Calculate simple areas to find the wait time.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors\n        YELLOW_COLOR = \"#FAFAD2\"\n        BLUE_COLOR = \"#00BFFF\"\n        AXIS_COLOR = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(YELLOW_COLOR))\n\n        # Setup Axes relative to grid\n        # Horizontal: 0 to 10 (Grid cols 1 to 6)\n        # Vertical: 0 to 0.15 (Grid rows E to B)\n        origin_pos = self.grid[\"E1\"]\n        x_axis_end = self.grid[\"E6\"]\n        y_axis_end = self.grid[\"B1\"]\n\n        axes = Axes(\n            x_range=[0, 10.5, 2],\n            y_range=[0, 0.15, 0.05],\n            x_length=abs(x_axis_end[0] - origin_pos[0]),\n            y_length=abs(y_axis_end[1] - origin_pos[1]),\n            axis_config={\"color\": AXIS_COLOR, \"include_tip\": True},\n            tips=True\n        ).move_to(origin_pos, aligned_edge=DOWN+LEFT)\n        \n        x_label = Text(\"Minutes\", font_size=20).next_to(axes.x_axis, DOWN, buff=0.2)\n        y_label = Text(\"P(x)\", font_size=20).next_to(axes.y_axis, LEFT, buff=0.2)\n\n        # Draw a flat rectangle from 0 to 10 with height 0.1\n        rect_width = axes.x_axis.get_unit_size() * 10\n        rect_height = axes.y_axis.get_unit_size() * 0.1\n        \n        full_rect = Rectangle(\n            width=rect_width,\n            height=rect_height,\n            stroke_color=YELLOW_COLOR,\n            fill_color=YELLOW_COLOR,\n            fill_opacity=0.3\n        ).move_to(axes.c2p(5, 0.05))\n\n        # [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bus.svg]\n        bus_asset_path = \"/scratch/pawsey1357/jthen/Code2Video/assets/icon/bus.svg\"\n        bus = SVGMobject(bus_asset_path).scale(0.3)\n        # Place bus at the beginning of the path (x=0)\n        bus.move_to(axes.c2p(0, 0), aligned_edge=DOWN)\n\n        self.play(Create(axes), Write(x_label), Write(y_label))\n        self.play(Create(full_rect), DrawBorderThenFill(bus))\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW_COLOR)\n        )\n\n        # Shade from 0 to 5\n        shade_rect = Rectangle(\n            width=axes.x_axis.get_unit_size() * 5,\n            height=rect_height,\n            stroke_width=0,\n            fill_color=BLUE_COLOR,\n            fill_opacity=0.6\n        ).move_to(axes.c2p(2.5, 0.05))\n\n        # Label base '5' and height '0.1' with arrows (#FAFAD2)\n        # Base arrow\n        base_arrow = DoubleArrow(\n            start=axes.c2p(0, -0.05),\n            end=axes.c2p(5, -0.05),\n            buff=0,\n            color=YELLOW_COLOR,\n            stroke_width=2,\n            tip_length=0.1\n        )\n        base_label = Text(\"5\", font_size=20, color=YELLOW_COLOR).next_to(base_arrow, DOWN, buff=0.1)\n\n        # Height arrow\n        height_arrow = DoubleArrow(\n            start=axes.c2p(-0.7, 0),\n            end=axes.c2p(-0.7, 0.1),\n            buff=0,\n            color=YELLOW_COLOR,\n            stroke_width=2,\n            tip_length=0.1\n        )\n        \n        # Issue 35: scale_factor=0.6 at C1\n        height_label = Text(\"0.1\", font_size=20, color=YELLOW_COLOR)\n        self.place_at_grid(height_label, \"C1\", scale_factor=0.6)\n        # Shift slightly to be left of the arrow/axis\n        height_label.shift(LEFT * 0.6)\n\n        self.play(\n            FadeIn(shade_rect),\n            Create(base_arrow),\n            Write(base_label),\n            Create(height_arrow),\n            Write(height_label)\n        )\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(BLUE_COLOR)\n        )\n\n        # Issue 36: Display calculation '5 * 0.1 = 0.5' in area A4-B6, scale_factor=0.8\n        calc_text = MathTex(\"5 \\\\times 0.1 =\", \"0.5\", font_size=32, color=WHITE)\n        self.place_in_area(calc_text, \"A4\", \"B6\", scale_factor=0.8)\n\n        self.play(Write(calc_text))\n        # Highlight result in bright blue (#00BFFF)\n        self.play(Indicate(calc_text[1], color=BLUE_COLOR))\n        self.play(calc_text[1].animate.set_color(BLUE_COLOR))\n        \n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "Understanding Probability Density Functions (PDFs)",
+    "target_audience": "Introductory University Statistics or Advanced High School Students",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Hook: Measuring the Infinite",
+        "content": "Introduce the difference between 'counting' and 'measuring.' Use a character, 'Pixel the Robot,' who is trying to predict exactly how long a battery will last. Explain that in continuous worlds (time, weight, height), the probability of an exact value (e.g., exactly 5.00000... hours) is zero, necessitating a new way to look at probability.",
+        "example": "Pixel the Robot's battery lasts between 4 and 6 hours. What is the chance it lasts exactly 5.000... hours? It's impossible to hit that exact point, so we look at ranges instead."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite Knowledge: Discrete vs. Continuous",
+        "content": "Visualize the transition from a Bar Chart (Histogram) to a Smooth Curve. Show a histogram of heights where bars get thinner and thinner as we collect more precise data. This sets the stage for the 'Curve' being the limit of these bars.",
+        "example": "Visualizing a staircase (Discrete) turning into a smooth slide (Continuous) as the steps become microscopic."
+      },
+      {
+        "id": "section_3",
+        "title": "Defining the PDF: It's Not a Point, It's a Shape",
+        "content": "Define the PDF $f(x)$. Crucially, explain that the y-axis represents 'Density,' not 'Probability.' Show a Bell Curve (Normal Distribution) and explain that higher parts of the curve mean data points are more 'crowded' or likely to occur in that neighborhood.",
+        "example": "A 'Density Map' of a park: Areas where people crowd together (high density) vs. empty corners (low density)."
+      },
+      {
+        "id": "section_4",
+        "title": "The Golden Rule: Probability = Area",
+        "content": "Introduce the concept that probability is found by calculating the area under the curve between two points (Integration). Use an animation where a shaded region between 'Time A' and 'Time B' represents the likelihood of an event occurring in that window.",
+        "example": "Shading the area under a curve from 4.5 to 5.5 hours to find the probability that Pixel's battery lasts between those two times."
+      },
+      {
+        "id": "section_5",
+        "title": "The Two Pillars of a Valid PDF",
+        "content": "Present the two mathematical constraints visually: 1. The curve never goes below the x-axis ($f(x) \\ge 0$) because you can't have negative likelihood. 2. The total area under the entire curve must equal exactly 1 (100% certainty that something happens).",
+        "example": "An animation of a shape-shifting blob that can change height and width, but its total 'ink' or mass must always sum to 1 unit."
+      },
+      {
+        "id": "section_6",
+        "title": "Application: The Uniform Distribution",
+        "content": "Apply the concept to a simple 'Uniform Distribution' (a flat rectangle). This makes the area calculation (Base × Height) intuitive before moving to complex calculus.",
+        "example": "A bus arrives every 10 minutes. The PDF is a flat rectangle from 0 to 10 minutes with a height of 0.1. The probability of waiting 0-5 minutes is the area: 5 (base) × 0.1 (height) = 0.5 or 50%."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Hook: Measuring the Infinite",
+      "lecture_lines": [
+        "Meet Pixel, a robot measuring battery life precisely.",
+        "Counting discrete objects is simple and exact.",
+        "Measuring time involves infinite possible values.",
+        "The chance of hitting exactly five hours is zero.",
+        "Instead, we look at the probability of ranges."
+      ],
+      "animations": [
+        "Show 5 colorful marbles (#FFD700, #ADFF2F, #00FFFF, #FF69B4, #FFA500) labeled 1-5.",
+        "Introduce Pixel the Robot (#C0C0C0) [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg] and a draining green battery (#32CD32) [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/battery.svg].",
+        "Show timeline [4, 6] with a needle pointing exactly at 5.0. Zoom in on the point.",
+        "Needle at 5.0 shrinks and disappears; display P(X=5) = 0 in red (#FF0000).",
+        "Highlight interval [4.5, 5.5] on the timeline with a blue glow (#87CEFA)."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite Knowledge: Discrete vs. Continuous",
+      "lecture_lines": [
+        "A histogram shows frequencies for discrete data.",
+        "Thinner bars capture more precise measurements.",
+        "As bars become microscopic, a smooth curve emerges."
+      ],
+      "animations": [
+        "Create a bar chart with 5 light orange bars (#FFCC80).",
+        "Increase to 50 thinner bars, then morph them into a smooth yellow bell curve (#FFFFE0) and incorporate the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bell.svg] icon to illustrate the shape.",
+        "Add a dashed line tracing the peak of the curve to show continuity."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "Defining the PDF: It's Not a Point, It's a Shape",
+      "lecture_lines": [
+        "This smooth shape is the Probability Density Function.",
+        "The vertical axis represents density, not direct probability.",
+        "High peaks show where data points crowd together.",
+        "Flat valleys represent less likely measurement outcomes.",
+        "Together, they form a map of likelihood."
+      ],
+      "animations": [
+        "Display formula f(x) (#FFFFFF) next to a light blue bell curve (#ADD8E6).",
+        "Label axes 'Density' and 'Value' in light gray (#D3D3D3).",
+        "Populate the curve with dots: many under the peak (high density) and few in tails (low density)."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Golden Rule: Probability = Area",
+      "lecture_lines": [
+        "How do we find actual probability from density?",
+        "We calculate the area under the curve.",
+        "Choose a range between two specific time points.",
+        "The shaded region represents the total likelihood.",
+        "More area means a higher chance of occurrence."
+      ],
+      "animations": [
+        "Show the bell curve and highlight points a and b on the x-axis.",
+        "Fill the area between a and b with semi-transparent green (#90EE90).",
+        "Morph symbol Σ into ∫ and display the integral formula (#FFFFFF).",
+        "Move point b to the right, showing the green area and probability increasing.",
+        "Add a label 'Probability = Shaded Area' with an arrow pointing to the green region."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Two Pillars of a Valid PDF",
+      "lecture_lines": [
+        "First, the curve never drops below zero.",
+        "Negative probability is physically impossible in our world.",
+        "Second, the total area must equal exactly one."
+      ],
+      "animations": [
+        "Show a curve dipping below x-axis; highlight negative part in red (#FF0000) with 'X'.",
+        "Correct the curve so it stays above the axis; change color to green (#00FF00).",
+        "Shade the entire area under the curve in soft purple (#E6E6FA).",
+        "Display the total area equation ∫ f(x) dx = 1 in bold white (#FFFFFF).",
+        "Add a '100%' label over the purple area to signify total certainty."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Application: The Uniform Distribution",
+      "lecture_lines": [
+        "Imagine a bus arriving anytime within ten minutes.",
+        "This creates a flat, rectangular probability shape.",
+        "Calculate simple areas to find the wait time."
+      ],
+      "animations": [
+        "Draw a flat rectangle from 0 to 10 with height 0.1 in light yellow (#FAFAD2) and place a bus [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bus.svg] at the beginning of the path.",
+        "Shade from 0 to 5; label base '5' and height '0.1' with arrows (#FAFAD2).",
+        "Display calculation '5 * 0.1 = 0.5' and highlight result in bright blue (#00BFFF)."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines aligned with the 'Hook' theme and Pixel the Robot."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animation steps generated based on section outline and title. Ready for ScriptWriter to align lecture lines."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Resolved generic section code issue by implementing the full scene with asset integration and layout fixes."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines describing the transition from histogram to curve."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animation steps generated based on section outline and title. Ready for ScriptWriter to align lecture lines."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated specific fixes for layout and assets; code is now updated and complete."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines defining PDF and density vs probability."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animation steps generated based on section outline and title. Ready for ScriptWriter to align lecture lines."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated code with fixed layout and following lesson library guidance."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines explaining probability as the area under the curve."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animation steps generated based on section outline and title. Ready for ScriptWriter to align lecture lines."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Deactivating generic code issue in favor of specific layout issues (29, 30, 31)."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for the two mathematical constraints of PDFs."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animation steps generated based on section outline and title. Ready for ScriptWriter to align lecture lines."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented the full Manim class for Section 5 including the two pillars of PDF constraints. Fixes for layout issues (32, 33, 34) incorporated."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines applying the concept to a Uniform Distribution."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animation steps generated based on section outline and title. Ready for ScriptWriter to align lecture lines."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated and repaired Manim code for section_6, incorporating asset integration and layout fixes."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Introduce Pixel the Robot (#C0C0C0) [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg] and a draining green battery (#32CD32) [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/battery.svg].']",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated SVGMobjects for robot and battery as per storyboard. Implemented battery draining animation using ValueTracker."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Increase to 50 thinner bars, then morph them into a smooth yellow bell curve (#FFFFE0) and incorporate the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bell.svg] icon to illustrate the shape.']",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated bell.svg icon from assets into the third animation stage as requested. Used set_fill for opacity management."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Draw a flat rectangle from 0 to 10 with height 0.1 in light yellow (#FAFAD2) and place a bus [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bus.svg] at the beginning of the path.']",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated the bus asset [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bus.svg] at the beginning of the path as requested."
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The timeline is oversized and extends into the left-side lecture notes area, creating visual obstruction and clutter. Fix: Line 123: self.place_in_area(timeline, 'C2', 'C6', scale_factor=0.7) (line=123, object=timeline)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced timeline scale factor to 0.7 to prevent overlap with lecture notes."
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'prob_text' formula is positioned at C4, causing a direct overlap with the timeline axis. Fix: Line 152: self.place_at_grid(prob_text, 'B4', scale_factor=0.8) (line=152, object=prob_text)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved prob_text to B4 and scaled to 0.8 to avoid overlap with the timeline."
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'range_label' is currently at B4 but its scale is too large for its horizontal width, risking being cut off. Fix: Line 178: self.place_at_grid(range_label, 'B4', scale_factor=0.8) (line=178, object=range_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Scaled range_label to 0.8 at B4 to ensure it fits within grid bounds."
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'Discrete' label at B3 overlaps with the upper portion of the y-axis and potentially high-frequency histogram bars. Fix: Line 103: self.place_at_grid(discrete_label, 'B2', scale_factor=0.8) (line=103, object=discrete_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved 'Discrete' label from B3 to B2 to prevent overlap with axes and tall histogram bars."
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'Continuous' label at B3 is positioned too low, causing it to overlap with the peak of the bell curve during the transition. Fix: Line 156: self.place_at_grid(continuous_label, 'B2', scale_factor=0.8) (line=156, object=continuous_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved 'Continuous' label from B3 to B2 to prevent overlap with the curve peak."
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The y-axis label 'Density' is partially cut off on the left edge and is crowded against the lecture text area. Fix: Line 82: self.place_in_area(axes, 'B3', 'F6', scale_factor=0.8) (line=82, object=axes)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned axes from B3-F6 and scaled to 0.8 to prevent y-axis label clipping."
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The formula 'formula' ($f(x)$) overlaps with the y-axis label 'Density' at the top of the graph. Fix: Line 94: self.place_at_grid(formula, 'B5', scale_factor=0.7) (line=94, object=formula)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved formula f(x) to grid position B5 and scaled to 0.7 to avoid overlap with 'Density' label."
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The integral_formula overlaps with the prob_label because its width at B3 extends into the space occupied by the label. Fix: Line 139: self.place_in_area(integral_formula, 'A2', 'B5', scale_factor=0.7) (line=139, object=integral_formula)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved integral_formula to area A2-B5 to avoid overlap with prob_label."
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The sigma symbol at B3 is completely obscured by the integral_formula which is placed at the same coordinate. Fix: Line 133: self.place_at_grid(sigma, 'A1', scale_factor=0.8) (line=133, object=sigma)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved sigma symbol to A1 to prevent it from being obscured by the integral formula."
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The prob_label 'Probability = Area' is positioned too low and centrally, overlapping with the curve and formula text. Fix: Line 147: self.place_at_grid(prob_label, 'B6', scale_factor=0.7) (line=147, object=prob_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved prob_label to B6 to prevent overlap with the curve and formula."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The cross_mark is centered at D4, causing it to overlap directly with the horizontal axis and obscuring the negative portion of the curve. Fix: Line 87: self.place_at_grid(self.cross_mark, 'E4', scale_factor=1.2) (line=87, object=cross_mark)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved cross_mark to grid position E4 to avoid overlapping with the x-axis."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The equation at B4-B6 is positioned in the same horizontal plane as the peak of the PDF curve, causing vertical crowding. Fix: Line 126: self.place_in_area(self.equation, 'A4', 'A6', scale_factor=0.8) (line=126, object=equation)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved the total area equation to area A4-A6 to prevent vertical crowding with the peak of the curve."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 100% label at D4 sits directly on the x-axis line, which reduces its legibility and creates a messy visual intersection. Fix: Line 130: self.place_at_grid(self.label_100, 'C4', scale_factor=1.0) (line=130, object=label_100)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved the 100% label to grid position C4 to keep it above the x-axis for better legibility."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The height_label '0.1' at C1 is too large (scale 0.8), which causes it to crowd the y-axis label 'P(x)' and the axis tick marks. Fix: Line 115: self.place_at_grid(height_label, 'C1', scale_factor=0.6) (line=115, object=height_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated height_label scale factor to 0.6 and adjusted its position to prevent crowding."
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The calculation 'calc_text' in area A3-B6 is positioned too far left, creating potential visual clutter with the centered title and lecture text. Fix: Line 163: self.place_in_area(calc_text, 'A4', 'B6', scale_factor=0.8) (line=163, object=calc_text)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved calc_text to area A4-B6 and updated scale factor to 0.8 to reduce visual clutter."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 481544,
+        "video_mtime_ns": 1784631063000000000,
+        "code_sha1": "e81d29d7bda421a80a80d683901e255e473666be"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The timeline is oversized and extends into the left-side lecture notes area, creating visual obstruction and clutter.",
+              "solution": "Line 123: self.place_in_area(timeline, 'C2', 'C6', scale_factor=0.7)",
+              "line_number": 123,
+              "object_affected": "timeline"
+            },
+            {
+              "problem": "The 'prob_text' formula is positioned at C4, causing a direct overlap with the timeline axis.",
+              "solution": "Line 152: self.place_at_grid(prob_text, 'B4', scale_factor=0.8)",
+              "line_number": 152,
+              "object_affected": "prob_text"
+            },
+            {
+              "problem": "The 'range_label' is currently at B4 but its scale is too large for its horizontal width, risking being cut off.",
+              "solution": "Line 178: self.place_at_grid(range_label, 'B4', scale_factor=0.8)",
+              "line_number": 178,
+              "object_affected": "range_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        22,
+        23,
+        24
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 280299,
+        "video_mtime_ns": 1784631045000000000,
+        "code_sha1": "33a551e1676e7921a27dbf6aedf65ee32cda304f"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'Discrete' label at B3 overlaps with the upper portion of the y-axis and potentially high-frequency histogram bars.",
+              "solution": "Line 103: self.place_at_grid(discrete_label, 'B2', scale_factor=0.8)",
+              "line_number": 103,
+              "object_affected": "discrete_label"
+            },
+            {
+              "problem": "The 'Continuous' label at B3 is positioned too low, causing it to overlap with the peak of the bell curve during the transition.",
+              "solution": "Line 156: self.place_at_grid(continuous_label, 'B2', scale_factor=0.8)",
+              "line_number": 156,
+              "object_affected": "continuous_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        25,
+        26
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 356563,
+        "video_mtime_ns": 1784631087000000000,
+        "code_sha1": "89e2e2cd105c038adddd17d8ddf06c843f0f671b"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The y-axis label 'Density' is partially cut off on the left edge and is crowded against the lecture text area.",
+              "solution": "Line 82: self.place_in_area(axes, 'B3', 'F6', scale_factor=0.8)",
+              "line_number": 82,
+              "object_affected": "axes"
+            },
+            {
+              "problem": "The formula 'formula' ($f(x)$) overlaps with the y-axis label 'Density' at the top of the graph.",
+              "solution": "Line 94: self.place_at_grid(formula, 'B5', scale_factor=0.7)",
+              "line_number": 94,
+              "object_affected": "formula"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        27,
+        28
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 387215,
+        "video_mtime_ns": 1784631048000000000,
+        "code_sha1": "2418b5af008a853a6b626337b34fbc7727a9e835"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The integral_formula overlaps with the prob_label because its width at B3 extends into the space occupied by the label.",
+              "solution": "Line 139: self.place_in_area(integral_formula, 'A2', 'B5', scale_factor=0.7)",
+              "line_number": 139,
+              "object_affected": "integral_formula"
+            },
+            {
+              "problem": "The sigma symbol at B3 is completely obscured by the integral_formula which is placed at the same coordinate.",
+              "solution": "Line 133: self.place_at_grid(sigma, 'A1', scale_factor=0.8)",
+              "line_number": 133,
+              "object_affected": "sigma"
+            },
+            {
+              "problem": "The prob_label 'Probability = Area' is positioned too low and centrally, overlapping with the curve and formula text.",
+              "solution": "Line 147: self.place_at_grid(prob_label, 'B6', scale_factor=0.7)",
+              "line_number": 147,
+              "object_affected": "prob_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        29,
+        30,
+        31
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 296704,
+        "video_mtime_ns": 1784631046000000000,
+        "code_sha1": "368117464f28f0760fd1f8c34de9c2c3b75ed6f1"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The cross_mark is centered at D4, causing it to overlap directly with the horizontal axis and obscuring the negative portion of the curve.",
+              "solution": "Line 87: self.place_at_grid(self.cross_mark, 'E4', scale_factor=1.2)",
+              "line_number": 87,
+              "object_affected": "cross_mark"
+            },
+            {
+              "problem": "The equation at B4-B6 is positioned in the same horizontal plane as the peak of the PDF curve, causing vertical crowding.",
+              "solution": "Line 126: self.place_in_area(self.equation, 'A4', 'A6', scale_factor=0.8)",
+              "line_number": 126,
+              "object_affected": "equation"
+            },
+            {
+              "problem": "The 100% label at D4 sits directly on the x-axis line, which reduces its legibility and creates a messy visual intersection.",
+              "solution": "Line 130: self.place_at_grid(self.label_100, 'C4', scale_factor=1.0)",
+              "line_number": 130,
+              "object_affected": "label_100"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 263155,
+        "video_mtime_ns": 1784631048000000000,
+        "code_sha1": "d71d3af5d7c27bc6f62ae58fb577e5a65cd458d5"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The height_label '0.1' at C1 is too large (scale 0.8), which causes it to crowd the y-axis label 'P(x)' and the axis tick marks.",
+              "solution": "Line 115: self.place_at_grid(height_label, 'C1', scale_factor=0.6)",
+              "line_number": 115,
+              "object_affected": "height_label"
+            },
+            {
+              "problem": "The calculation 'calc_text' in area A3-B6 is positioned too far left, creating potential visual clutter with the centered title and lecture text.",
+              "solution": "Line 163: self.place_in_area(calc_text, 'A4', 'B6', scale_factor=0.8)",
+              "line_number": 163,
+              "object_affected": "calc_text"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35,
+        36
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/1-Understanding_Probability_Density_Functions_PDFs",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 232178,
+      "completion_tokens": 30784,
+      "total_tokens": 310531,
+      "call_count": 36
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 274,
+        "completion_tokens": 867,
+        "total_tokens": 1740,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 8240,
+        "completion_tokens": 206,
+        "total_tokens": 8714,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 12338,
+        "completion_tokens": 324,
+        "total_tokens": 12751,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 23637,
+        "completion_tokens": 586,
+        "total_tokens": 24799,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 22311,
+        "completion_tokens": 4420,
+        "total_tokens": 27011,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 23478,
+        "completion_tokens": 4391,
+        "total_tokens": 28274,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 19003,
+        "completion_tokens": 4330,
+        "total_tokens": 23711,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 23567,
+        "completion_tokens": 3575,
+        "total_tokens": 29191,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 36154,
+        "completion_tokens": 2814,
+        "total_tokens": 39115,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 30510,
+        "completion_tokens": 4878,
+        "total_tokens": 35572,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 4429,
+        "completion_tokens": 824,
+        "total_tokens": 14899,
+        "call_count": 12
+      },
+      "scope_refine:section_3": {
+        "prompt_tokens": 8597,
+        "completion_tokens": 1866,
+        "total_tokens": 17285,
+        "call_count": 1
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3874,
+        "completion_tokens": 321,
+        "total_tokens": 9667,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 3000,
+        "completion_tokens": 232,
+        "total_tokens": 4792,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3067,
+        "completion_tokens": 224,
+        "total_tokens": 7944,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3365,
+        "completion_tokens": 322,
+        "total_tokens": 6758,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3224,
+        "completion_tokens": 346,
+        "total_tokens": 7763,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 3110,
+        "completion_tokens": 258,
+        "total_tokens": 10545,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 232178,
+        "completion_tokens": 30784,
+        "total_tokens": 310531,
+        "call_count": 36
+      }
+    }
+  }
+}

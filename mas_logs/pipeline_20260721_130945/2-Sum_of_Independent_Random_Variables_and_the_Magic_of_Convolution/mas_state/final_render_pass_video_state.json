@@ -1,0 +1,1014 @@
+{
+  "topic": "Sum of Independent Random Variables and the Magic of Convolution",
+  "target_audience": "Undergraduate students in STEM or Introductory Probability courses",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Finalized lecture lines from ScriptWriter\n        lecture_lines = [\n            \"Meet Cargo, a robot powered by two batteries.\",\n            \"Each battery has a random, uncertain lifetime.\",\n            \"How long can Cargo travel before stopping?\",\n            \"We define total time Z as X plus Y.\",\n            \"To find Z, we must merge their distributions.\"\n        ]\n        \n        self.setup_layout(\"The Quest: Combining Uncertainties\", lecture_lines)\n        \n        # Colors\n        color_a = \"#00FF00\" # Green\n        color_b = \"#FFFF00\" # Yellow\n        color_z = \"#00FFFF\" # Cyan\n        color_main = \"#FFFFFF\" # White\n\n        # === Animation for Lecture Line 1 ===\n        # Fade in 'Cargo' robot (#FFFFFF) and two batteries (#00FF00, #FFFF00).\n        # Building a simple robot representation\n        cargo_body = RoundedRectangle(corner_radius=0.1, width=0.8, height=1.0, color=color_main)\n        cargo_head = Square(side_length=0.3, color=color_main).next_to(cargo_body, UP, buff=0.1)\n        cargo_label = Text(\"Cargo\", font_size=14).move_to(cargo_body.get_center())\n        cargo = VGroup(cargo_body, cargo_head, cargo_label)\n        \n        battery_a = Rectangle(width=0.3, height=0.5, color=color_a, fill_opacity=0.5)\n        battery_a_cap = Rectangle(width=0.15, height=0.08, color=color_a, fill_opacity=1).next_to(battery_a, UP, buff=0)\n        bat_a_grp = VGroup(battery_a, battery_a_cap)\n        bat_a_txt = MathTex(\"X\", color=color_a, font_size=20).next_to(bat_a_grp, DOWN, buff=0.1)\n        \n        battery_b = Rectangle(width=0.3, height=0.5, color=color_b, fill_opacity=0.5)\n        battery_b_cap = Rectangle(width=0.15, height=0.08, color=color_b, fill_opacity=1).next_to(battery_b, UP, buff=0)\n        bat_b_grp = VGroup(battery_b, battery_b_cap)\n        bat_b_txt = MathTex(\"Y\", color=color_b, font_size=20).next_to(bat_b_grp, DOWN, buff=0.1)\n\n        # Apply Fix for Issue 28: Scale factor 1.0 for cargo at B3\n        self.place_at_grid(cargo, \"B3\", scale_factor=1.0)\n        self.place_at_grid(bat_a_grp, \"B2\", scale_factor=0.8)\n        self.place_at_grid(bat_b_grp, \"B4\", scale_factor=0.8)\n        bat_a_txt.next_to(bat_a_grp, DOWN, buff=0.1)\n        bat_b_txt.next_to(bat_b_grp, DOWN, buff=0.1)\n\n        self.lecture[0].set_color(color_main)\n        self.play(\n            FadeIn(cargo),\n            FadeIn(bat_a_grp, bat_a_txt),\n            FadeIn(bat_b_grp, bat_b_txt),\n            run_time=1\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Display PDF curve for Battery A (X) (#00FF00).\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(color_a)\n        \n        axes_a = Axes(\n            x_range=[0, 4, 1], y_range=[0, 1.2, 0.4], \n            x_length=2.2, y_length=1.5, \n            axis_config={\"include_tip\": False, \"font_size\": 16}\n        ).set_color(GREY)\n        pdf_a = axes_a.plot(lambda x: 1.0 * np.exp(-(x-2)**2 / 0.5), color=color_a)\n        label_a = MathTex(\"f_X(x)\", color=color_a, font_size=24).next_to(axes_a, UP, buff=0.1)\n        pdf_a_grp = VGroup(axes_a, pdf_a, label_a)\n        \n        self.place_in_area(pdf_a_grp, \"C2\", \"D3\", scale_factor=0.85)\n        \n        self.play(Create(axes_a), Create(pdf_a), Write(label_a))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Display PDF curve for Battery B (Y) (#FFFF00).\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(color_b)\n        \n        axes_b = Axes(\n            x_range=[0, 4, 1], y_range=[0, 1.2, 0.4], \n            x_length=2.2, y_length=1.5, \n            axis_config={\"include_tip\": False, \"font_size\": 16}\n        ).set_color(GREY)\n        pdf_b = axes_b.plot(lambda x: 1.0 * np.exp(-(x-1.5)**2 / 0.8), color=color_b)\n        label_b = MathTex(\"f_Y(y)\", color=color_b, font_size=24).next_to(axes_b, UP, buff=0.1)\n        pdf_b_grp = VGroup(axes_b, pdf_b, label_b)\n        \n        self.place_in_area(pdf_b_grp, \"C4\", \"D5\", scale_factor=0.85)\n        \n        self.play(Create(axes_b), Create(pdf_b), Write(label_b))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Write equation Z = X + Y in center screen (#FFFFFF).\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(color_main)\n        \n        eq_z = MathTex(\"Z = X + Y\", color=color_main, font_size=32)\n        # Apply Fix for Issue 27: Move eq_z to B5 to avoid overlap\n        self.place_at_grid(eq_z, \"B5\", scale_factor=1.0)\n        \n        self.play(Write(eq_z))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Merge X and Y curves into a new distribution Z (#00FFFF).\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(color_z)\n        \n        axes_z = Axes(\n            x_range=[0, 8, 2], y_range=[0, 0.8, 0.2], \n            x_length=4.0, y_length=1.8,\n            axis_config={\"include_tip\": False, \"font_size\": 16}\n        ).set_color(GREY)\n        # Sum of Gaussian-like curves: Mean 2+1.5=3.5. \n        pdf_z = axes_z.plot(lambda x: 0.6 * np.exp(-(x-3.5)**2 / 1.5), color=color_z)\n        label_z = MathTex(\"f_Z(z)\", color=color_z, font_size=24).next_to(axes_z, UP, buff=0.1)\n        pdf_z_grp = VGroup(axes_z, pdf_z, label_z)\n        \n        # Apply Fix for Issue 26: Use larger area C2-F5 and scale 0.8 to prevent compression\n        self.place_in_area(pdf_z_grp, \"C2\", \"F5\", scale_factor=0.8)\n        \n        self.play(\n            ReplacementTransform(VGroup(pdf_a_grp, pdf_b_grp), pdf_z_grp),\n            FadeOut(eq_z),\n            FadeOut(cargo),\n            FadeOut(bat_a_grp, bat_a_txt),\n            FadeOut(bat_b_grp, bat_b_txt),\n            run_time=1.5\n        )\n        self.wait(2)\n        self.lecture[4].set_color(WHITE)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Setup title and lecture lines from storyboard\n        title_text = \"Prerequisite Check: PDF and Independence\"\n        lecture_lines = [\n            \"A PDF shows the probability of each outcome.\",\n            \"Battery A's life doesn't affect battery B.\",\n            \"These independent events have separate probability curves.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors from storyboard\n        GOLD = \"#FFD700\"\n        GREEN = \"#00FF00\"\n        YELLOW = \"#FFFF00\"\n        CYAN = \"#00FFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        # Script: \"A PDF shows the probability of each outcome.\"\n        # Animation: Flash 'PDF: Shape of Uncertainty' text in gold (#FFD700).\n        self.play(self.lecture[0].animate.set_color(GOLD))\n        pdf_text = Text(\"PDF: Shape of Uncertainty\", color=GOLD)\n        # Issue 29 Fix: Use place_in_area for multi-word string and move to B2-B6\n        self.place_in_area(pdf_text, 'B2', 'B6', scale_factor=0.8)\n        self.play(FadeIn(pdf_text))\n        self.play(Indicate(pdf_text, color=GOLD))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Script: \"Battery A's life doesn't affect battery B.\"\n        # Animation: Show independent bell curves for X and Y (#00FF00, #FFFF00).\n        self.play(self.lecture[1].animate.set_color(GREEN))\n        \n        # Define battery A bell curve group\n        axes_a = Axes(\n            x_range=[-2.5, 2.5], \n            y_range=[0, 1.2], \n            x_length=2.0, \n            y_length=1.5,\n            axis_config={\"include_tip\": False}\n        ).set_color(GREEN)\n        curve_a = axes_a.plot(lambda x: np.exp(-x**2), color=GREEN)\n        label_a = Text(\"Battery A\", color=GREEN).scale(0.5).next_to(axes_a, DOWN, buff=0.1)\n        group_a = VGroup(axes_a, curve_a, label_a)\n        \n        # Define battery B bell curve group\n        axes_b = Axes(\n            x_range=[-2.5, 2.5], \n            y_range=[0, 1.2], \n            x_length=2.0, \n            y_length=1.5,\n            axis_config={\"include_tip\": False}\n        ).set_color(YELLOW)\n        curve_b = axes_b.plot(lambda x: np.exp(-x**2), color=YELLOW)\n        label_b = Text(\"Battery B\", color=YELLOW).scale(0.5).next_to(axes_b, DOWN, buff=0.1)\n        group_b = VGroup(axes_b, curve_b, label_b)\n\n        # Issue 30 Fix: Move to Row E for better grid utilization (away from row A/B labels)\n        self.place_at_grid(group_a, \"E3\", scale_factor=0.8)\n        self.place_at_grid(group_b, \"E5\", scale_factor=0.8)\n\n        self.play(\n            Create(axes_a),\n            Create(curve_a),\n            Write(label_a)\n        )\n        self.play(\n            Create(axes_b),\n            Create(curve_b),\n            Write(label_b)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Script: \"These independent events have separate probability curves.\"\n        # Animation: Draw dashed line between curves labeled 'Independent' (#00FFFF).\n        self.play(self.lecture[2].animate.set_color(CYAN))\n        \n        # Issue 31 Fix: Scale to 0.8 and move to D4 (between curves at Row E)\n        independent_label = Text(\"Independent\", color=CYAN)\n        self.place_at_grid(independent_label, 'D4', scale_factor=0.8)\n\n        # Create a connection with dashed line\n        dashed_line = DashedLine(\n            start=group_a.get_critical_point(RIGHT) + RIGHT*0.2,\n            end=group_b.get_critical_point(LEFT) + LEFT*0.2,\n            color=CYAN\n        )\n        \n        self.play(Create(dashed_line))\n        self.play(Write(independent_label))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Data from storyboard\n        title_text = \"The Discrete Case: The Grid Method\"\n        lecture_lines = [\n            \"Imagine rolling two dice and summing the results.\",\n            \"A grid shows every possible pair of outcomes.\",\n            \"Sum probabilities along the diagonal for each total.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n        \n        # Colors\n        COLOR_DICE = \"#FFFFFF\"\n        COLOR_HIGHLIGHT = \"#FFA500\"\n        \n        # === Animation for Lecture Line 1 ===\n        # \"Imagine rolling two dice and summing the results.\"\n        self.lecture[0].set_color(COLOR_DICE)\n        \n        # Load dice asset\n        dice_asset_path = \"/scratch/pawsey1357/jthen/Code2Video/assets/icon/dice.svg\"\n        die1 = SVGMobject(dice_asset_path).set_color(COLOR_DICE)\n        die2 = SVGMobject(dice_asset_path).set_color(COLOR_DICE)\n        dice_group = VGroup(die1, die2).arrange(RIGHT, buff=0.5)\n        \n        # Fix for Issue 32: Place at A4, scale 1.0 (prevents overlap with grid)\n        self.place_at_grid(dice_group, 'A4', scale_factor=1.0)\n        \n        self.play(FadeIn(dice_group))\n        \n        # Simulate rolling (simple rotation and scale pulses)\n        for _ in range(3):\n            self.play(\n                dice_group.animate.rotate(PI/2).scale(1.1),\n                run_time=0.2\n            )\n            self.play(\n                dice_group.animate.scale(1/1.1),\n                run_time=0.2\n            )\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 2 ===\n        # \"A grid shows every possible pair of outcomes.\"\n        self.lecture[1].set_color(WHITE)\n        \n        # Create 6x6 grid\n        grid_squares = VGroup()\n        square_size = 0.5\n        for r in range(6):\n            for c in range(6):\n                sq = Square(side_length=square_size, color=GREY_A).set_stroke(width=1)\n                sq.move_to(np.array([c * square_size, -r * square_size, 0]))\n                grid_squares.add(sq)\n        \n        # Labels for X and Y outcomes\n        x_labels = VGroup(*[Text(str(i+1), font_size=16) for i in range(6)])\n        y_labels = VGroup(*[Text(str(i+1), font_size=16) for i in range(6)])\n        \n        # Initial grid positioning before place_in_area to align labels correctly\n        grid_with_labels = VGroup(grid_squares)\n        \n        # Position x labels above top row\n        for i in range(6):\n            x_labels[i].next_to(grid_squares[i], UP, buff=0.1)\n        grid_with_labels.add(x_labels)\n        \n        # Position y labels left of first column\n        for i in range(6):\n            y_labels[i].next_to(grid_squares[i*6], LEFT, buff=0.1)\n        grid_with_labels.add(y_labels)\n\n        # Fix for Issue 33: Use area B2-F6, scale factor 0.9 (provides enough room for labels)\n        self.place_in_area(grid_with_labels, 'B2', 'F6', scale_factor=0.9)\n        \n        self.play(\n            FadeOut(dice_group),\n            Create(grid_squares),\n            Write(x_labels),\n            Write(y_labels),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"Sum probabilities along the diagonal for each total.\"\n        self.lecture[2].set_color(COLOR_HIGHLIGHT)\n        \n        # Highlight diagonal where x + y = 4 (sum is 4)\n        # Outcomes: (1,3), (2,2), (3,1)\n        # Indices in 6x6: Row 0 Col 2 (2), Row 1 Col 1 (7), Row 2 Col 0 (12)\n        target_indices = [2, 7, 12]\n        highlights = VGroup()\n        pair_texts = VGroup()\n        \n        for idx in target_indices:\n            h = grid_squares[idx].copy().set_fill(COLOR_HIGHLIGHT, opacity=0.5).set_stroke(color=COLOR_HIGHLIGHT, width=2)\n            highlights.add(h)\n            \n            # Label the cell with its sum components\n            r = idx // 6\n            c = idx % 6\n            txt = Text(f\"{r+1},{c+1}\", font_size=12).move_to(grid_squares[idx].get_center())\n            pair_texts.add(txt)\n            \n        self.play(\n            LaggedStart(\n                FadeIn(highlights),\n                Write(pair_texts),\n                lag_ratio=0.5\n            )\n        )\n        \n        # Show the diagonal line\n        # Line from top-right corner of (1,3) to bottom-left corner of (3,1)\n        diag_line = Line(\n            grid_squares[2].get_corner(UP+RIGHT),\n            grid_squares[12].get_corner(DOWN+LEFT),\n            color=COLOR_HIGHLIGHT,\n            stroke_width=4\n        )\n        \n        self.play(Create(diag_line))\n        self.play(Indicate(highlights, scale_factor=1.1, color=COLOR_HIGHLIGHT))\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        title_text = \"The Jump to Continuous: Introducing Convolution\"\n        lecture_lines = [\n            \"For continuous variables, sums transform into integrals.\",\n            \"This merging process is defined as a convolution.\",\n            \"The formula integrates the product of two functions.\",\n            \"One distribution is evaluated at z minus x.\",\n            \"This represents the remaining value to reach sum z.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n        \n        # Colors\n        COLOR_HIGHLIGHT = \"#FFFF00\"\n        COLOR_MAIN = \"#FFFFFF\"\n        COLOR_LECTURE_HIGHLIGHT = \"#58ACFA\" # Light blue for highlighting lecture line\n        \n        # === Animation for Lecture Line 1 ===\n        # For continuous variables, sums transform into integrals.\n        self.play(self.lecture[0].animate.set_color(COLOR_LECTURE_HIGHLIGHT))\n        \n        sigma = MathTex(r\"\\sum\", color=COLOR_MAIN)\n        self.place_in_area(sigma, 'A2', 'C5', scale_factor=1.2) # Resolved Issue 35: Reduced scale and centered\n        \n        integral = MathTex(r\"\\int\", color=COLOR_MAIN)\n        self.place_in_area(integral, 'A2', 'C5', scale_factor=1.2) # Resolved Issue 35: Reduced scale and centered\n        \n        self.play(Write(sigma))\n        self.wait(1)\n        self.play(ReplacementTransform(sigma, integral))\n        self.wait(1)\n        \n        # === Animation for Lecture Line 2 ===\n        # This merging process is defined as a convolution.\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(COLOR_LECTURE_HIGHLIGHT)\n        )\n        \n        # Formula: (f * g)(z) = ∫ f(x)g(z-x) dx\n        formula = MathTex(\n            \"(f * g)(z)\", \"=\", \"\\\\int\", \"f(x)\", \"g(\", \"z-x\", \")\", \"dx\",\n            color=COLOR_MAIN\n        )\n        # Expanded formula area - Resolved Issue 34: Expanded to full top width A1-C6\n        self.place_in_area(formula, 'A1', 'C6', scale_factor=1.0)\n        \n        self.play(\n            FadeOut(integral),\n            FadeIn(formula)\n        )\n        self.wait(1)\n        \n        # === Animation for Lecture Line 3 ===\n        # The formula integrates the product of two functions.\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(COLOR_LECTURE_HIGHLIGHT)\n        )\n        \n        # Show axes as the conceptual \"workspace\" for the functions\n        axes = Axes(\n            x_range=[0, 5, 1],\n            y_range=[0, 5, 1],\n            x_length=3.5,\n            y_length=2.5,\n            axis_config={\"include_tip\": True}\n        )\n        # Shifted axes to the right - Resolved Issue 36: Moved to D2-F6 and reduced scale\n        self.place_in_area(axes, 'D2', 'F6', scale_factor=0.8)\n        self.play(Create(axes))\n        self.wait(1)\n        \n        # === Animation for Lecture Line 4 ===\n        # One distribution is evaluated at z minus x.\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(COLOR_LECTURE_HIGHLIGHT)\n        )\n        \n        # Highlight 'z - x' in formula and show on axis\n        zx_term = formula[5] # Index 5 is \"z-x\"\n        x_val = 2.0\n        y_val = 3.0\n        \n        x_point = axes.c2p(x_val, 0)\n        zx_point = axes.c2p(0, y_val)\n        \n        x_marker = Dot(x_point, color=COLOR_HIGHLIGHT)\n        zx_marker = Dot(zx_point, color=COLOR_HIGHLIGHT)\n        \n        x_label = MathTex(\"x\", color=COLOR_HIGHLIGHT).scale(0.7)\n        x_label.next_to(x_marker, DOWN, buff=0.1)\n        \n        zx_label = MathTex(\"z-x\", color=COLOR_HIGHLIGHT).scale(0.7)\n        zx_label.next_to(zx_marker, LEFT, buff=0.1)\n        \n        self.play(\n            Indicate(zx_term, color=COLOR_HIGHLIGHT, scale_factor=1.3),\n            FadeIn(x_marker), FadeIn(x_label),\n            FadeIn(zx_marker), FadeIn(zx_label)\n        )\n        self.wait(1)\n        \n        # === Animation for Lecture Line 5 ===\n        # This represents the remaining value to reach sum z.\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(COLOR_LECTURE_HIGHLIGHT)\n        )\n        \n        # Product f(x) * g(z-x) as a highlighted vertical line\n        prod_height = 2.5\n        v_line = Line(\n            axes.c2p(x_val, 0),\n            axes.c2p(x_val, prod_height),\n            color=COLOR_HIGHLIGHT,\n            stroke_width=4\n        )\n        v_label = MathTex(\"f(x)g(z-x)\", color=COLOR_HIGHLIGHT).scale(0.7)\n        v_label.next_to(v_line, RIGHT, buff=0.1)\n        \n        self.play(Create(v_line), FadeIn(v_label))\n        self.play(Indicate(v_line))\n        \n        self.wait(2)\n        \n        # Cleanup\n        self.play(self.lecture[4].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\n# Base class provided in the prompt\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Setup data\n        title_text = \"Visualizing Convolution: Flip, Shift, and Area\"\n        lecture_lines = [\n            \"First, we flip one distribution horizontally.\",\n            \"Then, we shift it by the total sum.\",\n            \"We calculate the area where they overlap.\",\n            \"Two uniform blocks create a triangular sum.\",\n            \"The resulting shape is the new distribution.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors\n        COLOR_PULSE1 = WHITE\n        COLOR_FLIP = \"#FF4500\"\n        COLOR_SHIFT = \"#1E90FF\"\n        COLOR_OVERLAP = \"#32CD32\"\n        COLOR_TRIANGLE = \"#00FFFF\"\n        COLOR_LABEL = \"#FFFFFF\"\n\n        # 1. Setup Axes\n        # Use a size that fits well within the grid area B1-E5\n        axes = Axes(\n            x_range=[-2, 3, 1],\n            y_range=[0, 1.5, 1],\n            x_length=4.5,\n            y_length=2.5,\n            axis_config={\"include_tip\": False, \"font_size\": 20}\n        )\n        self.place_in_area(axes, \"B1\", \"E5\", scale_factor=0.9)\n        \n        # PULSE 1: f(t) = 1 for t in [0, 1]\n        p1_top = Line(axes.c2p(0, 1), axes.c2p(1, 1), color=COLOR_PULSE1)\n        p1_l = Line(axes.c2p(0, 0), axes.c2p(0, 1), color=COLOR_PULSE1)\n        p1_r = Line(axes.c2p(1, 0), axes.c2p(1, 1), color=COLOR_PULSE1)\n        pulse1_group = VGroup(p1_top, p1_l, p1_r)\n\n        # PULSE 2: g(t) = 1 for t in [0, 1]\n        p2_top = Line(axes.c2p(0, 1), axes.c2p(1, 1), color=COLOR_PULSE1)\n        p2_l = Line(axes.c2p(0, 0), axes.c2p(0, 1), color=COLOR_PULSE1)\n        p2_r = Line(axes.c2p(1, 0), axes.c2p(1, 1), color=COLOR_PULSE1)\n        pulse2_group = VGroup(p2_top, p2_l, p2_r)\n\n        label_f = MathTex(\"f(t)\", color=COLOR_PULSE1, font_size=24)\n        # Fix Issue 38: Move f(t) label to Row A to avoid collision with shifting elements\n        self.place_at_grid(label_f, \"A3\", scale_factor=0.8)\n        \n        label_g = MathTex(\"g(t)\", color=COLOR_PULSE1, font_size=24)\n        # Position label_g in Row A for consistency\n        self.place_at_grid(label_g, \"A4\", scale_factor=0.8)\n\n        # === Animation for Lecture Line 1 ===\n        # First, we flip one distribution horizontally.\n        self.play(self.lecture[0].animate.set_color(COLOR_FLIP))\n        self.play(Create(axes), FadeIn(pulse1_group), FadeIn(pulse2_group), Write(label_f), Write(label_g))\n        self.wait(0.5)\n\n        # Flip pulse 2 to g(-t) on [-1, 0]\n        p2_flipped_top = Line(axes.c2p(-1, 1), axes.c2p(0, 1), color=COLOR_FLIP)\n        p2_flipped_l = Line(axes.c2p(-1, 0), axes.c2p(-1, 1), color=COLOR_FLIP)\n        p2_flipped_r = Line(axes.c2p(0, 0), axes.c2p(0, 1), color=COLOR_FLIP)\n        pulse2_flipped_group = VGroup(p2_flipped_top, p2_flipped_l, p2_flipped_r)\n        \n        label_g_flipped = MathTex(\"g(-t)\", color=COLOR_FLIP, font_size=24)\n        # Fix Issue 39: Move g(-t) label to Row A to prevent visual crowding\n        self.place_at_grid(label_g_flipped, \"A2\", scale_factor=0.8)\n\n        self.play(\n            Transform(pulse2_group, pulse2_flipped_group),\n            Transform(label_g, label_g_flipped)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Then, we shift it by the total sum.\n        self.play(self.lecture[1].animate.set_color(COLOR_SHIFT))\n        \n        z_tracker = ValueTracker(-1)\n        \n        # Shifted pulse g(z-t)\n        sp_top = Line(axes.c2p(-1, 1), axes.c2p(0, 1), color=COLOR_SHIFT)\n        sp_l = Line(axes.c2p(-1, 0), axes.c2p(-1, 1), color=COLOR_SHIFT)\n        sp_r = Line(axes.c2p(0, 0), axes.c2p(0, 1), color=COLOR_SHIFT)\n        shifted_pulse = VGroup(sp_top, sp_l, sp_r)\n        \n        label_g_shifted = MathTex(\"g(z-t)\", color=COLOR_SHIFT, font_size=24)\n        \n        def update_shifted_pulse(mob):\n            z = z_tracker.get_value()\n            mob.move_to(axes.c2p(z - 0.5, 0.5))\n            \n        def update_shifted_label(mob):\n            z = z_tracker.get_value()\n            mob.move_to(axes.c2p(z - 0.5, 1.25))\n\n        shifted_pulse.add_updater(update_shifted_pulse)\n        label_g_shifted.add_updater(update_shifted_label)\n        \n        self.play(\n            FadeOut(pulse2_group), \n            FadeOut(label_g),\n            FadeIn(shifted_pulse),\n            FadeIn(label_g_shifted)\n        )\n        self.play(z_tracker.animate.set_value(0), run_time=2)\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 3 ===\n        # We calculate the area where they overlap.\n        self.play(self.lecture[2].animate.set_color(COLOR_OVERLAP))\n        \n        overlap_rect = Rectangle(color=COLOR_OVERLAP, fill_opacity=0.6, stroke_width=0)\n        \n        def update_overlap(mob):\n            z = z_tracker.get_value()\n            start = max(0, z-1)\n            end = min(1, z)\n            if start < end:\n                w = axes.c2p(end, 0)[0] - axes.c2p(start, 0)[0]\n                h = axes.c2p(0, 1)[1] - axes.c2p(0, 0)[1]\n                mob.stretch_to_fit_width(w)\n                mob.stretch_to_fit_height(h)\n                mob.move_to(axes.c2p((start+end)/2, 0.5))\n                mob.set_fill(opacity=0.6)\n            else:\n                mob.set_fill(opacity=0)\n\n        overlap_rect.add_updater(update_overlap)\n        self.add(overlap_rect)\n\n        triangle_trace = VMobject(color=COLOR_TRIANGLE, stroke_width=4)\n        triangle_trace.set_points_as_corners([axes.c2p(0,0), axes.c2p(0,0)])\n        \n        def update_trace(mob):\n            curr_z = z_tracker.get_value()\n            if curr_z < 0:\n                mob.set_points_as_corners([axes.c2p(0,0), axes.c2p(0,0)])\n                return\n            zs = np.linspace(0, min(2.0, curr_z), 40)\n            pts = [axes.c2p(z, max(0, 1 - abs(z-1))) for z in zs]\n            mob.set_points_as_corners(pts)\n\n        triangle_trace.add_updater(update_trace)\n        self.add(triangle_trace)\n\n        self.play(z_tracker.animate.set_value(1.0), run_time=3)\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 4 ===\n        # Two uniform blocks create a triangular sum.\n        self.play(self.lecture[3].animate.set_color(COLOR_TRIANGLE))\n        \n        self.play(z_tracker.animate.set_value(2.0), run_time=3)\n        self.wait(0.5)\n        \n        triangle_trace.remove_updater(update_trace)\n        overlap_rect.remove_updater(update_overlap)\n        shifted_pulse.remove_updater(update_shifted_pulse)\n        label_g_shifted.remove_updater(update_shifted_label)\n        \n        self.play(Indicate(triangle_trace, color=COLOR_TRIANGLE))\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 5 ===\n        # The resulting shape is the new distribution.\n        self.play(self.lecture[4].animate.set_color(COLOR_LABEL))\n        \n        label_final = Text(\"Sum Distribution Z\", font_size=20, color=COLOR_LABEL)\n        # Fix Issue 37: Move final label to top-right area to avoid obstructing the plot\n        self.place_in_area(label_final, \"A5\", \"A6\", scale_factor=0.8)\n        \n        self.play(Write(label_final))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Teaching Content from shared state\n        title_text = \"Summary and Real-World Application\"\n        lecture_lines = [\n            \"Convolution combines independent uncertainties into one.\",\n            \"This 'Flip-Shift-Integrate' workflow works for many fields.\",\n            \"Adding variables often creates smoother, bell-shaped curves.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n        \n        # Colors aligned with lecture line requirements\n        COLOR_1 = WHITE\n        COLOR_2 = \"#00FF00\"  # Green\n        COLOR_3 = \"#FFD700\"  # Gold/Yellow\n        \n        # === Animation for Lecture Line 1 ===\n        # Step: List steps 'Flip, Shift, Integrate' in a vertical column (#FFFFFF).\n        self.play(self.lecture[0].animate.set_color(COLOR_1))\n        \n        flip_text = Text(\"1. Flip\", font_size=24, color=COLOR_1)\n        shift_text = Text(\"2. Shift\", font_size=24, color=COLOR_1)\n        integrate_text = Text(\"3. Integrate\", font_size=24, color=COLOR_1)\n        \n        workflow = VGroup(flip_text, shift_text, integrate_text).arrange(DOWN, buff=0.5)\n        # Fix for Issue 40: Avoiding overlap and using provided grid coordinates\n        self.place_in_area(workflow, 'A2', 'C5', scale_factor=0.9)\n        \n        self.play(Write(workflow))\n        self.wait(1)\n        \n        # === Animation for Lecture Line 2 ===\n        # Step: Animate Cargo robot moving past the triangle peak (#00FF00).\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(COLOR_2),\n            FadeOut(workflow)\n        )\n        \n        # Triangle distribution (sum of uniform variables)\n        triangle = Polygon(\n            [-1.5, -1, 0], [0, 1, 0], [1.5, -1, 0], \n            color=COLOR_2, stroke_width=4\n        )\n        triangle.set_fill(COLOR_2, opacity=0.3)\n        # Fix for Issue 41: Positioning and scaling for better visibility\n        self.place_in_area(triangle, 'D2', 'F6', scale_factor=1.1)\n        \n        # Cargo robot (procedural visual group as no SVG asset was specified in storyboard)\n        robot_body = Square(side_length=0.4, color=COLOR_2, fill_opacity=1)\n        # Eye positioned on the top right\n        robot_eye = Dot(radius=0.05, color=BLACK).move_to(robot_body.get_critical_point(UP) + DOWN*0.1 + RIGHT*0.1)\n        cargo_robot = VGroup(robot_body, robot_eye)\n        \n        # Define movement path based on triangle boundaries (L008 compliant)\n        # We'll make the robot move across the x-axis near the triangle's base level\n        start_pt = triangle.get_critical_point(LEFT) + LEFT * 0.5 + UP * 0.2\n        end_pt = triangle.get_critical_point(RIGHT) + RIGHT * 0.5 + UP * 0.2\n        cargo_robot.move_to(start_pt)\n        \n        self.play(Create(triangle))\n        \n        # Use ValueTracker for movement (L010 instruction)\n        robot_x = ValueTracker(start_pt[0])\n        cargo_robot.add_updater(lambda m: m.set_x(robot_x.get_value()))\n        self.add(cargo_robot)\n        \n        # Animate robot moving past the peak\n        self.play(robot_x.animate.set_value(end_pt[0]), run_time=3, rate_func=linear)\n        self.wait(1)\n        cargo_robot.clear_updaters()\n        \n        # === Animation for Lecture Line 3 ===\n        # Step: Morph triangle distribution into a smooth bell curve (#FFD700).\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(COLOR_3),\n            FadeOut(cargo_robot)\n        )\n        \n        # Gaussian curve approximation as a Polygon for smooth Transform animation\n        # We build the bell curve to have similar dimensions to the triangle for a clean morph\n        bell_points = []\n        # Bell curve defined on a similar range to the triangle base\n        for x_coord in np.linspace(-1.5, 1.5, 50):\n            # y = 2 * exp(-(x*2)^2) - 1 to approximate the triangle's height (2 units from -1 to 1)\n            y_val = 2 * np.exp(-(x_coord * 1.5)**2) - 1\n            bell_points.append([x_coord, y_val, 0])\n        # Close the polygon base at y = -1\n        bell_points.append([1.5, -1, 0])\n        bell_points.append([-1.5, -1, 0])\n        \n        bell_poly = Polygon(*bell_points, color=COLOR_3, stroke_width=4)\n        bell_poly.set_fill(COLOR_3, opacity=0.3)\n        \n        # Align with existing triangle and apply same scaling\n        bell_poly.move_to(triangle.get_center())\n        # The bell points were already scaled relative to triangle points, so we apply the 1.1 grid scale factor\n        bell_poly.scale(1.1)\n        \n        self.play(\n            Transform(triangle, bell_poly),\n            run_time=2\n        )\n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "Sum of Independent Random Variables and the Magic of Convolution",
+    "target_audience": "Undergraduate students in STEM or Introductory Probability courses",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Quest: Combining Uncertainties",
+        "content": "Introduce the core problem: If we have two independent random events, how do we predict their total outcome? Use a relatable scenario to ground the abstract math. Emphasize that we aren't just adding numbers, but merging entire distributions.",
+        "example": "A delivery robot named 'Cargo' has two batteries. Battery A's life (X) is random, and Battery B's life (Y) is random. To find the total travel time (Z = X + Y), we can't just pick one number; we need a new probability map for Z."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite Check: PDF and Independence",
+        "content": "Briefly review the Probability Density Function (PDF) as the 'shape' of uncertainty. Define Independence: the outcome of X doesn't affect Y. Graphically show two separate bell curves on separate axes to prepare for their 'collision'.",
+        "example": "Visual: Show a graph of PDF f(x) and g(y). If Cargo's first battery is weak, it has no impact on how long the second battery lasts."
+      },
+      {
+        "id": "section_3",
+        "title": "The Discrete Case: The Grid Method",
+        "content": "Start with discrete variables (like dice) to build intuition. To get a sum 'z', we look at all pairs (x, y) such that x + y = z. This introduces the idea of 'summing over possibilities'.",
+        "example": "Rolling two dice: To get a sum of 4, we sum the probabilities of (1,3), (2,2), and (3,1). Visual: A 6x6 grid where diagonal cells represent the same sum."
+      },
+      {
+        "id": "section_4",
+        "title": "The Jump to Continuous: Introducing Convolution",
+        "content": "Transition from discrete sums to the continuous integral. Define the Convolution Formula: (f * g)(z) = ∫ f(x) · g(z - x) dx. Explain that 'z - x' is simply the 'remaining value' needed from Y to reach the total Z.",
+        "example": "Mathematical Formula Visual: Highlight 'z - x' in a bright color. Show that as X takes a value 'x', Y must take exactly 'z - x' for the sum to be 'z'."
+      },
+      {
+        "id": "section_5",
+        "title": "Visualizing Convolution: Flip, Shift, and Area",
+        "content": "The 'Animation Core'. Break down the integral into three visual steps: 1. Flip one distribution (g(-x)). 2. Shift it by 'z'. 3. Calculate the overlapping area. The area at each shift point 'z' is the probability density of the sum.",
+        "example": "Visual: Two square pulses (uniform distributions) moving toward each other. As they overlap, the area creates a triangle shape. This 'Triangle' is the PDF of the sum of two uniform variables."
+      },
+      {
+        "id": "section_6",
+        "title": "Summary and Real-World Application",
+        "content": "Recap the 'Flip-Shift-Integrate' workflow. Mention that this applies to everything from signal processing to predicting wait times in a queue. Reiterate that the 'shape' of the sum is often smoother than the individual parts (leading toward the Central Limit Theorem).",
+        "example": "Cargo the Robot now knows: if his individual battery lives are rectangular (uniform), his total travel time distribution is triangular. He can now plan his route based on the peak of that triangle!"
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Quest: Combining Uncertainties",
+      "lecture_lines": [
+        "Meet Cargo, a robot powered by two batteries.",
+        "Each battery has a random, uncertain lifetime.",
+        "How long can Cargo travel before stopping?",
+        "We define total time Z as X plus Y.",
+        "To find Z, we must merge their distributions."
+      ],
+      "animations": [
+        "Fade in 'Cargo' robot (#FFFFFF) and two batteries (#00FF00, #FFFF00).",
+        "Display PDF curve for Battery A (X) (#00FF00).",
+        "Display PDF curve for Battery B (Y) (#FFFF00).",
+        "Write equation Z = X + Y in center screen (#FFFFFF).",
+        "Merge X and Y curves into a new distribution Z (#00FFFF)."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite Check: PDF and Independence",
+      "lecture_lines": [
+        "A PDF shows the probability of each outcome.",
+        "Battery A's life doesn't affect battery B.",
+        "These independent events have separate probability curves."
+      ],
+      "animations": [
+        "Flash 'PDF: Shape of Uncertainty' text in gold (#FFD700).",
+        "Show independent bell curves for X and Y (#00FF00, #FFFF00).",
+        "Draw dashed line between curves labeled 'Independent' (#00FFFF)."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Discrete Case: The Grid Method",
+      "lecture_lines": [
+        "Imagine rolling two dice and summing the results.",
+        "A grid shows every possible pair of outcomes.",
+        "Sum probabilities along the diagonal for each total."
+      ],
+      "animations": [
+        "Show two dice [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/dice.svg] rolling to represent discrete outcomes (#FFFFFF).",
+        "Create a 6x6 grid representing all (x, y) outcome pairs.",
+        "Highlight diagonal cells where x + y = 4 in orange (#FFA500)."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Jump to Continuous: Introducing Convolution",
+      "lecture_lines": [
+        "For continuous variables, sums transform into integrals.",
+        "This merging process is defined as a convolution.",
+        "The formula integrates the product of two functions.",
+        "One distribution is evaluated at z minus x.",
+        "This represents the remaining value to reach sum z."
+      ],
+      "animations": [
+        "Morph summation symbol Σ into integral symbol ∫ (#FFFFFF).",
+        "Display convolution formula (f * g)(z) = ∫ f(x)g(z-x) dx.",
+        "Highlight and scale 'z - x' term in bright yellow (#FFFF00).",
+        "Indicate point x on X-axis and z-x on Y-axis.",
+        "Show product f(x) * g(z-x) as a highlighted vertical line."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Visualizing Convolution: Flip, Shift, and Area",
+      "lecture_lines": [
+        "First, we flip one distribution horizontally.",
+        "Then, we shift it by the total sum.",
+        "We calculate the area where they overlap.",
+        "Two uniform blocks create a triangular sum.",
+        "The resulting shape is the new distribution."
+      ],
+      "animations": [
+        "Show two square pulses; flip the second pulse (#FF4500).",
+        "Slide the flipped pulse across the x-axis (#1E90FF).",
+        "Color the overlapping area between pulses in green (#32CD32).",
+        "Trace area values to form a triangle shape (#00FFFF).",
+        "Label the final triangle 'Sum Distribution Z' (#FFFFFF)."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Summary and Real-World Application",
+      "lecture_lines": [
+        "Convolution combines independent uncertainties into one.",
+        "This 'Flip-Shift-Integrate' workflow works for many fields.",
+        "Adding variables often creates smoother, bell-shaped curves."
+      ],
+      "animations": [
+        "List steps 'Flip, Shift, Integrate' in a vertical column (#FFFFFF).",
+        "Animate Cargo robot moving past the triangle peak (#00FF00).",
+        "Morph triangle distribution into a smooth bell curve (#FFD700)."
+      ]
+    }
+  ],
+  "turns_run": 3,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (under 10 words each) aligned with the 5 animation steps in section_1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 1 with 5 animation steps matching the updated storyboard. Used 6x6 grid for positioning Cargo, batteries, PDF axes, and the final combined distribution. Applied color coding to lecture lines and elements."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for section_2 following storyboard and 6x6 grid constraints."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (under 10 words each) for section_3 as requested in Issue 19. Noted that the current storyboard has 5 animation steps; created Issue 23 for AnimationPlanner to reconcile."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_3. Implemented dice rolling, 6x6 grid visualization, and diagonal highlighting for sum=4. Used the TeachingScene grid system for positioning. Aligning with lecture lines and storyboard animations."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (under 10 words each) aligned with the 5 animation steps in section_4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated Manim code for section_4 to align with the new 5-line storyboard. Added 1:1 mapping between lecture lines and animation steps (Morph, Formula, Axes, Highlight z-x, Product line). Fixed grid positions and added labels for clarity."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 5 (Key Section)."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Redundant with Issue 21. Code generated."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 6 with 3-step animation sequence including workflow list, robot movement, and triangle-to-bell-curve morphing. Integrated grid system and ValueTracker for movement."
+    },
+    {
+      "id": 19,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please generate exactly 5 lecture lines for sections 1, 4, 5 and 3 lecture lines for sections 2, 3, 6 to match the drafted animations and maintain 1:1 alignment (Lesson L001). Each line must be under 10 words.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Provided 5 lines for sections 1, 4, 5 and 3 lines for sections 2, 3, 6. All lines are under 10 words and align with the intended animation flow. Section 3 animation count needs adjustment by AnimationPlanner."
+    },
+    {
+      "id": 20,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[section_2] Storyboard is finalized (3 lines, 3 animations). Please implement the Manim code as per the storyboard. Ensure all colors and objects match the plan.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for section_2 following storyboard and 6x6 grid constraints."
+    },
+    {
+      "id": 21,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[section_5] Storyboard is finalized (5 lines, 5 animations). This is the 'Animation Core' section showing Flip, Shift, and Area. Please implement the Manim code. Ensure the square pulses and triangle transition are clear.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 5 with flip, shift, and area visualization using Axes and updaters. Trace of the triangle sum distribution is clear."
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[section_6] Storyboard is finalized (3 lines, 3 animations). Please implement the Manim code for the recap and the transition to the smooth bell curve.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented the finalized storyboard for Section 6. Created procedural robot for Cargo and used Polygon morphing for the distribution transition. Aligned colors and grid positioning."
+    },
+    {
+      "id": 23,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] The storyboard currently has 5 animation steps, but Issue 19 and the general guidelines require 3 lines/animations for this section. Please reduce the animation steps to 3 to maintain 1:1 alignment with the 3 new lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "Coder1",
+      "toAgent": "ScriptWriter",
+      "description": "Section 1 has 5 animations but only 3 lecture lines in the storyboard. Please provide exactly 5 lecture lines (under 10 words each) to match the 5 animation steps, following the 1:1 alignment rule (Lesson L001). current lines: [\"Meet Cargo...\", \"Battery A and B...\", \"How do we find...\"] vs 5 animations.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "ScriptWriter updated the storyboard with 5 lines. Code now reflects these lines."
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show two dice [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/dice.svg] rolling to represent discrete outcomes (#FFFFFF).']",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated the dice SVG asset [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/dice.svg] and updated lecture lines to match the storyboard."
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The concluding distribution 'pdf_z_grp' is vertically compressed within a single row (E2-E5) and overlaps with the equation 'eq_z' at E3. Fix: Line 162: self.place_in_area(pdf_z_grp, 'C2', 'F5', scale_factor=0.8) (line=162, object=pdf_z_grp)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned pdf_z_grp from area E2-E5 to C2-F5 with scale_factor=0.8 to prevent vertical compression and overlap with eq_z."
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The equation 'eq_z' is positioned in the center of the visual field where the final graph appears, causing overlap and clutter during the transition. Fix: Line 141: self.place_at_grid(eq_z, 'B5', scale_factor=1.0) (line=141, object=eq_z)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved eq_z from grid pos E3 to B5 to avoid visual clutter and overlap during the transition to the final distribution graph."
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The main character asset 'cargo' is underscaled at 0.8, causing it to look small compared to the lecture text and battery components. Fix: Line 82: self.place_at_grid(cargo, 'B3', scale_factor=1.0) (line=82, object=cargo)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Increased the scale factor of the 'cargo' robot from 0.8 to 1.0 at grid position B3 for better visibility."
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The multi-word title 'pdf_text' ('PDF: Shape of Uncertainty') uses point-based positioning at B4, which violates the area-positioning rule for long labels and restricts its horizontal balance. Fix: Line 68: self.place_in_area(pdf_text, 'B2', 'B6', scale_factor=0.8) (line=68, object=pdf_text)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated pdf_text to use place_in_area between B2 and B6 as per VideoCritic feedback."
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Poor grid utilization; the main animation components (group_a and group_b) are clustered in the upper-middle grid, leaving rows E and F empty and creating a vertically cramped appearance. Fix: Line 103: self.place_at_grid(group_a, 'E3', scale_factor=0.8); Line 104: self.place_at_grid(group_b, 'E5', scale_factor=0.8) (line=103, object=group_a, group_b)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved battery curve groups to row E to improve grid utilization and prevent vertical cramping."
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'independent_label' scale (0.6) is too small relative to the header, and its current position at C4 would be too far from the curves once they are moved to row E. Fix: Line 130: self.place_at_grid(independent_label, 'D4', scale_factor=0.8) (line=130, object=independent_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated independent_label to scale 0.8 and moved to D4 to align with moved curves in row E."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The dice_group at B3 overlaps with the top of the grid when it appears, causing visual obstruction during the transition. Fix: Line 83: self.place_at_grid(dice_group, 'A4', scale_factor=1.0) (line=83, object=dice_group)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved dice_group to A4 with scale 1.0 to prevent overlap with the grid."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The grid_squares area B2-E5 is too small to comfortably fit a 6x6 grid with internal sum labels (e.g., '1+3'), making the text look cramped. Fix: Line 112: self.place_in_area(grid_squares, 'B2', 'F6', scale_factor=0.9) (line=112, object=grid_squares)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Expanded grid_squares area to B2-F6 with scale 0.9 to accommodate internal labels without cramping."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: Redundancy and Crowding: The standalone integral (A1-C3) and the full formula (A4-C6) are placed in separate areas, causing visual clutter and leaving the complex formula squeezed into a small right-hand sector. Fix: Line 90: Expand the formula area to utilize the full width of the top animation zone for better legibility. self.place_in_area(formula, 'A1', 'C6', scale_factor=1.0) (line=90, object=formula)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Expanded the formula area to 'A1'-'C6' and increased scale to 1.0 to utilize the full top animation zone and improve legibility."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: Scale and Proximity: The sigma and integral symbols at scale 2.0 in A1-C3 are excessively large and positioned too close to the lecture notes, creating a cramped and unbalanced look. Fix: Lines 67 & 70: Reduce the scale and center the assets horizontally to create a buffer from the text. self.place_in_area(sigma, 'A2', 'C5', scale_factor=1.2) and self.place_in_area(integral, 'A2', 'C5', scale_factor=1.2) (line=67, object=sigma/integral)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced scale of sigma and integral symbols to 1.2 and centered them in the 'A2'-'C5' area to create a buffer from the lecture notes and avoid a cramped look."
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: Obstruction: The axes (D1-F6) are positioned at the far left of the animation grid, causing y-axis labels (like 'z-x') to encroach on the left-side lecture notes. Fix: Line 113: Shift the axes grid position to the right and slightly reduce scale to ensure labels remain within the designated animation space. self.place_in_area(axes, 'D2', 'F6', scale_factor=0.8) (line=113, object=axes)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Shifted the axes to the 'D2'-'F6' area and reduced the scale factor to 0.8, ensuring that the y-axis labels ('z-x') do not encroach on the lecture notes."
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'Sum Distribution Z' label at position C4 directly obstructs the visualization of the resulting triangular distribution plot. Fix: Line 213: self.place_in_area(label_final, 'A5', 'A6', scale_factor=0.8) (line=213, object=label_final)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved 'label_final' to area 'A5'-'A6' as requested to prevent obstruction of the distribution plot."
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'f(t)' label at B3 overlaps with the blue 'g(z-t)' label as it shifts horizontally across the axes during the animation. Fix: Line 92: self.place_at_grid(label_f, 'A3', scale_factor=0.8) (line=92, object=label_f)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved 'label_f' to grid position 'A3' to avoid overlap with the horizontally shifting 'g(z-t)' label."
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'g(-t)' label at B2 is positioned too low, causing visual crowding with the function curves and axes labels. Fix: Line 110: self.place_at_grid(label_g_flipped, 'A2', scale_factor=0.8) (line=110, object=label_g_flipped)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved 'label_g_flipped' to grid position 'A2' to prevent visual crowding with function curves and axes."
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'workflow' text list and 'triangle' animation have overlapping grid coordinates in rows C and D, creating visual clutter. Fix: Line 72: self.place_in_area(workflow, 'A2', 'C5', scale_factor=0.9) (line=72, object=workflow)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted 'workflow' text position to 'A2' to 'C5' with scale_factor=0.9 as requested to avoid overlap with following animations."
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'triangle' animation is scaled too small (0.8) and positioned too centrally, leaving the bottom grid rows underutilized. Fix: Line 91: self.place_in_area(triangle, 'D2', 'F6', scale_factor=1.1) (line=91, object=triangle)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Relocated 'triangle' distribution to 'D2' to 'F6' and increased scale_factor to 1.1 to better utilize the bottom grid rows."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 242839,
+        "video_mtime_ns": 1784610854000000000,
+        "code_sha1": "d41f6be828410c4baa4e6b70a6dc4efce9f42821"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The concluding distribution 'pdf_z_grp' is vertically compressed within a single row (E2-E5) and overlaps with the equation 'eq_z' at E3.",
+              "solution": "Line 162: self.place_in_area(pdf_z_grp, 'C2', 'F5', scale_factor=0.8)",
+              "line_number": 162,
+              "object_affected": "pdf_z_grp"
+            },
+            {
+              "problem": "The equation 'eq_z' is positioned in the center of the visual field where the final graph appears, causing overlap and clutter during the transition.",
+              "solution": "Line 141: self.place_at_grid(eq_z, 'B5', scale_factor=1.0)",
+              "line_number": 141,
+              "object_affected": "eq_z"
+            },
+            {
+              "problem": "The main character asset 'cargo' is underscaled at 0.8, causing it to look small compared to the lecture text and battery components.",
+              "solution": "Line 82: self.place_at_grid(cargo, 'B3', scale_factor=1.0)",
+              "line_number": 82,
+              "object_affected": "cargo"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        26,
+        27,
+        28
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 315043,
+        "video_mtime_ns": 1784610850000000000,
+        "code_sha1": "42e1d4da315b82592592c33bf43cda0b3e4a1db0"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The multi-word title 'pdf_text' ('PDF: Shape of Uncertainty') uses point-based positioning at B4, which violates the area-positioning rule for long labels and restricts its horizontal balance.",
+              "solution": "Line 68: self.place_in_area(pdf_text, 'B2', 'B6', scale_factor=0.8)",
+              "line_number": 68,
+              "object_affected": "pdf_text"
+            },
+            {
+              "problem": "Poor grid utilization; the main animation components (group_a and group_b) are clustered in the upper-middle grid, leaving rows E and F empty and creating a vertically cramped appearance.",
+              "solution": "Line 103: self.place_at_grid(group_a, 'E3', scale_factor=0.8); Line 104: self.place_at_grid(group_b, 'E5', scale_factor=0.8)",
+              "line_number": 103,
+              "object_affected": "group_a, group_b"
+            },
+            {
+              "problem": "The 'independent_label' scale (0.6) is too small relative to the header, and its current position at C4 would be too far from the curves once they are moved to row E.",
+              "solution": "Line 130: self.place_at_grid(independent_label, 'D4', scale_factor=0.8)",
+              "line_number": 130,
+              "object_affected": "independent_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        29,
+        30,
+        31
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 312353,
+        "video_mtime_ns": 1784610852000000000,
+        "code_sha1": "64de489a4bafc64e089e51227b6d86160d56e48e"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The dice_group at B3 overlaps with the top of the grid when it appears, causing visual obstruction during the transition.",
+              "solution": "Line 83: self.place_at_grid(dice_group, 'A4', scale_factor=1.0)",
+              "line_number": 83,
+              "object_affected": "dice_group"
+            },
+            {
+              "problem": "The grid_squares area B2-E5 is too small to comfortably fit a 6x6 grid with internal sum labels (e.g., '1+3'), making the text look cramped.",
+              "solution": "Line 112: self.place_in_area(grid_squares, 'B2', 'F6', scale_factor=0.9)",
+              "line_number": 112,
+              "object_affected": "grid_squares"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 498953,
+        "video_mtime_ns": 1784610884000000000,
+        "code_sha1": "d54137740712e5509e82ab201836861134b63076"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Redundancy and Crowding: The standalone integral (A1-C3) and the full formula (A4-C6) are placed in separate areas, causing visual clutter and leaving the complex formula squeezed into a small right-hand sector.",
+              "solution": "Line 90: Expand the formula area to utilize the full width of the top animation zone for better legibility. self.place_in_area(formula, 'A1', 'C6', scale_factor=1.0)",
+              "line_number": 90,
+              "object_affected": "formula"
+            },
+            {
+              "problem": "Scale and Proximity: The sigma and integral symbols at scale 2.0 in A1-C3 are excessively large and positioned too close to the lecture notes, creating a cramped and unbalanced look.",
+              "solution": "Lines 67 & 70: Reduce the scale and center the assets horizontally to create a buffer from the text. self.place_in_area(sigma, 'A2', 'C5', scale_factor=1.2) and self.place_in_area(integral, 'A2', 'C5', scale_factor=1.2)",
+              "line_number": 67,
+              "object_affected": "sigma/integral"
+            },
+            {
+              "problem": "Obstruction: The axes (D1-F6) are positioned at the far left of the animation grid, causing y-axis labels (like 'z-x') to encroach on the left-side lecture notes.",
+              "solution": "Line 113: Shift the axes grid position to the right and slightly reduce scale to ensure labels remain within the designated animation space. self.place_in_area(axes, 'D2', 'F6', scale_factor=0.8)",
+              "line_number": 113,
+              "object_affected": "axes"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        34,
+        35,
+        36
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 451381,
+        "video_mtime_ns": 1784610871000000000,
+        "code_sha1": "f06ed4defabf7214d02c07a09358b4269645a8d6"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'Sum Distribution Z' label at position C4 directly obstructs the visualization of the resulting triangular distribution plot.",
+              "solution": "Line 213: self.place_in_area(label_final, 'A5', 'A6', scale_factor=0.8)",
+              "line_number": 213,
+              "object_affected": "label_final"
+            },
+            {
+              "problem": "The 'f(t)' label at B3 overlaps with the blue 'g(z-t)' label as it shifts horizontally across the axes during the animation.",
+              "solution": "Line 92: self.place_at_grid(label_f, 'A3', scale_factor=0.8)",
+              "line_number": 92,
+              "object_affected": "label_f"
+            },
+            {
+              "problem": "The 'g(-t)' label at B2 is positioned too low, causing visual crowding with the function curves and axes labels.",
+              "solution": "Line 110: self.place_at_grid(label_g_flipped, 'A2', scale_factor=0.8)",
+              "line_number": 110,
+              "object_affected": "label_g_flipped"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        37,
+        38,
+        39
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 214267,
+        "video_mtime_ns": 1784610850000000000,
+        "code_sha1": "d3637bd3f1ebca1bb7171cba2d0d4518cc29f417"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'workflow' text list and 'triangle' animation have overlapping grid coordinates in rows C and D, creating visual clutter.",
+              "solution": "Line 72: self.place_in_area(workflow, 'A2', 'C5', scale_factor=0.9)",
+              "line_number": 72,
+              "object_affected": "workflow"
+            },
+            {
+              "problem": "The 'triangle' animation is scaled too small (0.8) and positioned too centrally, leaving the bottom grid rows underutilized.",
+              "solution": "Line 91: self.place_in_area(triangle, 'D2', 'F6', scale_factor=1.1)",
+              "line_number": 91,
+              "object_affected": "triangle"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        40,
+        41
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_130945/2-Sum_of_Independent_Random_Variables_and_the_Magic_of_Convolution",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 292123,
+      "completion_tokens": 33284,
+      "total_tokens": 382923,
+      "call_count": 36
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 278,
+        "completion_tokens": 896,
+        "total_tokens": 1737,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 17065,
+        "completion_tokens": 625,
+        "total_tokens": 18555,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 8075,
+        "completion_tokens": 316,
+        "total_tokens": 8415,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 29165,
+        "completion_tokens": 823,
+        "total_tokens": 30133,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 28405,
+        "completion_tokens": 3384,
+        "total_tokens": 31895,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 31412,
+        "completion_tokens": 4435,
+        "total_tokens": 36216,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 35337,
+        "completion_tokens": 4254,
+        "total_tokens": 39817,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 34439,
+        "completion_tokens": 3846,
+        "total_tokens": 38598,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 38105,
+        "completion_tokens": 5368,
+        "total_tokens": 47405,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 47669,
+        "completion_tokens": 6768,
+        "total_tokens": 55095,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 4020,
+        "completion_tokens": 518,
+        "total_tokens": 15306,
+        "call_count": 12
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2797,
+        "completion_tokens": 352,
+        "total_tokens": 12745,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2760,
+        "completion_tokens": 411,
+        "total_tokens": 10380,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2847,
+        "completion_tokens": 248,
+        "total_tokens": 5233,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3307,
+        "completion_tokens": 474,
+        "total_tokens": 10873,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3526,
+        "completion_tokens": 339,
+        "total_tokens": 10066,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2916,
+        "completion_tokens": 227,
+        "total_tokens": 10454,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 292123,
+        "completion_tokens": 33284,
+        "total_tokens": 382923,
+        "call_count": 36
+      }
+    }
+  }
+}

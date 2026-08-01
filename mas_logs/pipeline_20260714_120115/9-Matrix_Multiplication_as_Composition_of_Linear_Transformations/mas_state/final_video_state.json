@@ -1,0 +1,1079 @@
+{
+  "topic": "Matrix Multiplication as Composition of Linear Transformations",
+  "target_audience": "Undergraduate students in Linear Algebra or advanced High School students",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # --- Metadata ---\n        # Title: Prerequisite: The Matrix as an Action\n        # Line 1: A matrix is more than a grid of numbers.\n        # Line 2: It is a function that transforms 2D space.\n        # Line 3: Matrix A moves basis vectors to new locations.\n\n        lecture_lines = [\n            \"A matrix is more than a grid of numbers.\",\n            \"It is a function that transforms 2D space.\",\n            \"Matrix A moves basis vectors to new locations.\"\n        ]\n        self.setup_layout(\"Prerequisite: The Matrix as an Action\", lecture_lines)\n\n        # Colors\n        color_i = \"#FF0000\"\n        color_j = \"#00FF00\"\n        color_v = \"#FFFF00\"\n        highlight_color = YELLOW\n\n        # Define Transformation Matrix\n        # Matrix A = [[1, 1], [0, 1]] (Horizontal Shear)\n        # This moves (1,0) -> (1,0) and (0,1) -> (1,1)\n        shear_matrix = [[1, 1], [0, 1]]\n\n        # Asset path\n        grid_asset_path = \"/mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/grid.svg\"\n\n        # === Animation for Lecture Line 1 ===\n        # Display 2D grid [Asset: grid.svg] with basis vectors i-hat (#FF0000) and j-hat (#00FF00) labeled.\n        self.lecture[0].set_color(highlight_color)\n        \n        # Load grid asset - Addressing Issue 25\n        grid_asset = SVGMobject(grid_asset_path)\n        # Apply Issue 27 fix: use area B1 to F5\n        self.place_in_area(grid_asset, 'B1', 'F5', scale_factor=0.7)\n        \n        # Hidden NumberPlane to manage vector positioning, aligned with grid_asset\n        # Grid range adjusted to fit typical icon density\n        plane = NumberPlane(\n            x_range=[-2, 2, 1],\n            y_range=[-2, 2, 1],\n            background_line_style={\"stroke_opacity\": 0},\n            axis_config={\"stroke_opacity\": 0}\n        )\n        plane.move_to(grid_asset.get_center())\n        # Scale plane to match the grid_asset scale from place_in_area\n        # NumberPlane defaults to 1 grid unit = 1 manim unit.\n        plane.scale(0.7) \n\n        # Basis vectors\n        i_vec = Arrow(plane.c2p(0, 0), plane.c2p(1, 0), buff=0, color=color_i, stroke_width=4)\n        j_vec = Arrow(plane.c2p(0, 0), plane.c2p(0, 1), buff=0, color=color_j, stroke_width=4)\n        \n        # Initial labels\n        # Applying Issue 29 fix: label_i at E4\n        label_i = Text(\"i(1,0)\", color=color_i, font_size=24)\n        self.place_at_grid(label_i, 'E4', scale_factor=0.6)\n        \n        label_j = Text(\"j(0,1)\", color=color_j, font_size=24)\n        # Initial j label position (above the tip at C3)\n        self.place_at_grid(label_j, 'B3', scale_factor=0.6)\n\n        self.add(grid_asset)\n        self.play(Create(i_vec), Create(j_vec), Write(label_i), Write(label_j))\n        self.next_section(\"Grid Basics\")\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Animate the grid [Asset: grid.svg] shearing to the right, moving basis vectors to (1,0) and (1,1).\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(highlight_color)\n\n        # Perform the shear transformation\n        self.play(\n            grid_asset.animate.apply_matrix(shear_matrix),\n            i_vec.animate.apply_matrix(shear_matrix),\n            j_vec.animate.apply_matrix(shear_matrix),\n            run_time=2\n        )\n        \n        # Update j label to show new coordinates (1,1)\n        label_j_new = Text(\"j(1,1)\", color=color_j, font_size=24)\n        # Position updated j label at B4 (above the new tip at C4)\n        self.place_at_grid(label_j_new, 'B4', scale_factor=0.6)\n        \n        self.play(Transform(label_j, label_j_new))\n        self.next_section(\"Linear Transformation\")\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Show a vector v and label its transformed position as A(v).\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(highlight_color)\n\n        # Vector v = [1, 1] transformed by shear is [2, 1]\n        # (calculated as A * [1, 1]^T = [[1, 1], [0, 1]] * [1, 1] = [2, 1])\n        v_vec = Arrow(plane.c2p(0, 0), plane.c2p(2, 1), buff=0, color=color_v, stroke_width=4)\n        \n        # Applying Issue 28 fix: label_Av at D5\n        label_Av = Text(\"A(v)\", slant=ITALIC, color=color_v, font_size=28)\n        self.place_at_grid(label_Av, 'D5', scale_factor=0.7)\n\n        self.play(\n            Create(v_vec), \n            Write(label_Av)\n        )\n        self.next_section(\"Matrix Mapping\")\n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Setup layout with title and lecture lines\n        self.setup_layout(\n            \"The Sequence: Two Transformations\",\n            [\n                \"What if we apply two transformations in a row?\",\n                \"First, we apply matrix A to our vector.\",\n                \"Then, we apply matrix B to that result.\",\n                \"This sequence is called a composition of functions.\",\n                \"The output of A becomes the input for B.\"\n            ]\n        )\n\n        # Colors\n        YELLOW_A = \"#FFFFE0\"\n        BLUE_B = \"#ADD8E6\"\n        \n        # Central origin for the coordinate system visuals (D4 on the right side grid)\n        plane_center = self.grid[\"D4\"]\n        \n        # Coordinate system plane\n        plane = NumberPlane(\n            x_range=[-3, 3, 1],\n            y_range=[-3, 3, 1],\n            x_length=3,\n            y_length=3,\n            background_line_style={\n                \"stroke_color\": GREY,\n                \"stroke_width\": 1,\n                \"stroke_opacity\": 0.5\n            }\n        ).move_to(plane_center)\n        \n        # Define vector positions relative to the plane center\n        v_coords = np.array([1, 1, 0])\n        Av_coords = np.array([-1, 1, 0])   # Result of 90-degree CCW rotation\n        BAv_coords = np.array([-1, 2, 0])  # Result of vertical stretch by 2\n        \n        # Initial Vector and Label\n        vec_v = Arrow(plane_center, plane_center + v_coords, buff=0, color=WHITE)\n        # Issue 31 Fix: Label 'v' at B6\n        v_label = Text(\"v\", slant=ITALIC, color=WHITE)\n        self.place_at_grid(v_label, 'B6', scale_factor=0.8)\n        \n        # === Animation for Lecture Line 1 ===\n        # Introduce the grid and the initial vector\n        self.lecture[0].set_color(WHITE)\n        self.play(Create(plane), GrowArrow(vec_v), Write(v_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # First transformation: Matrix A (90-degree rotation)\n        self.lecture[1].set_color(YELLOW_A)\n        \n        vec_Av = Arrow(plane_center, plane_center + Av_coords, buff=0, color=YELLOW_A)\n        # Issue 32 Fix: Label 'A(v)' at C3\n        Av_label = Text(\"A(v)\", color=YELLOW_A)\n        self.place_at_grid(Av_label, 'C3', scale_factor=0.8)\n        \n        self.play(\n            plane.animate.apply_matrix([[0, -1], [1, 0]]),\n            Transform(vec_v, vec_Av),\n            FadeIn(Av_label),\n            FadeOut(v_label),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Second transformation: Matrix B (Vertical stretch by 2)\n        self.lecture[2].set_color(BLUE_B)\n        \n        vec_BAv = Arrow(plane_center, plane_center + BAv_coords, buff=0, color=BLUE_B)\n        # Issue 30 Fix: Label 'B(A(v))' in area A3 to B4\n        BAv_label = Text(\"B(A(v))\", color=BLUE_B)\n        self.place_in_area(BAv_label, 'A3', 'B4', scale_factor=0.7)\n        \n        self.play(\n            plane.animate.apply_matrix([[1, 0], [0, 2]]),\n            Transform(vec_v, vec_BAv),\n            FadeIn(BAv_label),\n            FadeOut(Av_label),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Define composition - output of A is input for B\n        self.lecture[3].set_color(WHITE)\n        \n        # Visual markers for start, middle, and end states\n        dot_start = Dot(plane_center + v_coords, color=WHITE)\n        dot_mid = Dot(plane_center + Av_coords, color=YELLOW_A)\n        dot_end = Dot(plane_center + BAv_coords, color=BLUE_B)\n        \n        self.play(FadeIn(dot_start), FadeIn(dot_mid), FadeIn(dot_end))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Highlight the sequence flow with trails\n        self.lecture[4].set_color(WHITE)\n        \n        # Trail arrows indicating the step-by-step movement\n        trail1 = CurvedArrow(plane_center + v_coords, plane_center + Av_coords, color=YELLOW_A, angle=-PI/2)\n        trail2 = CurvedArrow(plane_center + Av_coords, plane_center + BAv_coords, color=BLUE_B, angle=PI/4)\n        \n        self.play(Create(trail1))\n        self.play(Create(trail2))\n        self.wait(2)\n        \n        # Final cleanup of sequence markers\n        self.play(\n            FadeOut(dot_start), FadeOut(dot_mid), FadeOut(dot_end),\n            FadeOut(trail1), FadeOut(trail2)\n        )\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Data\n        title_text = \"Defining the 'Shortcut' Matrix\"\n        lecture_lines = [\n            \"We can find one matrix to do both steps.\",\n            \"This combined matrix C represents the total effect.\",\n            \"Mathematically, we write this as the product BA.\",\n            \"Matrix multiplication represents this shortcut through space.\",\n            \"The product matrix maps original positions to final spots.\"\n        ]\n        \n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors\n        COLOR_A = \"#FF69B4\"  # Pink for Matrix A\n        COLOR_B = \"#87CEFA\"  # Light Blue for Matrix B\n        COLOR_V = \"#FFFFFF\"  # White for Vector\n        COLOR_C = \"#FFD700\"  # Gold for Shortcut Matrix C\n        \n        # Helper: Create a mini grid\n        def create_mini_grid(label):\n            axes = Axes(\n                x_range=[-2, 2, 1],\n                y_range=[-2, 2, 1],\n                x_length=2,\n                y_length=2,\n                axis_config={\"include_tip\": False, \"color\": GREY_C}\n            )\n            grid_title = Text(label, font_size=16, color=WHITE).next_to(axes, UP, buff=0.1)\n            return VGroup(axes, grid_title)\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        left_grid_vgroup = create_mini_grid(\"Two-Step Process\")\n        right_grid_vgroup = create_mini_grid(\"Shortcut Matrix\")\n        \n        self.place_in_area(left_grid_vgroup, \"C2\", \"D3\", scale_factor=0.8)\n        self.place_in_area(right_grid_vgroup, \"C5\", \"D6\", scale_factor=0.8)\n        \n        axes_l = left_grid_vgroup[0]\n        # Initial vector\n        v_l = Vector(axes_l.c2p(1, 0) - axes_l.c2p(0, 0), color=COLOR_V).move_to(axes_l.c2p(0,0), aligned_edge=DL)\n        \n        self.play(\n            FadeIn(left_grid_vgroup),\n            FadeIn(right_grid_vgroup),\n            GrowArrow(v_l)\n        )\n        \n        # Two steps on the left\n        v_l_mid = Vector(axes_l.c2p(0, 1) - axes_l.c2p(0, 0), color=COLOR_A).move_to(axes_l.c2p(0,0), aligned_edge=DL)\n        v_l_end = Vector(axes_l.c2p(0, 1.5) - axes_l.c2p(0, 0), color=COLOR_B).move_to(axes_l.c2p(0,0), aligned_edge=DL)\n        \n        self.play(Transform(v_l, v_l_mid))\n        self.play(Transform(v_l, v_l_end))\n        self.wait(1)\n        self.next_section()\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Use Text instead of MathTex to avoid LaTeX requirement\n        formula = Text(\"B(A(v)) = (BA)v\", font_size=32, color=WHITE)\n        self.place_in_area(formula, \"A2\", \"A5\", scale_factor=0.8)\n        \n        self.play(Write(formula))\n        self.wait(1)\n        self.next_section()\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        matrix_c_def = Text(\"C = BA\", font_size=32, color=WHITE)\n        self.place_in_area(matrix_c_def, \"E5\", \"E6\", scale_factor=1.0)\n        \n        formula_with_c = Text(\"B(A(v)) = Cv\", font_size=32, color=WHITE)\n        self.place_in_area(formula_with_c, \"A2\", \"A5\", scale_factor=0.8)\n        \n        self.play(\n            FadeIn(matrix_c_def),\n            Transform(formula, formula_with_c)\n        )\n        self.wait(1)\n        self.next_section()\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        axes_r = right_grid_vgroup[0]\n        v_r_start = Vector(axes_r.c2p(1, 0) - axes_r.c2p(0, 0), color=COLOR_V).move_to(axes_r.c2p(0,0), aligned_edge=DL)\n        v_r_end = Vector(axes_r.c2p(0, 1.5) - axes_r.c2p(0, 0), color=COLOR_C).move_to(axes_r.c2p(0,0), aligned_edge=DL)\n        \n        self.play(GrowArrow(v_r_start))\n        self.play(Transform(v_r_start, v_r_end))\n        self.wait(1)\n        self.next_section()\n        \n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        highlight_box = SurroundingRectangle(matrix_c_def, color=COLOR_C)\n        \n        final_note = Text(\"Shortcut mapping complete\", font_size=20, color=COLOR_C)\n        self.place_in_area(final_note, \"F4\", \"F6\", scale_factor=0.9)\n        \n        self.play(\n            matrix_c_def.animate.set_color(COLOR_C),\n            Create(highlight_box),\n            Write(final_note)\n        )\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Data from storyboard: \"The Right-to-Left Rule\"\n        title = \"The Right-to-Left Rule\"\n        lecture_lines = [\n            \"In BA, matrix A is applied first.\",\n            \"We read the order from right to left.\",\n            \"This matches how nested functions like B(A(v)) work.\"\n        ]\n        \n        self.setup_layout(title, lecture_lines)\n        \n        # Define colors as per storyboard/instruction\n        color_B = \"#ADD8E6\" # Light Blue\n        color_A = \"#FFFFE0\" # Light Yellow\n        color_v = \"#FFFFFF\" # White\n        highlight_color = YELLOW\n        \n        # === Animation for Lecture Line 1 ===\n        # Line 1: \"In BA, matrix A is applied first.\"\n        self.next_section(\"Notation\")\n        self.lecture[0].set_color(highlight_color)\n        \n        tex_B = Text(\"B\", color=color_B)\n        tex_dot1 = Text(\"·\")\n        tex_A = Text(\"A\", color=color_A)\n        tex_dot2 = Text(\"·\")\n        tex_v = Text(\"v\", color=color_v, weight=BOLD)\n        \n        formula_bav = VGroup(tex_B, tex_dot1, tex_A, tex_dot2, tex_v).arrange(RIGHT, buff=0.1)\n        # Positioned in Row B to avoid empty space at top (Issue 37) and scaled to 1.2 (Issue 38)\n        self.place_in_area(formula_bav, \"B2\", \"B5\", scale_factor=1.2)\n        \n        self.play(FadeIn(formula_bav))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        # Line 2: \"We read the order from right to left.\"\n        self.next_section(\"Processing Order\")\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(highlight_color)\n        \n        # Pulse right-to-left order: v -> A -> B\n        self.play(Indicate(tex_v, color=color_v, scale_factor=1.3))\n        self.play(Indicate(tex_A, color=color_A, scale_factor=1.3))\n        self.play(Indicate(tex_B, color=color_B, scale_factor=1.3))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Line 3: \"This matches how nested functions like B(A(v)) work.\"\n        self.next_section(\"Functional Analogy\")\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(highlight_color)\n        \n        # Create nested function text B(A(v))\n        tex_f_B = Text(\"B(\", color=color_B)\n        tex_f_A = Text(\"A(\", color=color_A)\n        tex_f_v = Text(\"v\", color=color_v, weight=BOLD)\n        tex_f_p1 = Text(\")\")\n        tex_f_p2 = Text(\")\")\n        \n        nested_formula = VGroup(tex_f_B, tex_f_A, tex_f_v, tex_f_p1, tex_f_p2).arrange(RIGHT, buff=0.05)\n        # Positioned in Row D for balance (Issue 36) and scaled to 1.2 (Issue 38)\n        self.place_in_area(nested_formula, \"D2\", \"D5\", scale_factor=1.2)\n        \n        # Flow arrow indicating right-to-left\n        flow_arrow = Arrow(\n            tex_v.get_top() + UP * 0.2,\n            tex_B.get_top() + UP * 0.2,\n            path_arc=-1.2,\n            color=WHITE,\n            buff=0.1\n        )\n        \n        self.play(\n            Write(nested_formula),\n            Create(flow_arrow)\n        )\n        self.wait(3)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Define the title and lecture lines\n        title_text = \"Why Order Matters (Non-Commutativity)\"\n        lecture_lines = [\n            \"Does the order of transformations actually matter?\",\n            \"Rotating then shifting is different from shifting then rotating.\",\n            \"Usually, the matrix product AB is not equal to BA.\",\n            \"We say that matrix multiplication is not commutative.\",\n            \"Changing the order produces a different final result.\"\n        ]\n        \n        # Set up the layout\n        self.setup_layout(title_text, lecture_lines)\n        \n        # Custom Colors based on storyboard requirements\n        ROTATE_COLOR = \"#FFFFE0\"  # Light Yellow for Rotation\n        SHIFT_COLOR = \"#ADD8E6\"   # Light Blue for Shift\n        X_COLOR = \"#FF0000\"       # Red for the \"X\"\n        ASSET_PATH = \"/mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/based.svg\"\n\n        # === Animation for Lecture Line 1 ===\n        # Step: Create two side-by-side grids: Label the left \"BA\" and the right \"AB\".\n        # [Constraint L001/L010/Issue 39] Move labels to Row A for better space usage.\n        self.lecture[0].set_color(WHITE)\n        \n        ba_label = Text(\"BA\", color=WHITE, font_size=32)\n        ab_label = Text(\"AB\", color=WHITE, font_size=32)\n        \n        # Use A-row for labels as requested by Issue 39\n        self.place_in_area(ba_label, 'A2', 'A3', scale_factor=1.0)\n        self.place_in_area(ab_label, 'A5', 'A6', scale_factor=1.0)\n        \n        # [Issue 40] Move grids up to Rows B-D to fill space\n        ba_grid = NumberPlane(\n            x_range=[-1, 4, 1], y_range=[-1, 4, 1],\n            x_length=3, y_length=3,\n            background_line_style={\"stroke_opacity\": 0.3}\n        ).set_color(GRAY)\n        \n        ab_grid = NumberPlane(\n            x_range=[-1, 4, 1], y_range=[-1, 4, 1],\n            x_length=3, y_length=3,\n            background_line_style={\"stroke_opacity\": 0.3}\n        ).set_color(GRAY)\n        \n        self.place_in_area(ba_grid, 'B2', 'D3', scale_factor=0.8)\n        self.place_in_area(ab_grid, 'B5', 'D6', scale_factor=0.8)\n        \n        # Helper to get scene coordinates from local grid coords\n        def g2s(grid, coords):\n            return grid.c2p(*coords)\n            \n        # Initial vectors starting at the local origin (0,0) of each grid, pointing to (1,0)\n        v_ba = Arrow(g2s(ba_grid, [0,0]), g2s(ba_grid, [1,0]), buff=0, color=WHITE)\n        v_ab = Arrow(g2s(ab_grid, [0,0]), g2s(ab_grid, [1,0]), buff=0, color=WHITE)\n        \n        self.play(\n            FadeIn(ba_label), FadeIn(ab_label),\n            Create(ba_grid), Create(ab_grid),\n            GrowArrow(v_ba), GrowArrow(v_ab)\n        )\n        self.next_section()\n\n        # === Animation for Lecture Line 2 ===\n        # Left (BA): Rotate 90 deg (#FFFFE0), then shift 2 units right (#ADD8E6).\n        self.lecture[1].set_color(ROTATE_COLOR)\n        \n        # Part A: Rotate 90 degrees around origin\n        self.play(\n            Rotate(v_ba, angle=90*DEGREES, about_point=g2s(ba_grid, [0,0])),\n            v_ba.animate.set_color(ROTATE_COLOR),\n            run_time=1.5\n        )\n        self.wait(0.2)\n        \n        # Part B: Shift 2 units right\n        shift_vec = g2s(ba_grid, [2,0]) - g2s(ba_grid, [0,0])\n        self.play(\n            v_ba.animate.shift(shift_vec).set_color(SHIFT_COLOR),\n            run_time=1.5\n        )\n        self.next_section()\n\n        # === Animation for Lecture Line 3 ===\n        # Right (AB): Shift 2 units right (#ADD8E6), then rotate 90 deg (#FFFFE0).\n        self.lecture[2].set_color(SHIFT_COLOR)\n        \n        # Part B: Shift 2 units right\n        shift_vec_ab = g2s(ab_grid, [2,0]) - g2s(ab_grid, [0,0])\n        self.play(\n            v_ab.animate.shift(shift_vec_ab).set_color(SHIFT_COLOR),\n            run_time=1.5\n        )\n        self.wait(0.2)\n        \n        # Part A: Rotate 90 degrees around origin\n        self.play(\n            Rotate(v_ab, angle=90*DEGREES, about_point=g2s(ab_grid, [0,0])),\n            v_ab.animate.set_color(ROTATE_COLOR),\n            run_time=1.5\n        )\n        self.next_section()\n\n        # === Animation for Lecture Line 4 ===\n        # [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/based.svg]\n        # Point out different final locations using the SVG asset at the tips.\n        self.lecture[3].set_color(WHITE)\n        \n        # Create asset markers at the final vector tips (Issue 26)\n        icon_ba = SVGMobject(ASSET_PATH).scale(0.15).move_to(v_ba.get_end())\n        icon_ab = SVGMobject(ASSET_PATH).scale(0.15).move_to(v_ab.get_end())\n        \n        # Labels for the end coordinates (BA: (2,1), AB: (0,2) rotated is (0,3))\n        # BA: (1,0) rot 90 -> (0,1), shift 2 right -> (2,1). Tip is at (2,1).\n        # AB: (1,0) shift 2 right -> (3,0), rot 90 around origin -> (0,3). Tip is at (0,3).\n        coord_ba = Text(\"(2, 1)\", font_size=16).next_to(icon_ba, UR, buff=0.1)\n        coord_ab = Text(\"(0, 3)\", font_size=16).next_to(icon_ab, UL, buff=0.1)\n        \n        self.play(\n            FadeIn(icon_ba), FadeIn(icon_ab),\n            Write(coord_ba), Write(coord_ab)\n        )\n        self.wait(1)\n        self.next_section()\n\n        # === Animation for Lecture Line 5 ===\n        # [Issue 41] Position eq_text at E3-E4 to avoid being too low.\n        self.lecture[4].set_color(X_COLOR)\n        \n        eq_text = Text(\"BA = AB\", font_size=32)\n        self.place_in_area(eq_text, 'E3', 'E4', scale_factor=1.0)\n        \n        # Create the red X mark\n        line1 = Line(eq_text.get_corner(UL), eq_text.get_corner(DR), color=X_COLOR, stroke_width=6)\n        line2 = Line(eq_text.get_corner(UR), eq_text.get_corner(DL), color=X_COLOR, stroke_width=6)\n        x_mark = VGroup(line1, line2)\n        \n        self.play(Write(eq_text))\n        self.play(Create(x_mark))\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Initialize layout with title and lecture lines\n        self.setup_layout(\"Summary: Matrix Multiplication is Combining Actions\", [\n            \"Matrix multiplication is the \\\"glue\\\" for linear actions.\",\n            \"It combines multiple transformations into a single operation.\",\n            \"Complex motions are built from simple matrix products.\"\n        ])\n        \n        # === Animation for Lecture Line 1 ===\n        # Highlight first line\n        self.play(self.lecture[0].animate.set_color(\"#FFFF00\"))\n        \n        # Show a chain of matrix multiplications: M3 * M2 * M1 * v.\n        # Use Text instead of MathTex for stability.\n        formula = Text(\"M3 · M2 · M1 · v\", color=\"#FFFF00\", font_size=32)\n        # Wide formula uses rectangular area (L015)\n        self.place_in_area(formula, \"B2\", \"B6\", scale_factor=0.9)\n        \n        self.play(Write(formula))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        # Reset previous line color and highlight current\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(\"#FF8C00\")\n        )\n        \n        # Briefly flash three distinct transformations on a single grid in rapid succession.\n        grid_lines = VGroup(\n            Line(LEFT*2.5, RIGHT*2.5, color=GREY_E),\n            Line(UP*1.5, DOWN*1.5, color=GREY_E)\n        )\n        # Expanded area to utilize more space (Fix 42)\n        self.place_in_area(grid_lines, \"C2\", \"E6\")\n        \n        square = Square(side_length=1.4, color=\"#FF8C00\", stroke_width=3)\n        # Expanded area to avoid cramped appearance (Fix 43)\n        self.place_in_area(square, \"C2\", \"E6\")\n        \n        self.play(Create(grid_lines), FadeIn(square))\n        \n        # Transformation 1: Rotation\n        self.play(square.animate.rotate(PI/3), run_time=0.6)\n        # Transformation 2: Shear (Linear Action)\n        self.play(square.animate.apply_matrix([[1, 0.5], [0, 1]]), run_time=0.6)\n        # Transformation 3: Scaling\n        self.play(square.animate.scale(0.5), run_time=0.6)\n        \n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Reset previous line color and highlight current\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(\"#00FFFF\")\n        )\n        \n        # End with the text \"Matrices = Composition\" in a bright color (#00FFFF).\n        summary_text = Text(\"Matrices = Composition\", color=\"#00FFFF\", font_size=32)\n        # Bottom area utilized (L017)\n        self.place_in_area(summary_text, \"F2\", \"F6\", scale_factor=0.9)\n        \n        self.play(Write(summary_text))\n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "Matrix Multiplication as Composition of Linear Transformations",
+    "target_audience": "Undergraduate students in Linear Algebra or advanced High School students",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "Prerequisite: The Matrix as an Action",
+        "content": "Briefly recap that a matrix doesn't just hold numbers; it is a function that transforms space. Show a 2D grid where a matrix A moves the basis vectors i-hat and j-hat to new locations. Establish that A(v) is the 'landing spot' of vector v after transformation A.",
+        "example": "Visual: A 2D coordinate grid with a 'Space-Cat' character sitting at (1,1). When matrix A is applied, the grid warps, and the Space-Cat is sheared to the right."
+      },
+      {
+        "id": "section_2",
+        "title": "The Sequence: Two Transformations",
+        "content": "Introduce the concept of applying two transformations in a row. First, transform the space with Matrix A, then take that result and transform it again with Matrix B. This is the 'Composition' of functions.",
+        "example": "Visual: Our Space-Cat is first rotated 90 degrees by Matrix A (Step 1). Then, the already-rotated Space-Cat is stretched vertically by Matrix B (Step 2)."
+      },
+      {
+        "id": "section_3",
+        "title": "Defining the 'Shortcut' Matrix",
+        "content": "Explain that we want a single matrix, let's call it C, that performs both steps in one jump. Mathematically, B(A(v)) = (BA)v. This 'Product Matrix' BA represents the total effect of A followed by B.",
+        "example": "Visual: A side-by-side comparison. On the left, the two-step process (Rotate then Stretch). On the right, a single 'Combined Matrix' C that teleports the Space-Cat from its original position directly to its final rotated-and-stretched position."
+      },
+      {
+        "id": "section_4",
+        "title": "The Right-to-Left Rule",
+        "content": "Address the potential confusion of notation: In the expression BA, the transformation A (on the right) happens FIRST. This is because the vector v is closest to A. Emphasize that matrix multiplication order follows the order of function nesting.",
+        "example": "Animation: A mechanical arm with two slots for 'Action Chips'. If you slide Chip A in first and then Chip B, the math reads B * A. Show the 'Action' flowing from the vector on the right, through A, then through B."
+      },
+      {
+        "id": "section_5",
+        "title": "Why Order Matters (Non-Commutativity)",
+        "content": "Visually demonstrate that AB is not the same as BA. Changing the order of composition usually leads to a completely different result, which is why matrix multiplication is not commutative.",
+        "example": "Visual: Compare (1) Rotating the Space-Cat then moving it 5 units right vs. (2) Moving it 5 units right then rotating it around the origin. The final positions are different, proving BA ≠ AB."
+      },
+      {
+        "id": "section_6",
+        "title": "Summary: Matrix Multiplication is Combining Actions",
+        "content": "Conclude that matrix multiplication is not just a tedious calculation of rows and columns; it is the mathematical way to 'glue' linear transformations together.",
+        "example": "Visual: A 'Macro' view of a complex animation (like a character walking) being broken down into a series of matrices (Leg rotation * Knee bend * Hip tilt) multiplied together to create one fluid motion."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "Prerequisite: The Matrix as an Action",
+      "lecture_lines": [
+        "A matrix is more than a grid of numbers.",
+        "It is a function that transforms 2D space.",
+        "Matrix A moves basis vectors to new locations."
+      ],
+      "animations": [
+        "Display 2D grid [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/grid.svg] with basis vectors i-hat (#FF0000) and j-hat (#00FF00) labeled.",
+        "Animate the grid [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/grid.svg] shearing to the right, moving basis vectors to (1,0) and (1,1).",
+        "Show a vector v and label its transformed position as A(v)."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "The Sequence: Two Transformations",
+      "lecture_lines": [
+        "What if we apply two transformations in a row?",
+        "First, we apply matrix A to our vector.",
+        "Then, we apply matrix B to that result.",
+        "This sequence is called a composition of functions.",
+        "The output of A becomes the input for B."
+      ],
+      "animations": [
+        "Start with a 2D grid and a vector v; apply Matrix A (90-degree rotation).",
+        "Label the intermediate state as A(v) with a light yellow color (#FFFFE0).",
+        "Apply Matrix B (vertical stretch by 2) to the rotated grid.",
+        "Label the final vector position as B(A(v)) with a light blue color (#ADD8E6).",
+        "Highlight the two-step sequence using a trail from start to finish."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "Defining the 'Shortcut' Matrix",
+      "lecture_lines": [
+        "We can find one matrix to do both steps.",
+        "This combined matrix C represents the total effect.",
+        "Mathematically, we write this as the product BA.",
+        "Matrix multiplication represents this shortcut through space.",
+        "The product matrix maps original positions to final spots."
+      ],
+      "animations": [
+        "Display the two-step process on the left and a blank grid on the right.",
+        "Write the formula B(A(v)) = (BA)v above the grids in white (#FFFFFF).",
+        "Introduce Matrix C = BA on the right side.",
+        "Animate the vector on the right grid moving directly to the final position in one step.",
+        "Highlight Matrix C in gold (#FFD700) to emphasize it as the shortcut."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Right-to-Left Rule",
+      "lecture_lines": [
+        "In BA, matrix A is applied first.",
+        "We read the order from right to left.",
+        "This matches how nested functions like B(A(v)) work."
+      ],
+      "animations": [
+        "Show the text \"B * A * v\" with colors: B (#ADD8E6), A (#FFFFE0), v (#FFFFFF).",
+        "Pulse the \"A\" then the \"B\" to show the right-to-left order of operations.",
+        "Show a \"flow\" arrow starting from v, passing through A, then through B."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Why Order Matters (Non-Commutativity)",
+      "lecture_lines": [
+        "Does the order of transformations actually matter?",
+        "Rotating then shifting is different from shifting then rotating.",
+        "Usually, the matrix product AB is not equal to BA.",
+        "We say that matrix multiplication is not commutative.",
+        "Changing the order produces a different final result."
+      ],
+      "animations": [
+        "Create two side-by-side grids: Label the left \"BA\" and the right \"AB\".",
+        "Left: Rotate 90 deg (#FFFFE0), then shift 2 units right (#ADD8E6).",
+        "Right: Shift 2 units right (#ADD8E6), then rotate 90 deg (#FFFFE0).",
+        "Point out the different final locations of the origin-based [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/based.svg] vector in each grid.",
+        "Cross out \"BA = AB\" with a red \"X\" (#FF0000) to show non-commutativity."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Summary: Matrix Multiplication is Combining Actions",
+      "lecture_lines": [
+        "Matrix multiplication is the \"glue\" for linear actions.",
+        "It combines multiple transformations into a single operation.",
+        "Complex motions are built from simple matrix products."
+      ],
+      "animations": [
+        "Show a chain of matrix multiplications: M3 * M2 * M1 * v.",
+        "Briefly flash three distinct transformations on a single grid in rapid succession.",
+        "End with the text \"Matrices = Composition\" in a bright color (#00FFFF)."
+      ]
+    }
+  ],
+  "turns_run": 3,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (max 10 words each) for section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps based on section outline."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented section_1 code with 3 animation steps matching lecture lines. Used NumberPlane with apply_matrix for the shear transformation. Labels track basis vectors with updaters."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (max 10 words each) for key section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps based on section outline."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated full Manim code for section_2 including 1:1 line/animation correspondence, matrix transformations on NumberPlane, and addressing specific label positioning issues."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (max 10 words each) for key section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps based on section outline."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented section_3 code with 5-step animation matching the script and storyboard."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (max 10 words each) for section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps based on section outline."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for section_4 following the storyboard and 6x6 grid system. Highlighting lecture lines sequentially and using self.next_section()."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (max 10 words each) for key section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps based on section outline."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for section_5 with 5 animation steps corresponding to 5 lecture lines. Added side-by-side grids, animated BA (Rotate then Shift) and AB (Shift then Rotate) to show non-commutativity, and added a red 'X' over 'BA=AB'."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (max 10 words each) for section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps based on section outline."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for Section 6 with 1:1 lecture line synchronization and required visual elements."
+    },
+    {
+      "id": 19,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "Implement Manim code for section_1. Follow the storyboard's 3 animation steps exactly. Each step must correspond to one lecture line using 'self.next_section()'. Ensure basis vectors and grid shearing are visualized as described. Use hex codes #FF0000 and #00FF00 for i-hat and j-hat.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented section_1 code with 3 animation steps matching lecture lines. Used NumberPlane with apply_matrix for the shear transformation. Labels track basis vectors with updaters. Followed 6x6 grid constraints."
+    },
+    {
+      "id": 20,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "Implement Manim code for section_2. Follow the storyboard's 5 animation steps exactly. Each step must correspond to one lecture line using 'self.next_section()'. Visualize the two-step transformation sequence: rotation then stretch. Use #FFFFE0 for the intermediate state and #ADD8E6 for the final state.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 21,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "Implement Manim code for section_3. Follow the storyboard's 5 animation steps exactly. Each step must correspond to one lecture line using 'self.next_section()'. Contrast the two-step process with the 'shortcut' matrix BA. Use #FFFFFF for text and #FFD700 for highlighting the shortcut matrix.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented section_3 code with 5-step animation matching the script and storyboard. Followed grid system and 1:1 lecture/animation correspondence."
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "Implement Manim code for section_4. Follow the storyboard's 3 animation steps exactly. Each step must correspond to one lecture line using 'self.next_section()'. Explain the right-to-left rule using colors: B (#ADD8E6), A (#FFFFE0), v (#FFFFFF). Show the flow from right to left.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented 3 animation steps matching the lecture lines and storyboard. Used specific colors for B (#ADD8E6), A (#FFFFE0), and v (#FFFFFF). Added a flow arrow and nested function analogy."
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "Implement Manim code for section_5. Follow the storyboard's 5 animation steps exactly. Each step must correspond to one lecture line using 'self.next_section()'. Show non-commutativity by comparing BA and AB side-by-side. Use #FFFFE0 and #ADD8E6 for transformations and #FF0000 for the 'X'.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for section_5. Followed storyboard exactly: BA (Rotate #FFFFE0 then Shift #ADD8E6) and AB (Shift #ADD8E6 then Rotate #FFFFE0). Used red 'X' #FF0000 on 'BA=AB'. Used grid system for positioning."
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "Implement Manim code for section_6. Follow the storyboard's 3 animation steps exactly. Each step must correspond to one lecture line using 'self.next_section()'. Summarize by showing a chain of matrices and using #00FFFF for the concluding text.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for Section 6. Followed storyboard exactly: chain of matrices, flashed transformations, and concluding text in #00FFFF."
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Display 2D grid [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/grid.svg] with basis vectors i-hat (#FF0000) and j-hat (#00FF00) labeled.', 'Animate the grid [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/grid.svg] shearing to the right, moving basis vectors to (1,0) and (1,1).']",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated the grid asset [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/grid.svg] and animated its shear transformation along with the basis vectors."
+    },
+    {
+      "id": 26,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Point out the different final locations of the origin-based [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/based.svg] vector in each grid.']",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated [Asset: based.svg] at the tips of the vectors in the final comparison stage."
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The transformed coordinate plane skews into the right-side boundary (column 6), creating a cramped visual and risking label cutoff. Fix: Line 83: self.place_in_area(plane, 'B1', 'F5', scale_factor=0.7) (line=83, object=plane)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted grid/plane positioning and scaling to use area B1-F5 with a scale factor of 0.7 to avoid right-side boundary crowding."
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The label A(v) (yellow, #FFFF00) is positioned at the extreme edge of the grid, losing visual proximity to the vector tip. Fix: Line 92: self.place_at_grid(label_Av, 'D5', scale_factor=0.7) (line=92, object=label_Av)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Positioned the A(v) label at grid cell D5 with scale 0.7 to ensure proximity to the vector tip."
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The basis vector label i(1,0) (red, #FC6255) overlaps with the white x-axis arrow tip and grid lines after transformation. Fix: Line 105: self.place_at_grid(label_i, 'E4', scale_factor=0.6) (line=105, object=label_i)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Positioned the basis vector label i(1,0) at grid cell E4 with scale 0.6 to prevent overlap with axes and grid lines."
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The labels 'A(v)' and 'B(A(v))' overlap at the same coordinates, making the transformation sequence illegible. Fix: Line 92: self.place_in_area(BAv_label, 'A3', 'B4', scale_factor=0.7) (line=92, object=BAv_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Fixed label overlap by positioning B(A(v)) in area A3-B4 using place_in_area."
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The initial vector label 'v' is positioned too close to the axes, creating visual clutter as the transformations begin. Fix: Line 82: self.place_at_grid(v_label, 'B6', scale_factor=0.8) (line=82, object=v_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Fixed visual clutter by positioning initial vector label 'v' at B6 using place_at_grid."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The intermediate label 'A(v)' is centrally located, obstructing the path of the vector during its second transformation. Fix: Line 85: self.place_at_grid(Av_label, 'C3', scale_factor=0.8) (line=85, object=Av_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved intermediate label 'A(v)' to grid C3 to avoid obstructing the transformation path."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'formula' object at B2-B5 overlaps with the top labels of the grids located in Row B and C. Fix: Line 110: self.place_in_area(formula, 'A2', 'A5', scale_factor=0.8) (line=110, object=formula)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved formula from B2-B5 to A2-A5 to avoid overlap with grid labels."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'formula_with_c' object overlaps the existing 'formula' and grid labels at B2-B5, creating visual clutter. Fix: Line 124: self.place_in_area(formula_with_c, 'A2', 'A5', scale_factor=0.8) (line=124, object=formula_with_c)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved formula_with_c from B2-B5 to A2-A5 to avoid overlap with grid labels."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'final_note' label is cramped at the very edge of the screen (F5-F6), risking cutoff. Fix: Line 151: self.place_in_area(final_note, 'F4', 'F6', scale_factor=0.9) (line=151, object=final_note)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved final_note to F4-F6 and scaled to 0.9 to prevent cropping."
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The formula B(A(v)) is positioned too low in the grid (Row E), causing an unbalanced, bottom-heavy appearance compared to the lecture notes. Fix: Line 111: self.place_in_area(nested_formula, 'D2', 'D5', scale_factor=1.2) (line=111, object=nested_formula)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved nested_formula from Row E to Row D (D2-D5) and adjusted scale_factor to 1.2 for better balance and padding."
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The first formula (B·A·v) is placed in row C, which creates a large unused space at the top and pushes the sequence too far down. Fix: Line 77: self.place_in_area(formula_bav, 'B2', 'B5', scale_factor=1.2) (line=77, object=formula_bav)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved formula_bav from Row C to Row B (B2-B5) to reduce unused top space."
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: A scale factor of 1.5 makes the formulas too large for a 4-column span, resulting in a cramped horizontal layout with tight margins. Fix: Line 77 & 111: Adjust scale_factor from 1.5 to 1.2 in both place_in_area calls to ensure better horizontal padding. (line=77, object=formula_bav)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced scale_factor for formulas from 1.5 to 1.2 to improve horizontal margins."
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: Row A is currently unused, which pushes the final concluding equation to the bottom row (F3-F4), making it appear cramped against the screen edge. Fix: Line 74: self.place_in_area(ba_label, 'A2', 'A3', scale_factor=1.0); Line 75: self.place_in_area(ab_label, 'A5', 'A6', scale_factor=1.0) (line=74, object=ba_label and ab_label)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved BA and AB labels to Row A (A2-A3 and A5-A6) to use vertical space more efficiently."
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The grids for BA and AB transformations are positioned low, leaving excessive empty space at the top of the right-side layout. Fix: Line 90: self.place_in_area(ba_grid, 'B2', 'D3', scale_factor=0.85); Line 91: self.place_in_area(ab_grid, 'B5', 'D6', scale_factor=0.85) (line=90, object=ba_grid and ab_grid)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved coordinate grids to Rows B-D to eliminate empty space at the top."
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The non-commutativity equation (eq_text) is positioned in the bottom-most row (F3-F4), which lacks sufficient padding from the frame boundary. Fix: Line 173: self.place_in_area(eq_text, 'E3', 'E4', scale_factor=1.0) (line=173, object=eq_text)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved the non-commutativity equation to Row E (E3-E4) to provide better padding from the bottom edge."
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The grid visual (grid_lines) is horizontally narrow (C3-E5), creating a visual misalignment with the wider formula and summary text in rows B and F and underutilizing the right-side space. Fix: Line 79: self.place_in_area(grid_lines, 'C2', 'E6') (line=79, object=grid_lines)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Expanded grid_lines placement from C3-E5 to C2-E6 to better utilize horizontal space."
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The square animation is constrained to a narrow 3-column area (C3-E5), which makes the transformations appear cramped and less impactful compared to the lecture content width. Fix: Line 82: self.place_in_area(square, 'C2', 'E6') (line=82, object=square)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Expanded square placement from C3-E5 to C2-E6 to provide more breathing room for transformations."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 154709,
+        "video_mtime_ns": 1784010528309875774,
+        "code_sha1": "2065784ebab3c30db3469ec4fc4df45b7c1b2c2c"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The transformed coordinate plane skews into the right-side boundary (column 6), creating a cramped visual and risking label cutoff.",
+              "solution": "Line 83: self.place_in_area(plane, 'B1', 'F5', scale_factor=0.7)",
+              "line_number": 83,
+              "object_affected": "plane"
+            },
+            {
+              "problem": "The label A(v) (yellow, #FFFF00) is positioned at the extreme edge of the grid, losing visual proximity to the vector tip.",
+              "solution": "Line 92: self.place_at_grid(label_Av, 'D5', scale_factor=0.7)",
+              "line_number": 92,
+              "object_affected": "label_Av"
+            },
+            {
+              "problem": "The basis vector label i(1,0) (red, #FC6255) overlaps with the white x-axis arrow tip and grid lines after transformation.",
+              "solution": "Line 105: self.place_at_grid(label_i, 'E4', scale_factor=0.6)",
+              "line_number": 105,
+              "object_affected": "label_i"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        27,
+        28,
+        29
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 307343,
+        "video_mtime_ns": 1784010511015482642,
+        "code_sha1": "f3ba55548559dd081f22a2877da1bf75cc551cc7"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The labels 'A(v)' and 'B(A(v))' overlap at the same coordinates, making the transformation sequence illegible.",
+              "solution": "Line 92: self.place_in_area(BAv_label, 'A3', 'B4', scale_factor=0.7)",
+              "line_number": 92,
+              "object_affected": "BAv_label"
+            },
+            {
+              "problem": "The initial vector label 'v' is positioned too close to the axes, creating visual clutter as the transformations begin.",
+              "solution": "Line 82: self.place_at_grid(v_label, 'B6', scale_factor=0.8)",
+              "line_number": 82,
+              "object_affected": "v_label"
+            },
+            {
+              "problem": "The intermediate label 'A(v)' is centrally located, obstructing the path of the vector during its second transformation.",
+              "solution": "Line 85: self.place_at_grid(Av_label, 'C3', scale_factor=0.8)",
+              "line_number": 85,
+              "object_affected": "Av_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        30,
+        31,
+        32
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 266569,
+        "video_mtime_ns": 1784010567367439051,
+        "code_sha1": "4cd506283e014887154c9b8f823636de7a6da187"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'formula' object at B2-B5 overlaps with the top labels of the grids located in Row B and C.",
+              "solution": "Line 110: self.place_in_area(formula, 'A2', 'A5', scale_factor=0.8)",
+              "line_number": 110,
+              "object_affected": "formula"
+            },
+            {
+              "problem": "The 'formula_with_c' object overlaps the existing 'formula' and grid labels at B2-B5, creating visual clutter.",
+              "solution": "Line 124: self.place_in_area(formula_with_c, 'A2', 'A5', scale_factor=0.8)",
+              "line_number": 124,
+              "object_affected": "formula_with_c"
+            },
+            {
+              "problem": "The 'final_note' label is cramped at the very edge of the screen (F5-F6), risking cutoff.",
+              "solution": "Line 151: self.place_in_area(final_note, 'F4', 'F6', scale_factor=0.9)",
+              "line_number": 151,
+              "object_affected": "final_note"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        33,
+        34,
+        35
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 108440,
+        "video_mtime_ns": 1784010539677634146,
+        "code_sha1": "306dafcc9bfc59f953223f9c17a44617b78c883c"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The formula B(A(v)) is positioned too low in the grid (Row E), causing an unbalanced, bottom-heavy appearance compared to the lecture notes.",
+              "solution": "Line 111: self.place_in_area(nested_formula, 'D2', 'D5', scale_factor=1.2)",
+              "line_number": 111,
+              "object_affected": "nested_formula"
+            },
+            {
+              "problem": "The first formula (B·A·v) is placed in row C, which creates a large unused space at the top and pushes the sequence too far down.",
+              "solution": "Line 77: self.place_in_area(formula_bav, 'B2', 'B5', scale_factor=1.2)",
+              "line_number": 77,
+              "object_affected": "formula_bav"
+            },
+            {
+              "problem": "A scale factor of 1.5 makes the formulas too large for a 4-column span, resulting in a cramped horizontal layout with tight margins.",
+              "solution": "Line 77 & 111: Adjust scale_factor from 1.5 to 1.2 in both place_in_area calls to ensure better horizontal padding.",
+              "line_number": 77,
+              "object_affected": "formula_bav"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        36,
+        37,
+        38
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 236268,
+        "video_mtime_ns": 1784010547771366955,
+        "code_sha1": "5c8c2ab93460a498fb72b24095334d2af52ce723"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Row A is currently unused, which pushes the final concluding equation to the bottom row (F3-F4), making it appear cramped against the screen edge.",
+              "solution": "Line 74: self.place_in_area(ba_label, 'A2', 'A3', scale_factor=1.0); Line 75: self.place_in_area(ab_label, 'A5', 'A6', scale_factor=1.0)",
+              "line_number": 74,
+              "object_affected": "ba_label and ab_label"
+            },
+            {
+              "problem": "The grids for BA and AB transformations are positioned low, leaving excessive empty space at the top of the right-side layout.",
+              "solution": "Line 90: self.place_in_area(ba_grid, 'B2', 'D3', scale_factor=0.85); Line 91: self.place_in_area(ab_grid, 'B5', 'D6', scale_factor=0.85)",
+              "line_number": 90,
+              "object_affected": "ba_grid and ab_grid"
+            },
+            {
+              "problem": "The non-commutativity equation (eq_text) is positioned in the bottom-most row (F3-F4), which lacks sufficient padding from the frame boundary.",
+              "solution": "Line 173: self.place_in_area(eq_text, 'E3', 'E4', scale_factor=1.0)",
+              "line_number": 173,
+              "object_affected": "eq_text"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        39,
+        40,
+        41
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 230833,
+        "video_mtime_ns": 1784010539054471249,
+        "code_sha1": "fa0415dea1b0ffd7be51b209a3afc29e3c936241"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The grid visual (grid_lines) is horizontally narrow (C3-E5), creating a visual misalignment with the wider formula and summary text in rows B and F and underutilizing the right-side space.",
+              "solution": "Line 79: self.place_in_area(grid_lines, 'C2', 'E6')",
+              "line_number": 79,
+              "object_affected": "grid_lines"
+            },
+            {
+              "problem": "The square animation is constrained to a narrow 3-column area (C3-E5), which makes the transformations appear cramped and less impactful compared to the lecture content width.",
+              "solution": "Line 82: self.place_in_area(square, 'C2', 'E6')",
+              "line_number": 82,
+              "object_affected": "square"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        42,
+        43
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/9-Matrix_Multiplication_as_Composition_of_Linear_Transformations",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 388054,
+      "completion_tokens": 46522,
+      "total_tokens": 595882,
+      "call_count": 50
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 278,
+        "completion_tokens": 859,
+        "total_tokens": 1731,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 7945,
+        "completion_tokens": 275,
+        "total_tokens": 8233,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 10260,
+        "completion_tokens": 297,
+        "total_tokens": 11949,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 38344,
+        "completion_tokens": 736,
+        "total_tokens": 40219,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 22744,
+        "completion_tokens": 4410,
+        "total_tokens": 29146,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 21298,
+        "completion_tokens": 3267,
+        "total_tokens": 25018,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 24714,
+        "completion_tokens": 3608,
+        "total_tokens": 28531,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 29473,
+        "completion_tokens": 4384,
+        "total_tokens": 34377,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 33179,
+        "completion_tokens": 3070,
+        "total_tokens": 36438,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 36757,
+        "completion_tokens": 4567,
+        "total_tokens": 41736,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 4224,
+        "completion_tokens": 749,
+        "total_tokens": 15818,
+        "call_count": 12
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 20165,
+        "completion_tokens": 2480,
+        "total_tokens": 34976,
+        "call_count": 2
+      },
+      "scope_refine:section_1": {
+        "prompt_tokens": 19823,
+        "completion_tokens": 2381,
+        "total_tokens": 35211,
+        "call_count": 2
+      },
+      "scope_refine:section_6": {
+        "prompt_tokens": 19417,
+        "completion_tokens": 1743,
+        "total_tokens": 38060,
+        "call_count": 2
+      },
+      "scope_refine:section_4": {
+        "prompt_tokens": 18897,
+        "completion_tokens": 2021,
+        "total_tokens": 37604,
+        "call_count": 2
+      },
+      "scope_refine:section_5": {
+        "prompt_tokens": 20277,
+        "completion_tokens": 2820,
+        "total_tokens": 39477,
+        "call_count": 2
+      },
+      "scope_refine:section_3": {
+        "prompt_tokens": 43307,
+        "completion_tokens": 6811,
+        "total_tokens": 85732,
+        "call_count": 5
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2496,
+        "completion_tokens": 340,
+        "total_tokens": 6965,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 3038,
+        "completion_tokens": 326,
+        "total_tokens": 9734,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2981,
+        "completion_tokens": 344,
+        "total_tokens": 10258,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 2658,
+        "completion_tokens": 364,
+        "total_tokens": 7248,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2885,
+        "completion_tokens": 427,
+        "total_tokens": 6379,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2894,
+        "completion_tokens": 243,
+        "total_tokens": 11042,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 388054,
+        "completion_tokens": 46522,
+        "total_tokens": 595882,
+        "call_count": 50
+      }
+    }
+  }
+}

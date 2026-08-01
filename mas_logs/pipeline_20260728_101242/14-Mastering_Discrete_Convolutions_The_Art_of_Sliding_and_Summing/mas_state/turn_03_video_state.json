@@ -1,0 +1,925 @@
+{
+  "topic": "Mastering Discrete Convolutions: The Art of Sliding and Summing",
+  "target_audience": "Undergraduate STEM students (Computer Science, Engineering, or Mathematics)",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup the scene with title and lecture lines\n        self.setup_layout(\n            \"The Big Picture: Why Convolve?\", \n            [\n                \"Convolution combines two signals into a single new output.\",\n                \"It powers image filters, audio effects, and computer vision.\",\n                \"A sharp image blurs by averaging pixels with neighbors.\"\n            ]\n        )\n        \n        # Colors for the section\n        COLOR_SIGNAL_1 = BLUE_C\n        COLOR_SIGNAL_2 = YELLOW_C\n        COLOR_HIGHLIGHT_1 = \"#00FFFF\"\n        COLOR_HIGHLIGHT_2 = \"#FF00FF\"\n        \n        # === Animation for Lecture Line 1 ===\n        # Convolution combines two signals into a single new output.\n        self.lecture[0].set_color(COLOR_SIGNAL_1)\n        \n        # Blue Pulse signal\n        pulse = VGroup(\n            Line(LEFT, ORIGIN),\n            Line(ORIGIN, UP),\n            Line(UP, RIGHT + UP),\n            Line(RIGHT + UP, RIGHT),\n            Line(RIGHT, 2 * RIGHT)\n        ).set_color(COLOR_SIGNAL_1)\n        self.place_in_area(pulse, 'A1', 'B3', scale_factor=0.6)\n        \n        # Yellow Bell Curve signal\n        bell = FunctionGraph(\n            lambda x: 2 * np.exp(-x**2),\n            x_range=[-2, 2]\n        ).set_color(COLOR_SIGNAL_2)\n        self.place_in_area(bell, 'A4', 'B6', scale_factor=0.4)\n        \n        self.play(Create(pulse), Create(bell))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # It powers image filters, audio effects, and computer vision.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(COLOR_HIGHLIGHT_1)\n        \n        # [Asset: ...image.svg]\n        img_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/image.svg\", color=WHITE)\n        self.place_at_grid(img_icon, 'C2', scale_factor=0.5)\n        \n        # Audio Wave Icon\n        audio_icon = VGroup(*[\n            Line(0.5*DOWN, 0.5*UP).shift(x*0.15*RIGHT) \n            for x in range(-4, 5)\n        ]).set_color(WHITE)\n        # Give it a wave shape\n        for i, line in enumerate(audio_icon):\n            line.set_y_length(0.2 + 0.6 * np.abs(np.sin(i * 0.8)))\n        # Issue 21: Change scale to 0.5\n        self.place_at_grid(audio_icon, 'C5', scale_factor=0.5)\n        \n        # [Asset: ...eye.svg]\n        eye_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/eye.svg\", color=WHITE)\n        # Issue 22: Reposition to D4\n        self.place_at_grid(eye_icon, 'D4', scale_factor=0.5)\n        \n        # Small Pixel Grid\n        vision_grid = VGroup(*[\n            Square(side_length=0.25, color=GRAY_D, stroke_width=1) \n            for _ in range(16)\n        ]).arrange_in_grid(4, 4, buff=0.05)\n        # Positioned near eye icon\n        self.place_at_grid(vision_grid, 'E4', scale_factor=1.0)\n        \n        self.play(FadeIn(img_icon), FadeIn(audio_icon))\n        # Highlight pulse effect\n        self.play(\n            img_icon.animate.set_color(COLOR_HIGHLIGHT_1),\n            audio_icon.animate.set_color(COLOR_HIGHLIGHT_1),\n            run_time=0.6, rate_func=there_and_back\n        )\n        \n        # Highlight CV part\n        self.lecture[1].set_color(COLOR_HIGHLIGHT_2)\n        self.play(FadeIn(eye_icon), FadeIn(vision_grid))\n        self.play(\n            vision_grid[5].animate.set_fill(COLOR_HIGHLIGHT_2, opacity=0.8),\n            vision_grid[10].animate.set_fill(COLOR_HIGHLIGHT_2, opacity=0.8),\n            run_time=0.8\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # A sharp image blurs by averaging pixels with neighbors.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Transition: Clear the screen for the blur demonstration\n        self.play(FadeOut(pulse, bell, img_icon, audio_icon, eye_icon, vision_grid))\n        \n        # 8x8 Pixel Grid representing a sharp image\n        sharp_pixels = VGroup(*[\n            Square(side_length=0.4, stroke_width=1, color=WHITE) \n            for _ in range(64)\n        ]).arrange_in_grid(8, 8, buff=0)\n        \n        # Create a sharp pattern (e.g., a simple cross)\n        for i, p in enumerate(sharp_pixels):\n            row, col = i // 8, i % 8\n            if row == 4 or col == 4:\n                p.set_fill(WHITE, opacity=0.9)\n            else:\n                p.set_fill(WHITE, opacity=0.1)\n            \n        # Issue 23: Change area and scale\n        self.place_in_area(sharp_pixels, 'A2', 'F5', scale_factor=1.1)\n        self.play(FadeIn(sharp_pixels))\n        self.wait(0.5)\n        \n        # Visual blur effect: smooth out the colors\n        blur_animations = []\n        for i, p in enumerate(sharp_pixels):\n            row, col = i // 8, i % 8\n            if abs(row - 4) <= 1 or abs(col - 4) <= 1:\n                blur_animations.append(p.animate.set_fill(GRAY_B, opacity=0.5))\n            else:\n                blur_animations.append(p.animate.set_fill(GRAY_C, opacity=0.2))\n                \n        self.play(*blur_animations, run_time=1.5)\n        \n        # Highlight a 3x3 region to show the averaging process\n        # Focusing on index 27 (row 3, col 3)\n        region_indices = [18, 19, 20, 26, 27, 28, 34, 35, 36]\n        highlight_box = SurroundingRectangle(VGroup(*[sharp_pixels[i] for i in region_indices]), color=YELLOW, buff=0.05)\n        \n        self.play(Create(highlight_box))\n        \n        # Flowing \"information\" (dots) from neighbors to center\n        center_pos = sharp_pixels[27].get_center()\n        flow_dots = VGroup(*[\n            Dot(sharp_pixels[i].get_center(), radius=0.05, color=YELLOW)\n            for i in region_indices if i != 27\n        ])\n        \n        self.play(\n            LaggedStart(*[\n                dot.animate.move_to(center_pos).set_opacity(0)\n                for dot in flow_dots\n            ], lag_ratio=0.1),\n            Indicate(sharp_pixels[27], color=YELLOW),\n            run_time=2\n        )\n        \n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Set up title and lecture lines\n        title_text = \"Prerequisite: Signals as Sequences\"\n        lecture_lines = [\n            \"Discrete signals are simple sequences of numerical values.\",\n            \"We have an input signal and a filter kernel.\",\n            \"Signals are mapped to integer indices on a graph.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n        \n        # Colors\n        GREEN = \"#00FF00\"\n        YELLOW = \"#FFFF00\"\n        WHITE_COLOR = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        # Line 1: \"Discrete signals are simple sequences of numerical values.\"\n        # Animation: Show a horizontal axis with vertical bars representing [1, 2, 3, 2, 1] in #FFFFFF.\n        self.lecture[0].set_color(WHITE_COLOR)\n        \n        # Horizontal axis for x[n] at row D\n        # Start at col 2, end at col 6 to utilize more of the right side (Issue 25)\n        x_axis = Line(self.grid[\"D2\"] + LEFT*0.5, self.grid[\"D6\"] + RIGHT*0.5, color=WHITE_COLOR)\n        \n        x_values = [1, 2, 3, 2, 1]\n        x_bars = VGroup()\n        for i, val in enumerate(x_values):\n            col_idx = i + 2 # Start from col 2\n            col = str(col_idx)\n            start = self.grid[f\"D{col}\"]\n            \n            # Row D is y=-0.8, C is y=0.2, B is y=1.2, A is y=2.2\n            if val == 1: target_row = \"C\"\n            elif val == 2: target_row = \"B\"\n            else: target_row = \"A\" # val 3\n            \n            end = self.grid[f\"{target_row}{col}\"]\n            bar = Line(start, end, color=WHITE_COLOR, stroke_width=8)\n            dot = Dot(end, color=WHITE_COLOR, radius=0.1)\n            x_bars.add(VGroup(bar, dot))\n            \n        self.play(Create(x_axis), Create(x_bars), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Line 2: \"We have an input signal and a filter kernel.\"\n        # Animation: Label the sequence \"x[n]\" in green #00FF00 above the bars.\n        self.lecture[1].set_color(GREEN)\n        \n        # Sequence label x[n] at A4 (Issue 25)\n        x_label = MathTex(\"x[n]\", color=GREEN)\n        self.place_at_grid(x_label, \"A4\")\n        x_label.shift(UP * 0.6)\n        \n        self.play(Write(x_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Line 3: \"Signals are mapped to integer indices on a graph.\"\n        # Animation: Show a smaller sequence [0.5, 1, 0.5] labeled \"h[n]\" in yellow #FFFF00 below.\n        self.lecture[2].set_color(YELLOW)\n        \n        # Index labels for the x_axis\n        x_indices = VGroup()\n        for i in range(5):\n            idx = Text(str(i), font_size=18, color=WHITE)\n            col_idx = i + 2\n            self.place_at_grid(idx, f\"D{col_idx}\")\n            idx.shift(DOWN * 0.3)\n            x_indices.add(idx)\n\n        # Horizontal axis for h[n] at row F, columns 4 to 6\n        h_axis = Line(self.grid[\"F4\"] + LEFT*0.5, self.grid[\"F6\"] + RIGHT*0.5, color=WHITE_COLOR)\n        \n        h_values = [0.5, 1.0, 0.5]\n        h_bars = VGroup()\n        for i, val in enumerate(h_values):\n            col_idx = i + 4\n            col = str(col_idx)\n            start = self.grid[f\"F{col}\"]\n            # Row F is -2.8, E is -1.8\n            if val == 1.0:\n                end = self.grid[f\"E{col}\"]\n            else:\n                # 0.5 is mid point between F and E\n                end = (self.grid[f\"F{col}\"] + self.grid[f\"E{col}\"]) / 2\n            \n            bar = Line(start, end, color=YELLOW, stroke_width=6)\n            dot = Dot(end, color=YELLOW, radius=0.08)\n            h_bars.add(VGroup(bar, dot))\n            \n        # h_label at E5 (Issue 24)\n        h_label = MathTex(\"h[n]\", color=YELLOW)\n        self.place_at_grid(h_label, \"E5\")\n        h_label.shift(UP * 0.5)\n        \n        self.play(\n            Write(x_indices),\n            Create(h_axis), \n            Create(h_bars), \n            Write(h_label),\n            run_time=2\n        )\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        title = \"The Mechanics: Flip, Shift, and Multiply\"\n        lecture_lines = [\n            \"Convolution follows a simple three-step physical process.\",\n            \"First, we flip the filter kernel horizontally.\",\n            \"Next, we shift the flipped filter across the input.\",\n            \"We multiply overlapping values and sum the results.\",\n            \"This sum becomes the output at that specific position.\"\n        ]\n        self.setup_layout(title, lecture_lines)\n\n        # Colors\n        COLOR_X = BLUE_C\n        COLOR_H = YELLOW_C\n        COLOR_OVERLAP = \"#00FF00\"\n        COLOR_Y = ORANGE\n\n        # === Animation for Lecture Line 1 ===\n        # Convolution follows a simple three-step physical process.\n        self.lecture[0].set_color(COLOR_X)\n        \n        # Input Signal x[k] at Row C\n        x_values = [1.0, 1.5, 2.0, 1.5, 1.0]\n        x_bars = VGroup(*[\n            Rectangle(width=0.6, height=v*0.5, fill_opacity=0.8, fill_color=COLOR_X, stroke_width=1)\n            for v in x_values\n        ])\n        # Position x_bars at C2-C6\n        for i, bar in enumerate(x_bars):\n            self.place_at_grid(bar, f\"C{i+2}\")\n        \n        x_label = MathTex(\"x[k]\", color=COLOR_X, font_size=24)\n        self.place_at_grid(x_label, \"C1\")\n        \n        self.play(Create(x_bars), Write(x_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # First, we flip the filter kernel horizontally.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(COLOR_H)\n        \n        # Kernel h[k] - starting at B4, B5, B6 (Issue 32 fix)\n        h_vals = [0.4, 0.8, 1.2]\n        h_bars = VGroup(*[\n            Rectangle(width=0.6, height=v*0.5, fill_opacity=0.8, fill_color=COLOR_H, stroke_width=1)\n            for v in h_vals\n        ])\n        for i, bar in enumerate(h_bars):\n            self.place_at_grid(bar, f\"B{i+4}\")\n            \n        h_label = MathTex(\"h[k]\", color=COLOR_H, font_size=24)\n        self.place_at_grid(h_label, \"B3\") # Within 1 unit of B4\n        \n        self.play(Create(h_bars), Write(h_label))\n        self.wait(0.5)\n        \n        # Flip animation: Swap positions of bars relative to B5\n        flip_label = MathTex(\"h[-k]\", color=COLOR_H, font_size=24)\n        self.place_at_grid(flip_label, \"B2\") # Issue 33 fix\n\n        self.play(\n            h_bars[0].animate.move_to(self.grid[\"B6\"]),\n            h_bars[2].animate.move_to(self.grid[\"B4\"]),\n            Transform(h_label, flip_label),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Next, we shift the flipped filter across the input.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Re-order and group for sliding (h_bars[2] is now leftmost)\n        flipped_kernel = VGroup(h_bars[2], h_bars[1], h_bars[0])\n        \n        # Move down towards row C (positioned slightly above to avoid overlap with x_bars)\n        self.play(flipped_kernel.animate.shift(DOWN * 0.8), run_time=1)\n        \n        # Slide across from left to right\n        for i in range(1, 5):\n            self.play(flipped_kernel.animate.move_to(self.grid[f\"C{i}\"] + UP*0.3), run_time=0.8)\n        \n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # We multiply overlapping values and sum the results.\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(COLOR_OVERLAP)\n        \n        # Currently flipped_kernel is centered at C4. Bars at C3, C4, C5. \n        # These overlap with x_bars (which are at C2, C3, C4, C5, C6).\n        overlap_indices = [3, 4, 5]\n        highlights = VGroup(*[\n            Rectangle(width=0.7, height=1.3, color=COLOR_OVERLAP, stroke_width=2).move_to(self.grid[f\"C{i}\"])\n            for i in overlap_indices\n        ])\n        \n        multipliers = VGroup(*[\n            MathTex(\"\\\\times\", color=COLOR_OVERLAP, font_size=20).move_to(self.grid[f\"C{i}\"] + UP*0.1)\n            for i in overlap_indices\n        ])\n        \n        sigma = MathTex(\"\\\\Sigma\", color=COLOR_OVERLAP, font_size=36)\n        self.place_at_grid(sigma, \"D4\")\n        \n        self.play(Create(highlights), FadeIn(multipliers))\n        self.play(Write(sigma))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # This sum becomes the output at that specific position.\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(COLOR_Y)\n        \n        # Output axis at row E\n        y_axis = Line(self.grid[\"E1\"], self.grid[\"E6\"], color=WHITE)\n        y_label = MathTex(\"y[n]\", color=COLOR_Y, font_size=24)\n        self.place_at_grid(y_label, \"E3\") # Issue 34 fix: Closer to data path\n        \n        # The result dot at position corresponding to C4 (center of kernel)\n        result_dot = Dot(color=COLOR_Y).move_to(self.grid[\"E4\"])\n        \n        self.play(Create(y_axis), Write(y_label))\n        \n        # Visual transition of the calculation into a point on the output signal\n        self.play(\n            Succession(\n                FadeOut(multipliers, highlights, shift=DOWN),\n                Transform(sigma, result_dot)\n            ),\n            run_time=2\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        title = \"1D Graphical Walkthrough\"\n        lines = [\n            \"Let’s visualize two pulses colliding and passing through.\",\n            \"As they start overlapping, the output value begins growing.\",\n            \"The peak occurs when the signals achieve maximum overlap.\",\n            \"The output fades as the signals move apart.\",\n            \"The result represents the mathematical area of their overlap.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        COLOR_X = \"#67ABFF\"  # Light Blue\n        COLOR_H = \"#FFE066\"  # Light Yellow\n        COLOR_Y = \"#FF6767\"  # Light Red\n        COLOR_AXIS = WHITE\n\n        # Origins for graphs\n        # Top origin for x[k] and h[n-k]\n        top_origin = (self.grid[\"B3\"] + self.grid[\"B4\"]) / 2\n        # Bottom origin for y[n]\n        bottom_origin = (self.grid[\"E3\"] + self.grid[\"E4\"]) / 2\n\n        # Parameters\n        W = 1.0  # Pulse Width\n        H = 0.8  # Pulse Height\n        \n        # Axes\n        top_axis = Line(self.grid[\"B1\"], self.grid[\"B6\"], color=COLOR_AXIS)\n        bottom_axis = Line(self.grid[\"E1\"], self.grid[\"E6\"], color=COLOR_AXIS)\n        \n        # Labels - Fix based on Issues 26, 27, 28\n        x_label = Text(\"x[k]\", font_size=20, color=COLOR_X)\n        self.place_at_grid(x_label, \"A3\") # Issue 26: A2 -> A3\n        \n        h_label = Text(\"h[n-k]\", font_size=20, color=COLOR_H)\n        self.place_at_grid(h_label, \"A6\") # Issue 28: A5 -> A6\n        \n        y_label = Text(\"y[n]\", font_size=20, color=COLOR_Y)\n        self.place_at_grid(y_label, \"D3\") # Issue 27: D2 -> D3\n\n        # x[k] static pulse [0, W]\n        x_rect = Rectangle(width=W, height=H, fill_opacity=0.4, color=COLOR_X, stroke_width=2)\n        x_rect.move_to(top_origin + RIGHT * (W / 2) + UP * (H / 2))\n\n        # Value tracker for shift n\n        n_tracker = ValueTracker(-1.2)\n\n        # h[n-k] moving pulse [n-W, n]\n        # h[k] is a rect from 0 to W.\n        # h[-k] is a rect from -W to 0.\n        # h[n-k] is shifted by n, so it's a rect from n-W to n.\n        h_rect = Rectangle(width=W, height=H, fill_opacity=0.4, color=COLOR_H, stroke_width=2)\n        h_rect.add_updater(lambda m: m.move_to(top_origin + RIGHT * (n_tracker.get_value() - W / 2) + UP * (H / 2)))\n\n        # Resulting output path y[n]\n        # Convolution of two rects of width W is a triangle peaking at n=W with height W.\n        # Function: y(n) = n for 0<=n<=W, y(n) = 2W-n for W<=n<=2W.\n        output_path = VMobject(color=COLOR_Y, stroke_width=4)\n        \n        def update_output_path(m):\n            n = n_tracker.get_value()\n            pts = [bottom_origin + LEFT * 1.2, bottom_origin]\n            if n > 0:\n                if n <= W:\n                    # Rising slope\n                    pts.append(bottom_origin + RIGHT * n + UP * n)\n                elif n <= 2 * W:\n                    # Peak and falling slope\n                    pts.append(bottom_origin + RIGHT * W + UP * W)\n                    pts.append(bottom_origin + RIGHT * n + UP * (2 * W - n))\n                else:\n                    # Past the interaction\n                    pts.append(bottom_origin + RIGHT * W + UP * W)\n                    pts.append(bottom_origin + RIGHT * (2 * W))\n                    pts.append(bottom_origin + RIGHT * n)\n            m.set_points_as_corners(pts)\n\n        output_path.add_updater(update_output_path)\n\n        # === Animation for Lecture Line 1 ===\n        # Let’s visualize two pulses colliding and passing through.\n        self.lecture[0].set_color(COLOR_X)\n        self.add(top_axis, bottom_axis, x_label, h_label, y_label, x_rect, h_rect, output_path)\n        self.play(n_tracker.animate.set_value(0), run_time=3)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # As they start overlapping, the output value begins growing.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(COLOR_Y)\n        self.play(n_tracker.animate.set_value(0.5 * W), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # The peak occurs when the signals achieve maximum overlap.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(COLOR_Y)\n        self.play(n_tracker.animate.set_value(W), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # The output fades as the signals move apart.\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(COLOR_Y)\n        self.play(n_tracker.animate.set_value(2.2 * W), run_time=4)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # The result represents the mathematical area of their overlap.\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(COLOR_Y)\n        # Highlight the triangle\n        self.play(output_path.animate.set_stroke(width=6), run_time=1)\n        self.play(output_path.animate.set_stroke(width=4), run_time=1)\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"2D Application: Digital Image Filters\", [\n            \"Images are two-dimensional grids of intensity values.\",\n            \"A small matrix, called a kernel, slides over pixels.\",\n            \"Different kernel values produce blur, sharpen, or edge effects.\",\n            \"Edge detectors highlight rapid changes in pixel brightness.\",\n            \"These 2D convolutions are the core of modern AI.\"\n        ])\n        \n        # === Animation for Lecture Line 1 ===\n        # Images are two-dimensional grids of intensity values.\n        self.lecture[0].set_color(YELLOW)\n        \n        # Create 5x5 Input Grid\n        input_vals = [\n            [10, 20, 30, 40, 50],\n            [10, 200, 200, 200, 50],\n            [10, 200, 255, 200, 50],\n            [10, 200, 200, 200, 50],\n            [10, 20, 30, 40, 50]\n        ]\n        \n        input_grid = VGroup()\n        for r in range(5):\n            for c in range(5):\n                val = input_vals[r][c]\n                square = Square(side_length=0.5, stroke_width=2, color=GRAY)\n                # Map intensity to color (0=black, 255=white)\n                square.set_fill(interpolate_color(BLACK, WHITE, val/255.0), opacity=0.8)\n                label = Text(str(val), font_size=14).move_to(square.get_center())\n                cell = VGroup(square, label)\n                cell.shift(r * 0.5 * DOWN + c * 0.5 * RIGHT)\n                input_grid.add(cell)\n        \n        # Fix Issue 35: Better utilization of vertical space\n        self.place_in_area(input_grid, \"B1\", \"F3\", scale_factor=0.9)\n        \n        # Fix Issue 37: Precise anchoring for labels\n        input_title = Text(\"Input Image\", font_size=18, color=YELLOW)\n        self.place_at_grid(input_title, \"A2\", scale_factor=1.0)\n        \n        self.play(FadeIn(input_grid), Write(input_title))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # A small matrix, called a kernel, slides over pixels.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Create 3x3 Yellow Frame (Kernel)\n        # Kernel center starts at (1,1) in the 5x5 grid (index 6)\n        kernel_frame = Rectangle(\n            width=input_grid[0].width * 3, \n            height=input_grid[0].height * 3, \n            stroke_width=4, \n            color=YELLOW\n        ).move_to(input_grid[6].get_center()) \n        \n        # Output Grid (3x3)\n        output_grid = VGroup()\n        for r in range(3):\n            for c in range(3):\n                square = Square(side_length=0.5, stroke_width=2, color=GRAY)\n                square.set_fill(BLACK, opacity=1.0)\n                square.shift(r * 0.5 * DOWN + c * 0.5 * RIGHT)\n                output_grid.add(square)\n        \n        # Fix Issue 36: Visual consistency and centering\n        self.place_in_area(output_grid, \"C4\", \"E6\", scale_factor=0.9)\n        \n        # Fix Issue 37: Precise anchoring for labels\n        output_title = Text(\"Output Grid\", font_size=18, color=YELLOW)\n        self.place_at_grid(output_title, \"B5\", scale_factor=1.0)\n        \n        self.play(\n            Create(kernel_frame), \n            FadeIn(output_grid),\n            Write(output_title)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Different kernel values produce blur, sharpen, or edge effects.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Sliding Animation\n        # Indices of center pixels for 3x3 window in 5x5 grid:\n        # (1,1), (1,2), (1,3), (2,1), (2,2), (2,3), (3,1), (3,2), (3,3)\n        center_indices = [6, 7, 8, 11, 12, 13, 16, 17, 18]\n        \n        # Visual simulation of edge detection (sharper contrast in output)\n        output_colors = [\n            GRAY_B, WHITE, GRAY_B,\n            WHITE, BLACK, WHITE,\n            GRAY_B, WHITE, GRAY_B\n        ]\n\n        for i, idx in enumerate(center_indices):\n            self.play(\n                kernel_frame.animate.move_to(input_grid[idx].get_center()),\n                output_grid[i].animate.set_fill(output_colors[i]),\n                run_time=0.4\n            )\n        \n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Edge detectors highlight rapid changes in pixel brightness.\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        # Edge highlight on input\n        # Focus on the high contrast boundaries\n        edge_indices = [6, 7, 8, 11, 13, 16, 17, 18]\n        edge_highlight = VGroup(*[input_grid[i][0] for i in edge_indices])\n        \n        self.play(edge_highlight.animate.set_stroke(YELLOW, width=4))\n        self.wait(1)\n        self.play(edge_highlight.animate.set_stroke(GRAY, width=2))\n\n        # === Animation for Lecture Line 5 ===\n        # These 2D convolutions are the core of modern AI.\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        self.play(Indicate(output_grid, color=YELLOW))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"Remember the workflow: Flip the filter, shift, and sum.\",\n            \"Convolution is the language of linear systems and signals.\",\n            \"It transforms raw data into meaningful, processed information.\"\n        ]\n        self.setup_layout(\"Summary and Real-World Impact\", lecture_lines)\n        \n        # Colors for highlights\n        COLOR_1 = \"#00FFFF\"  # Cyan\n        COLOR_2 = \"#00FF00\"  # Green\n        COLOR_3 = \"#FFFF00\"  # Yellow\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(COLOR_1))\n        \n        # Flip Icon (Mirror)\n        flip_tri_1 = Triangle(color=COLOR_1).scale(0.3)\n        flip_tri_2 = flip_tri_1.copy().flip(RIGHT)\n        flip_mirror_line = Line(UP, DOWN, color=WHITE).scale(0.4)\n        flip_icon = VGroup(flip_tri_1, flip_mirror_line, flip_tri_2).arrange(RIGHT, buff=0.1)\n        self.place_at_grid(flip_icon, \"B2\")\n        \n        # Shift Icon (Arrow) - Adjusted scale per Issue 30\n        shift_icon = Arrow(start=LEFT, end=RIGHT, color=COLOR_1)\n        self.place_at_grid(shift_icon, \"B4\", scale_factor=0.9)\n        \n        # Sum Icon (Sigma) - Adjusted scale per Issue 29\n        sum_icon = MathTex(r\"\\sum\", color=COLOR_1)\n        self.place_at_grid(sum_icon, \"B6\", scale_factor=1.1)\n        \n        self.play(Flash(flip_icon, color=COLOR_1), FadeIn(flip_icon))\n        self.play(Flash(shift_icon, color=COLOR_1), FadeIn(shift_icon))\n        self.play(Flash(sum_icon, color=COLOR_1), FadeIn(sum_icon))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(COLOR_2))\n        \n        # Simplified CNN Diagram\n        def create_layer(nodes_count, pos_col):\n            layer = VGroup(*[Circle(radius=0.15, color=WHITE, fill_opacity=0.5) for _ in range(nodes_count)])\n            layer.arrange(DOWN, buff=0.3)\n            # Use middle rows for layers\n            self.place_in_area(layer, f\"D{pos_col}\", f\"F{pos_col}\")\n            return layer\n\n        layer1 = create_layer(3, 2)\n        layer2 = create_layer(4, 4)\n        layer3 = create_layer(2, 6)\n        \n        connections = VGroup()\n        for l1 in layer1:\n            for l2 in layer2:\n                connections.add(Line(l1.get_center(), l2.get_center(), stroke_width=1, color=COLOR_2))\n        for l2 in layer2:\n            for l3 in layer3:\n                connections.add(Line(l2.get_center(), l3.get_center(), stroke_width=1, color=COLOR_2))\n        \n        self.play(Create(layer1), Create(layer2), Create(layer3))\n        self.play(Create(connections))\n        \n        # Pulsing effect for connections\n        pulse_tracker = ValueTracker(1)\n        connections.add_updater(lambda m: m.set_stroke(width=pulse_tracker.get_value() * 2))\n        \n        self.play(pulse_tracker.animate.set_value(2), run_time=1, rate_func=there_and_back)\n        self.play(pulse_tracker.animate.set_value(2), run_time=1, rate_func=there_and_back)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(COLOR_3))\n        \n        # Clear previous icons to make space\n        self.play(\n            FadeOut(flip_icon), FadeOut(shift_icon), FadeOut(sum_icon), \n            FadeOut(layer1), FadeOut(layer2), FadeOut(layer3), FadeOut(connections)\n        )\n        \n        # Smartphone [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/smartphone.svg] - Issue 20\n        phone = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/smartphone.svg\", color=WHITE)\n        # Position and Scale - Issue 31\n        self.place_in_area(phone, \"E5\", \"F6\", scale_factor=0.8)\n        \n        # Rapid equations surrounding phone at E5-F6\n        eqs = [\n            MathTex(r\"(f * g)[n]\", font_size=18, color=COLOR_3),\n            MathTex(r\"\\sum_{k} f[k]g[n-k]\", font_size=16, color=COLOR_3),\n            MathTex(r\"y[n] = x[n] * h[n]\", font_size=18, color=COLOR_3),\n            MathTex(r\"H(z) = \\sum h[n]z^{-n}\", font_size=16, color=COLOR_3)\n        ]\n        \n        # Surround phone position (E5-F6) with equations\n        grid_positions = [\"D5\", \"D6\", \"E4\", \"F4\"]\n        for i, eq in enumerate(eqs):\n            self.place_at_grid(eq, grid_positions[i])\n            \n        self.play(FadeIn(phone))\n        \n        # Pop in and out equations\n        for eq in eqs:\n            self.play(FadeIn(eq, scale=1.2), run_time=0.3)\n            self.play(FadeOut(eq), run_time=0.3)\n            \n        self.wait(2)\n"
+  ],
+  "outline": {
+    "topic": "Mastering Discrete Convolutions: The Art of Sliding and Summing",
+    "target_audience": "Undergraduate STEM students (Computer Science, Engineering, or Mathematics)",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Big Picture: Why Convolve?",
+        "content": "Introduce the concept as a way to combine two sources of information. Explain that convolution is the 'secret sauce' behind Instagram filters, audio echoes, and how AI 'sees' objects. We start with a high-level visual of a sharp image transforming into a blurred one using a mathematical 'curtain'.",
+        "example": "A blurry cat photo: Explain that each blurry pixel is actually a weighted average of its neighbors, calculated through convolution."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: Signals as Sequences",
+        "content": "Before the math, define a discrete signal as a sequence of numbers (dots on a graph). Introduce two sequences: the Input Signal x[n] (the data) and the Impulse Response h[n] (the filter/kernel). Use a coordinate system to show index 'n'.",
+        "example": "A simple list of numbers [1, 2, 3] representing a character's jump height over three seconds."
+      },
+      {
+        "id": "section_3",
+        "title": "The Mechanics: Flip, Shift, and Multiply",
+        "content": "Break down the formula (x * h)[n] = Σ x[k]h[n-k] into three physical steps. 1. Flip: Reverse the filter h[k] to h[-k]. 2. Shift: Move the flipped filter across the input signal. 3. Multiply and Sum: Calculate the dot product at each position. Use a 'sliding window' animation to show this visually.",
+        "example": "A 'Scanning Robot' sliding a 3-unit long sensor over a row of numbered blocks to calculate a local weighted average."
+      },
+      {
+        "id": "section_4",
+        "title": "1D Graphical Walkthrough",
+        "content": "Visualize two 1D pulses. Show the 'Flipped' signal h[n-k] passing through x[k]. Highlight the overlap area as it grows, peaks, and fades. This creates the resulting output signal, illustrating how the shape of the output depends on the overlap area.",
+        "example": "Two rectangular waves (bricks) colliding and passing through each other, resulting in a triangular or trapezoidal output wave."
+      },
+      {
+        "id": "section_5",
+        "title": "2D Application: Digital Image Filters",
+        "content": "Extend the concept to 2D grids (matrices). Explain that an image is just a 2D signal. Introduce the 'Kernel' (a 3x3 matrix). Show how different kernels (Blur, Sharpen, Edge Detect) result in different visual outcomes by simply changing the numbers in the sliding window.",
+        "example": "The 'Sobel Operator': Using a specific 3x3 kernel to highlight the outlines of a character's silhouette in a video game, effectively 'detecting' edges."
+      },
+      {
+        "id": "section_6",
+        "title": "Summary and Real-World Impact",
+        "content": "Recap the 'Flip-Shift-Sum' workflow. Emphasize that convolution is a linear system's way of processing input. Mention its critical role in Convolutional Neural Networks (CNNs) for modern AI face recognition.",
+        "example": "A smartphone camera: Mention that every time you take a 'Portrait Mode' photo, billions of discrete convolutions are happening in milliseconds to blur the background."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Big Picture: Why Convolve?",
+      "lecture_lines": [
+        "Convolution combines two signals into a single new output.",
+        "It powers image filters, audio effects, and computer vision.",
+        "A sharp image blurs by averaging pixels with neighbors."
+      ],
+      "animations": [
+        "Display two abstract signals (blue pulse and yellow bell curve) side-by-side.",
+        "Pulse a sharp image icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/image.svg] and an audio wave icon with #00FFFF highlights.",
+        "An eye icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/eye.svg] looks at a pixel grid; highlight specific cells with #FF00FF.",
+        "Display a sharp 8x8 pixel grid; apply a blur effect visually.",
+        "Highlight a 3x3 region; show numbers flowing from neighbors to the center pixel."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: Signals as Sequences",
+      "lecture_lines": [
+        "Discrete signals are simple sequences of numerical values.",
+        "We have an input signal and a filter kernel.",
+        "Signals are mapped to integer indices on a graph."
+      ],
+      "animations": [
+        "Show a horizontal axis with vertical bars representing [1, 2, 3, 2, 1] in #FFFFFF.",
+        "Label the sequence \"x[n]\" in green #00FF00 above the bars.",
+        "Show a smaller sequence [0.5, 1, 0.5] labeled \"h[n]\" in yellow #FFFF00 below."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Mechanics: Flip, Shift, and Multiply",
+      "lecture_lines": [
+        "Convolution follows a simple three-step physical process.",
+        "First, we flip the filter kernel horizontally.",
+        "Next, we shift the flipped filter across the input.",
+        "We multiply overlapping values and sum the results.",
+        "This sum becomes the output at that specific position."
+      ],
+      "animations": [
+        "Mirror the yellow h[n] bars across the y-axis to show h[-k].",
+        "Slide the h[-k] bars horizontally from left to right along the x-axis.",
+        "Highlight overlap with #00FF00; show \"x\" symbols between overlapping bars.",
+        "Display a Sigma symbol \\u03a3 and show the products summing into a single value.",
+        "Plot the result as a new dot on a second axis below."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "1D Graphical Walkthrough",
+      "lecture_lines": [
+        "Let’s visualize two pulses colliding and passing through.",
+        "As they start overlapping, the output value begins growing.",
+        "The peak occurs when the signals achieve maximum overlap.",
+        "The output fades as the signals move apart.",
+        "The result represents the mathematical area of their overlap."
+      ],
+      "animations": [
+        "Static blue rectangular pulse x[k] on a white horizontal axis.",
+        "Yellow rectangular pulse h[-k] starts at the far left, moving right.",
+        "Slide yellow pulse into blue; begin drawing a red line for the output.",
+        "Fully overlap pulses; red output line reaches its peak height.",
+        "Slide yellow pulse completely past blue; red output line returns to zero."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "2D Application: Digital Image Filters",
+      "lecture_lines": [
+        "Images are two-dimensional grids of intensity values.",
+        "A small matrix, called a kernel, slides over pixels.",
+        "Different kernel values produce blur, sharpen, or edge effects.",
+        "Edge detectors highlight rapid changes in pixel brightness.",
+        "These 2D convolutions are the core of modern AI."
+      ],
+      "animations": [
+        "Show a 5x5 grid of gray numbers (0-255) representing image pixels.",
+        "A 3x3 yellow frame slides step-by-step across the 5x5 grid.",
+        "As the frame moves, the center pixel in a separate output grid changes color."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Summary and Real-World Impact",
+      "lecture_lines": [
+        "Remember the workflow: Flip the filter, shift, and sum.",
+        "Convolution is the language of linear systems and signals.",
+        "It transforms raw data into meaningful, processed information."
+      ],
+      "animations": [
+        "Flash icons for Flip (Mirror), Shift (Arrow), and Sum (Sigma) in #00FFFF.",
+        "Show a simplified CNN layer diagram with connections pulsing.",
+        "Display a smartphone [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/smartphone.svg] icon surrounded by rapid mathematical equations."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 1 aligning with the intro to convolution and blurring example."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated initial Manim code for section_1 following the storyboard and TeachingScene constraints. Implemented 6x6 grid positioning, lecture line color highlights, and animations for signal combination, icons, and pixel blurring."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2 defining signals and sequences."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated the Manim code for Section 2, following the storyboard and using the 6x6 grid system. Implemented the input signal x[n] and impulse response h[n] with appropriate coloring and grid-based positioning. Added integer index labels for clarity."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 3 explaining the flip-shift-sum mechanics."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented the mechanics of convolution (Flip, Shift, Multiply, Sum) in Section3Scene. Used the 6x6 grid for positioning. Added animations for kernel flipping, sliding across input, highlighting overlaps with multiplication symbols, and summing into an output dot on a second axis. All lecture lines are synchronized with color changes."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 4 walking through the graphical overlap of pulses."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 5 describing 2D image kernels and edge detection."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_5 with 2D convolution animation (input grid, sliding 3x3 kernel, and output grid updates). Followed grid system and base class requirements."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 6 summarizing the impact of convolution."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Section6Scene with 6x6 grid layout, animations for workflow icons (Flip, Shift, Sum), pulsing CNN diagram, and smartphone with rapid equations as requested by storyboard."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Pulse a sharp image icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/image.svg] and an audio wave icon with #00FFFF highlights.', 'An eye icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/eye.svg] looks at a pixel grid; highlight specific cells with #FF00FF.']",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated SVGMobjects for image.svg and eye.svg as requested in the storyboard and issue."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Display a smartphone [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/smartphone.svg] icon surrounded by rapid mathematical equations.']",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated smartphone SVG asset and positioned according to instructions."
+    },
+    {
+      "id": 21,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The audio_icon (scale 0.8) is significantly larger than the img_icon (scale 0.5), creating a visual imbalance between assets representing similar conceptual levels. Fix: Line 109: self.place_at_grid(audio_icon, 'C5', scale_factor=0.5) (line=109, object=audio_icon)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Scaled audio_icon to 0.5 to balance with image_icon."
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The computer vision assets (eye_icon and vision_grid) are spatially disconnected at E1 and E4, which fails to group them as a single concept. Fix: Line 116: self.place_at_grid(eye_icon, 'D4', scale_factor=0.5) (line=116, object=eye_icon)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved eye_icon to D4 to group it better with the vision_grid."
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The sharp_pixels grid is the main demonstration for the third point but is constrained to a small central area (B2-E5), limiting visibility of the convolution detail. Fix: Line 165: self.place_in_area(sharp_pixels, 'A2', 'F5', scale_factor=1.1) (line=165, object=sharp_pixels)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Expanded sharp_pixels grid area to A2-F5 and increased scale to 1.1 for better visibility."
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'h_label' at E2 is positioned directly beneath the integer indices of the primary signal x[n], resulting in vertical overlap and visual clutter when the kernel appears. Fix: Line 125: self.place_at_grid(h_label, 'E5') (line=125, object=h_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned h_label to E5 to avoid overlap with x[n] indices."
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The graphics and labels are currently clustered on the left side of the visual grid (columns 1-3), causing an imbalance with the lecture text and leaving the right side of the screen underutilized. Fix: Line 94: self.place_at_grid(x_label, 'A4') (line=94, object=x_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Shifted x_axis, bars, and label (to A4) to the right to better utilize the grid and balance the layout."
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The x_label 'x[k]' at A2 is positioned too far to the left, encroaching on the designated area for lecture notes and creating visual clutter. Fix: Line 80: self.place_at_grid(x_label, 'A3') (line=80, object=x_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned x_label 'x[k]' from A2 to A3 to avoid encroaching on lecture notes."
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The y_label 'y[n]' at D2 overlaps with the lecture notes boundary on the left, making the labels difficult to distinguish from the text. Fix: Line 84: self.place_at_grid(y_label, 'D3') (line=84, object=y_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned y_label 'y[n]' from D2 to D3 to prevent overlap with lecture notes boundary."
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The h_label 'h[n-k]' at A5 is too close to the center, which limits the visual range of the pulses as they move through each other from the right. Fix: Line 82: self.place_at_grid(h_label, 'A6') (line=82, object=h_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned h_label 'h[n-k]' from A5 to A6 to increase the visual range for pulse movement."
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The sum_icon at B6 is significantly oversized at scale 1.5, which causes it to dominate the frame and feel cramped against the right boundary. Fix: Line 76: self.place_at_grid(sum_icon, 'B6', scale_factor=1.1) (line=76, object=sum_icon)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted sum_icon scale factor to 1.1 at B6."
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The shift_icon at B4 is scaled too small (0.6), making the workflow transition arrow appear disproportionately small compared to the flip and sum icons. Fix: Line 72: self.place_at_grid(shift_icon, 'B4', scale_factor=0.9) (line=72, object=shift_icon)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted shift_icon scale factor to 0.9 at B4."
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The phone asset's location (D3-F4) is too central, which underutilizes the grid corners and restricts the available space for surrounding formula animations. Fix: Line 129: self.place_in_area(phone, 'E5', 'F6', scale_factor=0.8) (line=129, object=phone)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved phone asset to E5-F6 and scaled to 0.8; adjusted surrounding equations accordingly."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The filter label h[k] at B1 is too far (3 grid units) from its corresponding kernel bars which start at B4, violating the proximity constraint. Fix: Line 97: Move h_label to B3 to stay within 1 grid unit of the initial filter kernel bars at B4-B6. self.place_at_grid(h_label, 'B3')",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved h_label to B3 and adjusted h_bars to B4-B6 to satisfy proximity constraints."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The flipped filter label h[-k] at B1 may overlap with the flipped kernel bars if they also start at or pass through B1 during the animation. Fix: Line 104: Reposition flip_label to B2 to provide a clear margin from the start of the animation path and align better with the shifted kernel. self.place_at_grid(flip_label, 'B2')",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned flip_label to B2 as requested to avoid overlap and provide margin."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The output label y[n] at E1 is far from the actual data points that start appearing near E4, potentially causing confusion about what the label refers to. Fix: Reposition y_label closer to the output data path (e.g., E3).",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved y_label to E3, closer to the output data path at E4."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 5x5 input_grid is compressed into a 4-row area (B1-E3), resulting in cramped cell values and poor utilization of the available vertical space, especially row F. Fix: Line 83: self.place_in_area(input_grid, 'B1', 'F3', scale_factor=0.9)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated input_grid placement to B1-F3 with scale_factor=0.9 for better vertical space utilization."
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 3x3 output_grid is placed in a 4-row area (B4-E6), causing visual inconsistency in cell sizing compared to the input grid and leaving row F empty. Fix: Line 107: self.place_in_area(output_grid, 'C4', 'E6', scale_factor=0.9)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated output_grid placement to C4-E6 with scale_factor=0.9 for visual consistency and centering."
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'Input Image' and 'Output Grid' labels lack precise anchoring, resulting in proximity issues with the title and inconsistent vertical padding above their respective grids. Fix: Use self.place_at_grid for labels or ensure consistent spacing from the grids.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Anchored 'Input Image' and 'Output Grid' labels to A2 and B5 using place_at_grid for precise positioning."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 279613,
+        "video_mtime_ns": 1785209855000000000,
+        "code_sha1": "eeec2877ffedc27c7f918d29781e0d8db406cd5e"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The audio_icon (scale 0.8) is significantly larger than the img_icon (scale 0.5), creating a visual imbalance between assets representing similar conceptual levels.",
+              "solution": "Line 109: self.place_at_grid(audio_icon, 'C5', scale_factor=0.5)",
+              "line_number": 109,
+              "object_affected": "audio_icon"
+            },
+            {
+              "problem": "The computer vision assets (eye_icon and vision_grid) are spatially disconnected at E1 and E4, which fails to group them as a single concept.",
+              "solution": "Line 116: self.place_at_grid(eye_icon, 'D4', scale_factor=0.5)",
+              "line_number": 116,
+              "object_affected": "eye_icon"
+            },
+            {
+              "problem": "The sharp_pixels grid is the main demonstration for the third point but is constrained to a small central area (B2-E5), limiting visibility of the convolution detail.",
+              "solution": "Line 165: self.place_in_area(sharp_pixels, 'A2', 'F5', scale_factor=1.1)",
+              "line_number": 165,
+              "object_affected": "sharp_pixels"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        21,
+        22,
+        23
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 117134,
+        "video_mtime_ns": 1785209849000000000,
+        "code_sha1": "bb6c35c2b41d39f83183c77e7371049bba0fc537"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'h_label' at E2 is positioned directly beneath the integer indices of the primary signal x[n], resulting in vertical overlap and visual clutter when the kernel appears.",
+              "solution": "Line 125: self.place_at_grid(h_label, 'E5')",
+              "line_number": 125,
+              "object_affected": "h_label"
+            },
+            {
+              "problem": "The graphics and labels are currently clustered on the left side of the visual grid (columns 1-3), causing an imbalance with the lecture text and leaving the right side of the screen underutilized.",
+              "solution": "Line 94: self.place_at_grid(x_label, 'A4')",
+              "line_number": 94,
+              "object_affected": "x_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        24,
+        25
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 399331,
+        "video_mtime_ns": 1785209867000000000,
+        "code_sha1": "d49f4c5ad8b046af8b570775da4688b0d53340f1"
+      },
+      "analysis": {
+        "raw_response": "```json\n{\n    \"layout\": {\n        \"has_issues\": true,\n        \"improvements\": [\n            {\n                \"problem\": \"The filter label h[k] at B1 is too far (3 grid units) from its corresponding kernel bars which start at B4, violating the proximity constraint.\",\n                \"solution\": \"Line 97: Move h_label to B3 to stay within 1 grid unit of the initial filter kernel bars at B4-B6. self.place_at_grid(h_label, 'B3')\",\n                \"line_number\": 97,\n                \"object_affected\": \"h_label\"\n            },\n            {\n                \"problem\": \"The flipped filter label h[-k] at B1 may overlap with the flipped kernel bars if they also start at or pass through B1 during the animation.\",\n                \"solution\": \"Line 104: Reposition flip_label to B2 to provide a clear margin from the start of the animation path and align better with the shifted kernel. self.place_at_grid(flip_label, 'B2')\",\n                \"line_number\": 104,\n                \"object_affected\": \"flip_label\"\n            },\n            {\n                \"problem\": \"The output label y[n] at E1 is far from the actual data points that start appearing near E4, potentially causing confusion about what the label refers to.\",\n                \"solution"
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 288190,
+        "video_mtime_ns": 1785209856000000000,
+        "code_sha1": "eaa60bdbca61ce8f25e6154e27130edb3f9ee16a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The x_label 'x[k]' at A2 is positioned too far to the left, encroaching on the designated area for lecture notes and creating visual clutter.",
+              "solution": "Line 80: self.place_at_grid(x_label, 'A3')",
+              "line_number": 80,
+              "object_affected": "x_label"
+            },
+            {
+              "problem": "The y_label 'y[n]' at D2 overlaps with the lecture notes boundary on the left, making the labels difficult to distinguish from the text.",
+              "solution": "Line 84: self.place_at_grid(y_label, 'D3')",
+              "line_number": 84,
+              "object_affected": "y_label"
+            },
+            {
+              "problem": "The h_label 'h[n-k]' at A5 is too close to the center, which limits the visual range of the pulses as they move through each other from the right.",
+              "solution": "Line 82: self.place_at_grid(h_label, 'A6')",
+              "line_number": 82,
+              "object_affected": "h_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        26,
+        27,
+        28
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 492340,
+        "video_mtime_ns": 1785209870000000000,
+        "code_sha1": "c388c650e2a3f6cc67954e37c3af4717d7bece42"
+      },
+      "analysis": {
+        "raw_response": "```json\n{\n    \"layout\": {\n        \"has_issues\": true,\n        \"improvements\": [\n            {\n                \"problem\": \"The 5x5 input_grid is compressed into a 4-row area (B1-E3), resulting in cramped cell values and poor utilization of the available vertical space, especially row F.\",\n                \"solution\": \"Line 83: self.place_in_area(input_grid, 'B1', 'F3', scale_factor=0.9)\",\n                \"line_number\": 83,\n                \"object_affected\": \"input_grid\"\n            },\n            {\n                \"problem\": \"The 3x3 output_grid is placed in a 4-row area (B4-E6), causing visual inconsistency in cell sizing compared to the input grid and leaving row F empty.\",\n                \"solution\": \"Line 107: self.place_in_area(output_grid, 'C4', 'E6', scale_factor=0.9)\",\n                \"line_number\": 107,\n                \"object_affected\": \"output_grid\"\n            },\n            {\n                \"problem\": \"The 'Input Image' and 'Output Grid' labels lack precise anchoring, resulting in proximity issues with the title and inconsistent vertical padding above their respective grids.\",\n                \"solution\": \"Line 82: self.place_at_"
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 513324,
+        "video_mtime_ns": 1785209876000000000,
+        "code_sha1": "b204c1c0b7a0ccd24fb5f4ec14c300c6e863f0bf"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The sum_icon at B6 is significantly oversized at scale 1.5, which causes it to dominate the frame and feel cramped against the right boundary.",
+              "solution": "Line 76: self.place_at_grid(sum_icon, 'B6', scale_factor=1.1)",
+              "line_number": 76,
+              "object_affected": "sum_icon"
+            },
+            {
+              "problem": "The shift_icon at B4 is scaled too small (0.6), making the workflow transition arrow appear disproportionately small compared to the flip and sum icons.",
+              "solution": "Line 72: self.place_at_grid(shift_icon, 'B4', scale_factor=0.9)",
+              "line_number": 72,
+              "object_affected": "shift_icon"
+            },
+            {
+              "problem": "The phone asset's location (D3-F4) is too central, which underutilizes the grid corners and restricts the available space for surrounding formula animations.",
+              "solution": "Line 129: self.place_in_area(phone, 'E5', 'F6', scale_factor=0.8)",
+              "line_number": 129,
+              "object_affected": "phone"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        29,
+        30,
+        31
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/14-Mastering_Discrete_Convolutions_The_Art_of_Sliding_and_Summing",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 540420,
+      "completion_tokens": 63400,
+      "total_tokens": 713772,
+      "call_count": 35
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 276,
+        "completion_tokens": 849,
+        "total_tokens": 1740,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 22257,
+        "completion_tokens": 1060,
+        "total_tokens": 25080,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 27892,
+        "completion_tokens": 1292,
+        "total_tokens": 31314,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 86687,
+        "completion_tokens": 1708,
+        "total_tokens": 91568,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 54044,
+        "completion_tokens": 9148,
+        "total_tokens": 67649,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 62410,
+        "completion_tokens": 9185,
+        "total_tokens": 78104,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 46692,
+        "completion_tokens": 7000,
+        "total_tokens": 61799,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 60538,
+        "completion_tokens": 10734,
+        "total_tokens": 77224,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 84216,
+        "completion_tokens": 10033,
+        "total_tokens": 110191,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 73469,
+        "completion_tokens": 9847,
+        "total_tokens": 95520,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 4162,
+        "completion_tokens": 641,
+        "total_tokens": 14611,
+        "call_count": 12
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2969,
+        "completion_tokens": 360,
+        "total_tokens": 10445,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2445,
+        "completion_tokens": 237,
+        "total_tokens": 10361,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3188,
+        "completion_tokens": 319,
+        "total_tokens": 11184,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3146,
+        "completion_tokens": 326,
+        "total_tokens": 5307,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2875,
+        "completion_tokens": 315,
+        "total_tokens": 10871,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 3154,
+        "completion_tokens": 346,
+        "total_tokens": 10804,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 540420,
+        "completion_tokens": 63400,
+        "total_tokens": 713772,
+        "call_count": 35
+      }
+    }
+  }
+}

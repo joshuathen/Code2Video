@@ -15,6 +15,8 @@ from mas_belief_three_stage import (  # noqa: E402
     EvidenceObservation,
     RetrospectiveResponse,
     _apply_discovery_decisions,
+    _derive_update_direction,
+    _observation_matrix_payload,
     _validate_consolidation,
     _validate_evaluation,
 )
@@ -101,24 +103,34 @@ class ThreeStageBeliefTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _validate_consolidation(response, ["C001", "C002"])
 
-    def test_evaluation_requires_every_frozen_belief(self):
+    def test_missing_frozen_belief_is_reconciled_as_insufficient(self):
         response = RetrospectiveResponse(
             observations=[],
             applicable_belief_ids=[],
             not_applicable_belief_ids=["B001"],
             insufficient_belief_ids=[],
         )
-        with self.assertRaises(ValueError):
-            _validate_evaluation(response, ["B001", "B002"])
+        _validate_evaluation(response, ["B001", "B002"])
+        self.assertEqual(response.not_applicable_belief_ids, ["B001"])
+        self.assertEqual(response.insufficient_belief_ids, ["B002"])
 
-    def test_one_belief_can_have_support_and_contradiction_in_one_topic(self):
+    def test_unknown_belief_id_is_rejected(self):
+        response = RetrospectiveResponse(
+            observations=[],
+            applicable_belief_ids=[],
+            not_applicable_belief_ids=["B999"],
+            insufficient_belief_ids=[],
+        )
+        with self.assertRaises(ValueError):
+            _validate_evaluation(response, ["B001"])
+
+    def test_one_belief_can_have_positive_and_negative_effectiveness_evidence(self):
         common = {
             "compliance": "followed",
             "outcome": "mixed",
             "strategy_application": "full",
             "attribution_strength": "strong",
             "evidence_reliability": "direct",
-            "evidence_confidence": 0.9,
             "reason": "The transition isolates the strategy and the target outcome.",
             "agent": "Coder",
             "section_id": "section_1",
@@ -128,14 +140,12 @@ class ThreeStageBeliefTests(unittest.TestCase):
                 EvidenceObservation(
                     belief_id="B001",
                     **common,
-                    direction="support",
                     outcome_improvement="resolved",
                     evidence="The first change removed the directly observed error.",
                 ),
                 EvidenceObservation(
                     belief_id="B001",
                     **common,
-                    direction="contradict",
                     outcome_improvement="worsened",
                     evidence="A later isolated use caused the target error to return.",
                 ),
@@ -146,6 +156,31 @@ class ThreeStageBeliefTests(unittest.TestCase):
         )
         _validate_evaluation(response, ["B001", "B002"])
         self.assertEqual(len(response.observations), 2)
+        self.assertEqual(
+            _derive_update_direction(response.observations[0]), ("support", True)
+        )
+        self.assertEqual(
+            _derive_update_direction(response.observations[1]), ("contradict", True)
+        )
+
+    def test_noncompliance_with_predicted_problem_is_neutral(self):
+        observation = EvidenceObservation(
+            belief_id="B001",
+            compliance="violated",
+            outcome="negative",
+            strategy_application="none",
+            attribution_strength="strong",
+            evidence_reliability="direct",
+            outcome_improvement="worsened",
+            evidence="The strategy was absent and the predicted overlap was observed.",
+            reason="This establishes relevance but cannot establish the counterfactual fix.",
+            agent="Coder",
+            section_id="section_2",
+        )
+        self.assertEqual(_derive_update_direction(observation), ("neutral", False))
+        payload = _observation_matrix_payload(observation)
+        self.assertEqual(payload["update_direction"], "neutral")
+        self.assertFalse(payload["update_eligible"])
 
     def test_applicable_without_observation_becomes_insufficient(self):
         response = RetrospectiveResponse(

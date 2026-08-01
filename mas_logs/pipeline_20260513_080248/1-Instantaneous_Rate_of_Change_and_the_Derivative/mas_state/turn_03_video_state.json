@@ -1,0 +1,1073 @@
+{
+  "topic": "Instantaneous Rate of Change and the Derivative",
+  "target_audience": "High school seniors or early university students (Introductory Calculus)",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Initialize Scene\n        lecture_lines = [\n            \"A sprinting cheetah's speed fluctuates every second.\",\n            \"Average speed measures distance over a time interval.\",\n            \"But how fast is it at one exact moment?\"\n        ]\n        self.setup_layout(\"The Cheetah's Paradox: Average vs. Instantaneous\", lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # 1. Setup Speedometer at A6 (Issue 28)\n        gauge_arc = Arc(radius=0.6, start_angle=PI, angle=-PI, color=WHITE)\n        label_low = Text(\"40\", font_size=12).move_to(gauge_arc.point_from_proportion(0.2))\n        label_high = Text(\"120\", font_size=12).move_to(gauge_arc.point_from_proportion(0.8))\n        kmh = Text(\"km/h\", font_size=10).move_to(gauge_arc.get_center() + DOWN * 0.15)\n        speedometer = VGroup(gauge_arc, label_low, label_high, kmh)\n        self.place_at_grid(speedometer, \"A6\", scale_factor=0.8)\n        \n        # Needle pivots at arc center\n        pivot = gauge_arc.get_center()\n        needle = Line(pivot, pivot + UP * 0.4, color=YELLOW, buff=0)\n        needle.set_stroke(width=4)\n\n        # 2. Setup Track and Cheetah at B3-B6 (Issue 29)\n        track = Line(LEFT, RIGHT, color=GRAY_D).scale(1.5) # Length 3.0 matches B3-B6 span\n        cheetah = Triangle(color=ORANGE, fill_opacity=1).scale(0.12).rotate(-PI/2)\n        path_group = VGroup(track, cheetah)\n        self.place_in_area(path_group, 'B3', 'B6')\n        cheetah.move_to(track.get_start())\n        \n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        self.add(speedometer, needle, track, cheetah)\n\n        # Needle fluctuation tracker\n        needle_tracker = ValueTracker(0.9)\n        def update_needle(m):\n            angle = PI * needle_tracker.get_value()\n            new_end = pivot + np.array([0.4 * np.cos(angle), 0.4 * np.sin(angle), 0])\n            m.put_start_and_end_on(pivot, new_end)\n        needle.add_updater(update_needle)\n\n        # Animate cheetah sprint and wild needle fluctuation\n        self.play(\n            cheetah.animate.move_to(track.get_end()),\n            needle_tracker.animate.set_value(0.1),\n            run_time=3,\n            rate_func=linear\n        )\n        self.play(needle_tracker.animate.set_value(0.7), run_time=0.4)\n        self.play(needle_tracker.animate.set_value(0.3), run_time=0.4)\n        self.play(needle_tracker.animate.set_value(0.5), run_time=0.4)\n        \n        # === Animation for Lecture Line 2 ===\n        # 1. Setup Graph at C3-F6 (Issue 27)\n        axes = Axes(\n            x_range=[0, 10, 2],\n            y_range=[0, 50, 10],\n            x_length=4.0,\n            y_length=3.0,\n            axis_config={\"include_tip\": True, \"stroke_width\": 2}\n        )\n        axis_labels = VGroup(\n            Text(\"Time\", font_size=14).next_to(axes.x_axis, DOWN, buff=0.1),\n            Text(\"Dist\", font_size=14).next_to(axes.y_axis, LEFT, buff=0.1)\n        )\n        graph_vg = VGroup(axes, axis_labels)\n        self.place_in_area(graph_vg, \"C3\", \"F6\", scale_factor=0.8)\n        \n        # Graph curve: y = 0.5 * x^2\n        curve = axes.plot(lambda x: 0.5 * x**2, x_range=[0, 10], color=\"#3498DB\")\n        \n        # Average Speed Line (Secant)\n        secant = DashedLine(\n            axes.c2p(0, 0), \n            axes.c2p(10, 50), \n            color=\"#E74C3C\", \n            dash_length=0.1\n        )\n\n        self.play(self.lecture[1].animate.set_color(\"#E74C3C\"))\n        self.play(FadeIn(graph_vg), Create(curve))\n        self.play(Create(secant))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # 1. Instantaneous Highlight at t=5\n        t_val = 5\n        point_inst = Dot(axes.c2p(t_val, 12.5), color=YELLOW)\n        v_line = DashedLine(\n            axes.c2p(t_val, 0), \n            axes.c2p(t_val, 12.5), \n            color=WHITE, \n            stroke_width=2\n        )\n        \n        self.play(self.lecture[2].animate.set_color(\"#3498DB\"))\n        \n        # Freeze needle\n        needle.clear_updaters()\n        \n        self.play(\n            FadeIn(point_inst),\n            Create(v_line),\n            needle.animate.put_start_and_end_on(\n                pivot, \n                pivot + np.array([0.4 * np.cos(PI*0.45), 0.4 * np.sin(PI*0.45), 0])\n            )\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Initialize Scene\n        lecture_lines = [\n            'Consider a curve with two distinct points plotted.',\n            'A secant line connects these two points directly.',\n            'Its slope represents the average rate of change.'\n        ]\n        self.setup_layout(\"Prerequisite: The Slope of a Secant Line\", lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight Line 1\n        self.play(self.lecture[0].animate.set_color(\"#3498DB\"))\n\n        # Setup Graph Area\n        axes = Axes(\n            x_range=[0, 4, 1],\n            y_range=[0, 10, 2],\n            x_length=4.5,\n            y_length=4.0,\n            axis_config={\"include_tip\": True, \"font_size\": 18}\n        )\n        self.place_in_area(axes, 'A1', 'E5')\n        \n        curve = axes.plot(lambda x: x**2, x_range=[0, 3.2], color=\"#3498DB\")\n        \n        # Points A(1,1) and B(3,9)\n        point_a_coord = axes.c2p(1, 1)\n        point_b_coord = axes.c2p(3, 9)\n        \n        dot_a = Dot(point_a_coord, color=WHITE, radius=0.08)\n        dot_b = Dot(point_b_coord, color=WHITE, radius=0.08)\n        \n        label_a = Text(\"A(1, 1)\", font_size=16, color=WHITE).next_to(dot_a, DOWN + LEFT, buff=0.1)\n        label_b = Text(\"B(3, 9)\", font_size=16, color=WHITE).next_to(dot_b, LEFT, buff=0.1)\n\n        self.play(Create(axes), Create(curve))\n        self.play(FadeIn(dot_a), FadeIn(dot_b), Write(label_a), Write(label_b))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight Line 2\n        self.play(self.lecture[1].animate.set_color(\"#F1C40F\"))\n\n        # Yellow Secant Line\n        # We extend the line slightly beyond the points for visual effect\n        secant_line = Line(\n            axes.c2p(0.5, -1), \n            axes.c2p(3.2, 9.8), \n            color=\"#F1C40F\"\n        )\n        \n        secant_label = Text(\"Secant Line\", font_size=18, color=\"#F1C40F\")\n        self.place_at_grid(secant_label, \"B5\")\n        # Numerical angle calculation for label rotation\n        secant_label.rotate(np.arctan2(point_b_coord[1] - point_a_coord[1], point_b_coord[0] - point_a_coord[0]))\n\n        self.play(Create(secant_line))\n        self.play(FadeIn(secant_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Highlight Line 3\n        self.play(self.lecture[2].animate.set_color(\"#F1C40F\"))\n\n        # Slope Formula display\n        formula_text = Text(\"Slope (m) = (y2 - y1) / (x2 - x1)\", font_size=18, color=WHITE)\n        self.place_in_area(formula_text, 'F1', 'F2', scale_factor=0.55)\n        \n        calc_text = Text(\"m = (9 - 1) / (3 - 1)\", font_size=18, color=WHITE)\n        self.place_in_area(calc_text, 'F3', 'F5', scale_factor=0.55)\n        \n        result_text = Text(\"m = 4\", font_size=22, color=\"#F1C40F\")\n        self.place_at_grid(result_text, \"F6\", scale_factor=0.7)\n\n        self.play(Write(formula_text))\n        self.wait(0.5)\n        self.play(Write(calc_text))\n        self.wait(0.5)\n        self.play(Write(result_text))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Setup layout with specified lecture lines\n        lecture_lines = [\n            'Zooming in, we define the points x and x plus h.',\n            'The horizontal distance between these points is h.',\n            'Now, we slide point B toward point A.',\n            'The interval h shrinks toward a value of zero.',\n            'As B moves, the secant line rotates and pivots.'\n        ]\n        self.setup_layout(\"The Limit: Closing the Gap\", lecture_lines)\n\n        # Colors\n        COLOR_SECANT = \"#F1C40F\"\n        COLOR_BRACKET = \"#F39C12\"\n        COLOR_TEXT = \"#FFFFFF\"\n\n        # 1. Setup Axes and Graph\n        # Issue 35: Reposition axes to A1-E6\n        axes = Axes(\n            x_range=[0, 2.5, 0.5],\n            y_range=[0, 4, 1],\n            x_length=5,\n            y_length=5,\n            axis_config={\"include_tip\": True, \"color\": GREY}\n        )\n        self.place_in_area(axes, 'A1', 'E6', scale_factor=0.8)\n        \n        def func(x):\n            return x**2\n\n        graph = axes.plot(func, color=BLUE, x_range=[0, 2.1])\n        \n        # Trackers for animation\n        h_tracker = ValueTracker(1.0)\n        x_a = 1.0\n        \n        # Point A (Fixed)\n        dot_a = Dot(axes.c2p(x_a, func(x_a)), color=WHITE)\n        label_x = Text(\"x\", font_size=24, color=COLOR_TEXT)\n        self.place_at_grid(label_x, 'F3', scale_factor=0.5)\n\n        # Dynamic Point B\n        dot_b = Dot(color=WHITE)\n        dot_b.add_updater(lambda d: d.move_to(axes.c2p(x_a + h_tracker.get_value(), func(x_a + h_tracker.get_value()))))\n        \n        # Issue 33: label_x_plus_h at F5\n        label_x_plus_h = Text(\"x + h\", font_size=24, color=COLOR_TEXT)\n        self.place_at_grid(label_x_plus_h, 'F5', scale_factor=0.5)\n\n        # Secant Line\n        secant_line = Line(color=COLOR_SECANT)\n        def update_secant(l):\n            p1 = axes.c2p(x_a, func(x_a))\n            p2 = axes.c2p(x_a + h_tracker.get_value(), func(x_a + h_tracker.get_value()))\n            v = p2 - p1\n            if np.linalg.norm(v) < 0.001:\n                # Tangent approximation at x=1\n                v = np.array([1, 2, 0]) * 0.001\n            # Extend the line visually\n            ext_start = p1 - v * 2.0 / np.linalg.norm(v)\n            ext_end = p1 + v * 4.0 / np.linalg.norm(v)\n            l.put_start_and_end_on(ext_start, ext_end)\n            \n        secant_line.add_updater(update_secant)\n\n        # Bracket for h (Horizontal distance on x-axis)\n        h_bracket = BraceBetweenPoints(\n            axes.c2p(x_a, 0),\n            axes.c2p(x_a + 1.0, 0),\n            direction=DOWN,\n            color=COLOR_BRACKET,\n            buff=0.1\n        )\n        h_bracket.add_updater(lambda b: b.become(\n            BraceBetweenPoints(\n                axes.c2p(x_a, 0),\n                axes.c2p(x_a + h_tracker.get_value(), 0),\n                direction=DOWN,\n                color=COLOR_BRACKET,\n                buff=0.1\n            )\n        ))\n        \n        # Issue 34: label_h at F4\n        label_h = Text(\"h\", font_size=24, color=COLOR_BRACKET)\n        self.place_at_grid(label_h, 'F4', scale_factor=0.5)\n\n        # === Animation for Lecture Line 1 ===\n        # \"Zooming in, we define the points x and x plus h.\"\n        self.play(self.lecture[0].animate.set_color(YELLOW), run_time=0.5)\n        self.play(Create(axes), Create(graph))\n        self.play(FadeIn(dot_a), FadeIn(dot_b), FadeIn(label_x), FadeIn(label_x_plus_h))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"The horizontal distance between these points is h.\"\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW),\n            run_time=0.5\n        )\n        self.play(Create(h_bracket), FadeIn(label_h))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"Now, we slide point B toward point A.\"\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW),\n            run_time=0.5\n        )\n        self.play(Create(secant_line))\n        self.play(h_tracker.animate.set_value(0.5), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # \"The interval h shrinks toward a value of zero.\"\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(YELLOW),\n            run_time=0.5\n        )\n        # Visual shrink of label to match concept\n        self.play(\n            h_tracker.animate.set_value(0.1),\n            label_h.animate.scale(0.8),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # \"As B moves, the secant line rotates and pivots.\"\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(YELLOW),\n            run_time=0.5\n        )\n        # Final approach to zero\n        self.play(\n            h_tracker.animate.set_value(0.01),\n            label_h.animate.scale(0.8),\n            run_time=2\n        )\n        self.wait(2)\n        \n        # Final State Clean\n        self.play(self.lecture[4].animate.set_color(WHITE), run_time=0.5)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Setup lines and layout\n        lecture_lines_text = [\n            'At the limit, the secant line becomes the tangent.',\n            'Magnified, the curve appears to be a straight line.',\n            'The tangent line touches the curve at one point.',\n            'Its slope represents the instantaneous rate of change.',\n            'This unique line defines the derivative at this point.'\n        ]\n        self.setup_layout(\"The Birth of the Tangent Line\", lecture_lines_text)\n\n        # Colors\n        TANGENT_COLOR = \"#2ECC71\"  # Green\n        CURVE_COLOR = \"#3498DB\"    # Blue\n        POINT_COLOR = WHITE\n\n        # --- Base Graphic Elements ---\n        # Axes and Curve\n        axes = Axes(\n            x_range=[0, 4, 1],\n            y_range=[0, 4, 1],\n            x_length=4,\n            y_length=4,\n            axis_config={\"include_tip\": True, \"color\": GRAY}\n        )\n        self.place_in_area(axes, \"C2\", \"F5\")\n        \n        def func(x):\n            return 0.3 * x**2 + 0.5\n            \n        graph = axes.plot(func, color=CURVE_COLOR)\n        \n        # Points A and B\n        x_a = 1.2\n        x_b_init = 3.0\n        p_a = Dot(axes.c2p(x_a, func(x_a)), color=POINT_COLOR, radius=0.08)\n        p_b = Dot(axes.c2p(x_b_init, func(x_b_init)), color=POINT_COLOR, radius=0.08)\n        \n        label_a = Text(\"A\", font_size=18).next_to(p_a, LEFT, buff=0.1)\n        label_b = Text(\"B\", font_size=18).next_to(p_b, RIGHT, buff=0.1)\n        \n        # Secant Line\n        secant = Line(\n            axes.c2p(0.5, func(x_a) + (func(x_b_init) - func(x_a))/(x_b_init - x_a) * (0.5 - x_a)),\n            axes.c2p(3.5, func(x_a) + (func(x_b_init) - func(x_a))/(x_b_init - x_a) * (3.5 - x_a)),\n            color=WHITE,\n            stroke_width=2\n        )\n\n        # h bracket (visualized as a simple line with tip)\n        h_line = Line(axes.c2p(x_a, 0.4), axes.c2p(x_b_init, 0.4), color=WHITE).add_tip(tip_length=0.1)\n        h_label = Text(\"h\", font_size=18).next_to(h_line, DOWN, buff=0.1)\n        h_group = VGroup(h_line, h_label)\n\n        self.add(axes, graph, p_a, p_b, label_a, label_b, secant, h_group)\n\n        # === Animation for Lecture Line 1 ===\n        # \"At the limit, the secant line becomes the tangent.\"\n        self.play(self.lecture[0].animate.set_color(TANGENT_COLOR))\n        \n        # Target tangent slope calculation\n        slope_a = 0.6 * x_a \n        x_b_limit = 1.22\n        target_p_b_pos = axes.c2p(x_b_limit, func(x_b_limit))\n        \n        tangent_line_target = Line(\n            axes.c2p(x_a - 1.2, func(x_a) - slope_a * 1.2),\n            axes.c2p(x_a + 1.2, func(x_a) + slope_a * 1.2),\n            color=TANGENT_COLOR,\n            stroke_width=3\n        )\n        \n        tangent_label = Text(\"Tangent Line\", font_size=20, color=TANGENT_COLOR)\n        # Issue 37: Fix positioning of tangent_label\n        self.place_at_grid(tangent_label, \"B4\", scale_factor=0.8)\n\n        self.play(\n            p_b.animate.move_to(target_p_b_pos),\n            label_b.animate.move_to(target_p_b_pos + RIGHT*0.2),\n            secant.animate.become(tangent_line_target).set_color(TANGENT_COLOR),\n            h_group.animate.scale(0.1).set_opacity(0),\n            run_time=2\n        )\n        self.play(FadeIn(tangent_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"Magnified, the curve appears to be a straight line.\"\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(TANGENT_COLOR)\n        )\n        \n        # Issue 25: Use magnifier asset\n        magnifier = SVGMobject(\"/mmfs1/data/home/jthen/Code2Video/assets/icon/magnifier.svg\")\n        # Issue 38: Fix positioning and scale of zoom circle/magnifier\n        self.place_at_grid(magnifier, \"D2\", scale_factor=0.6)\n        \n        # Zoom content: Curve and tangent look like lines\n        zoom_line_curve = Line(LEFT, RIGHT, color=CURVE_COLOR).scale(0.4).rotate(slope_a * 0.4)\n        zoom_line_tangent = Line(LEFT, RIGHT, color=TANGENT_COLOR).scale(0.4).rotate(slope_a * 0.4).shift(UP*0.04)\n        zoom_content = VGroup(zoom_line_curve, zoom_line_tangent).move_to(magnifier.get_center() + UP*0.1)\n        \n        connector = Line(p_a.get_center(), magnifier.get_center(), stroke_width=1, color=GRAY, buff=0.1)\n        \n        self.play(Create(magnifier), Create(connector))\n        self.play(FadeIn(zoom_content))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"The tangent line touches the curve at one point.\"\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(TANGENT_COLOR)\n        )\n        \n        # Remove B and h\n        self.play(\n            FadeOut(p_b), \n            FadeOut(label_b), \n            FadeOut(h_group),\n            FadeOut(magnifier),\n            FadeOut(connector),\n            FadeOut(zoom_content)\n        )\n        \n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # \"Its slope represents the instantaneous rate of change.\"\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(TANGENT_COLOR)\n        )\n        \n        slope_formula = Text(\"Slope of Tangent = Instantaneous Rate\", font_size=24, color=TANGENT_COLOR)\n        # Issue 36: Fix slope_formula position and scale\n        self.place_in_area(slope_formula, \"A1\", \"A5\", scale_factor=0.7)\n        \n        self.play(Write(slope_formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # \"This unique line defines the derivative at this point.\"\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(TANGENT_COLOR)\n        )\n        \n        # Tangent line flashes twice\n        self.play(secant.animate.set_stroke(width=8), run_time=0.25)\n        self.play(secant.animate.set_stroke(width=3), run_time=0.25)\n        self.play(secant.animate.set_stroke(width=8), run_time=0.25)\n        self.play(secant.animate.set_stroke(width=3), run_time=0.25)\n        \n        self.play(Indicate(p_a, color=TANGENT_COLOR))\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with lecture lines and title\n        lecture_lines_text = [\n            'We define the derivative using this formal limit.',\n            'The numerator represents the change in vertical output.',\n            'The denominator h represents the shrinking horizontal run.',\n            'The limit shows h approaching zero precisely.',\n            'This resulting value is the derivative, f prime.'\n        ]\n        self.setup_layout(\"Formalizing the Derivative\", lecture_lines_text)\n\n        # Colors\n        RISE_COLOR = \"#58D68D\"  # Green\n        RUN_COLOR = \"#F39C12\"   # Orange\n        FORMULA_COLOR = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        # Construction of the limit formula\n        lhs = Text(\"f'(x) =\", font_size=24, color=FORMULA_COLOR)\n        \n        lim_word = Text(\"lim\", font_size=20, color=FORMULA_COLOR)\n        h_to_0 = Text(\"h \\u2192 0\", font_size=14, color=FORMULA_COLOR)\n        limit_unit = VGroup(lim_word, h_to_0).arrange(DOWN, buff=0.05)\n        \n        num = Text(\"f(x + h) - f(x)\", font_size=20, color=FORMULA_COLOR)\n        bar = Line(LEFT, RIGHT, color=FORMULA_COLOR, stroke_width=2).scale(1.2)\n        den = Text(\"h\", font_size=20, color=FORMULA_COLOR)\n        fraction = VGroup(num, bar, den).arrange(DOWN, buff=0.1)\n        \n        formula_group = VGroup(lhs, limit_unit, fraction).arrange(RIGHT, buff=0.2)\n        # Issue 40 fix: Place formula_group in 'E2' to 'F5'\n        self.place_in_area(formula_group, 'E2', 'F5', scale_factor=0.85)\n\n        # Construction of the Graph Area\n        axes = Axes(\n            x_range=[0, 4, 1],\n            y_range=[0, 4, 1],\n            x_length=3.5,\n            y_length=2.5,\n            axis_config={\"include_tip\": False, \"color\": GREY_C}\n        )\n        graph = axes.plot(lambda x: 0.15 * x**2 + 0.5, x_range=[0, 3.5], color=WHITE)\n        \n        # Initial points for secant\n        x0 = 1.0\n        h_val = 1.8\n        p1 = axes.c2p(x0, 0.15 * x0**2 + 0.5)\n        p2 = axes.c2p(x0 + h_val, 0.15 * (x0 + h_val)**2 + 0.5)\n        p_corner = axes.c2p(x0 + h_val, 0.15 * x0**2 + 0.5)\n        \n        dot1 = Dot(p1, radius=0.06, color=WHITE)\n        dot2 = Dot(p2, radius=0.06, color=WHITE)\n        \n        h_line = Line(p1, p_corner, color=RUN_COLOR, stroke_width=4)\n        v_line = Line(p_corner, p2, color=RISE_COLOR, stroke_width=4)\n        \n        graph_group = VGroup(axes, graph, dot1, dot2, h_line, v_line)\n        # Issue 39 fix: Place graph_group in 'A2' to 'C5'\n        self.place_in_area(graph_group, 'A2', 'C5', scale_factor=0.8)\n\n        # Animation Sequence\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        self.play(FadeIn(formula_group), FadeIn(axes), Create(graph))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW)\n        )\n        self.play(num.animate.set_color(RISE_COLOR))\n        self.play(FadeIn(dot1), FadeIn(dot2), Create(v_line))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW)\n        )\n        self.play(den.animate.set_color(RUN_COLOR))\n        self.play(Create(h_line))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(YELLOW)\n        )\n        \n        # Limit pulses and h shrinks\n        new_h = 0.05\n        new_p2 = axes.c2p(x0 + new_h, 0.15 * (x0 + new_h)**2 + 0.5)\n        new_p_corner = axes.c2p(x0 + new_h, 0.15 * x0**2 + 0.5)\n\n        self.play(\n            limit_unit.animate.scale(1.2).set_color(YELLOW),\n            rate_func=there_and_back\n        )\n        self.play(\n            dot2.animate.move_to(new_p2),\n            h_line.animate.put_start_and_end_on(p1, new_p_corner),\n            v_line.animate.put_start_and_end_on(new_p_corner, new_p2),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(YELLOW)\n        )\n\n        # Glow and Derivative label\n        deriv_label = Text(\"The Derivative\", font_size=20, color=WHITE)\n        self.place_at_grid(deriv_label, \"D3\", scale_factor=1.0)\n        \n        # Issue 41 fix: Tangent line appears\n        # Approximate tangent at x=1 (slope = 2 * 0.15 * 1 = 0.3)\n        tangent_line = Line(\n            axes.c2p(x0 - 1.5, (0.15 * x0**2 + 0.5) - 0.3 * 1.5),\n            axes.c2p(x0 + 1.5, (0.15 * x0**2 + 0.5) + 0.3 * 1.5),\n            color=YELLOW, stroke_width=2\n        )\n        # Using fix from Issue 41 description\n        self.place_at_grid(tangent_line, 'B3', scale_factor=0.6)\n\n        self.play(\n            formula_group.animate.set_color(WHITE).set_stroke(width=1),\n            FadeIn(deriv_label),\n            Create(tangent_line)\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with title and lecture lines\n        lecture_lines = [\n            'Derivatives help us analyze motion in the real world.',\n            \"The tangent slope gives the rocket's exact velocity.\",\n            'Calculus allows us to calculate the mathematics of change.'\n        ]\n        self.setup_layout(\"Application: The Speedometer of Life\", lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight first lecture line\n        self.play(self.lecture[0].animate.set_color(\"#3498DB\"))\n\n        # Create Rocket from Asset\n        rocket = SVGMobject(\"/mmfs1/data/home/jthen/Code2Video/assets/icon/rocket.svg\")\n        rocket.set_color(WHITE)\n        \n        # Place rocket (Issue 43: use place_at_grid for single object)\n        self.place_at_grid(rocket, 'E2', scale_factor=0.8)\n        \n        # Create Axes and Graph\n        axes = Axes(\n            x_range=[0, 3, 1],\n            y_range=[0, 15, 5],\n            x_length=2.5,\n            y_length=3.5,\n            axis_config={\"color\": WHITE, \"include_tip\": True},\n            tips=True\n        )\n        x_label = Text(\"Time\", font_size=14).next_to(axes.x_axis, RIGHT, buff=0.1)\n        y_label = Text(\"Pos\", font_size=14).next_to(axes.y_axis, UP, buff=0.1)\n        axes_group = VGroup(axes, x_label, y_label)\n        \n        # Place graph area (Issue 42: avoid title and bottom text overlap)\n        self.place_in_area(axes_group, 'B4', 'E6', scale_factor=0.8)\n        \n        # Define the position function y = e^x - 1\n        graph = axes.plot(lambda x: np.exp(x) - 1, x_range=[0, 2.7], color=\"#3498DB\")\n\n        self.play(\n            FadeIn(rocket),\n            Create(axes_group),\n            Create(graph),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(\"#2ECC71\")\n        )\n\n        # Draw tangent at t=2\n        t_val = 2.0\n        p_val = np.exp(t_val) - 1\n        slope = np.exp(t_val)\n        \n        dot = Dot(axes.c2p(t_val, p_val), color=\"#2ECC71\")\n        \n        # Tangent line equation: y = slope * (x - t_val) + p_val\n        def tangent_func(x):\n            return slope * (x - t_val) + p_val\n        \n        tangent_line = axes.plot(tangent_func, x_range=[t_val-0.4, t_val+0.4], color=\"#2ECC71\")\n        velocity_label = Text(\"Velocity\", font_size=18, color=\"#2ECC71\")\n        # Issue 44: Use scale factor 0.8\n        self.place_at_grid(velocity_label, 'B5', scale_factor=0.8)\n\n        self.play(\n            FadeIn(dot),\n            Create(tangent_line),\n            Write(velocity_label),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(\"#F1C40F\")\n        )\n\n        # Animate rocket moving up and tangent line getting steeper\n        target_rocket_pos = self.grid[\"B2\"]\n        \n        # Steeper tangent line at t=2.4\n        t_val_2 = 2.4\n        p_val_2 = np.exp(t_val_2) - 1\n        slope_2 = np.exp(t_val_2)\n        dot_2 = Dot(axes.c2p(t_val_2, p_val_2), color=\"#F1C40F\")\n        \n        def tangent_func_2(x):\n            return slope_2 * (x - t_val_2) + p_val_2\n            \n        tangent_line_2 = axes.plot(tangent_func_2, x_range=[t_val_2-0.3, t_val_2+0.3], color=\"#F1C40F\")\n\n        final_text = Text(\"Calculus is the Mathematics of Change\", font_size=24, color=\"#F1C40F\")\n        # Final text spans bottom row\n        self.place_in_area(final_text, \"F1\", \"F6\", scale_factor=1.0)\n\n        self.play(\n            rocket.animate.move_to(target_rocket_pos),\n            ReplacementTransform(tangent_line, tangent_line_2),\n            ReplacementTransform(dot, dot_2),\n            velocity_label.animate.set_color(\"#F1C40F\").next_to(dot_2, LEFT, buff=0.2),\n            run_time=2\n        )\n        \n        self.play(FadeIn(final_text))\n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "Instantaneous Rate of Change and the Derivative",
+    "target_audience": "High school seniors or early university students (Introductory Calculus)",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Cheetah's Paradox: Average vs. Instantaneous",
+        "content": "Introduce the concept of motion through a real-world scenario. Contrast the 'Average Rate of Change' (total distance over total time) with the 'Instantaneous Rate' (the exact speed at a specific blink of an eye). This sets the stage for why we need the derivative.",
+        "example": "A cheetah chasing a gazelle. We know its average speed over 100 meters, but how fast is it moving at exactly 2.53 seconds? An animation shows a speedometer needle flickering at a specific moment on a position-time graph."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Slope of a Secant Line",
+        "content": "Review the algebra of a straight line. Introduce the 'Secant Line'—a line connecting two points, (x, f(x)) and (x+h, f(x+h)), on a curve. Explain that the slope of this line represents the average rate of change over the interval 'h'.",
+        "example": "Graph a curve y = x². Draw a line through points A(1, 1) and B(3, 9). The slope is (9-1)/(3-1) = 4. This is the 'Average Speed' between those two points."
+      },
+      {
+        "id": "section_3",
+        "title": "The Limit: Closing the Gap",
+        "content": "Show the dynamic process of moving point B closer and closer to point A. As the interval 'h' shrinks toward zero, the secant line begins to pivot. This visual transition is the core intuition behind the 'Limit'.",
+        "example": "An animation where point B slides down the curve toward A. As the distance 'h' becomes 0.1, 0.01, and 0.001, the secant line rotates until it barely touches the curve at exactly one point."
+      },
+      {
+        "id": "section_4",
+        "title": "The Birth of the Tangent Line",
+        "content": "Define the Tangent Line. When 'h' is infinitely small (the limit), the secant line becomes the tangent line. The slope of this tangent line is precisely the 'Instantaneous Rate of Change' at that single point.",
+        "example": "A 'Magnifying Glass' visual: Zooming in on the curve at point A until the curve looks like a perfectly straight line. The slope of this 'straightened' curve is the derivative."
+      },
+      {
+        "id": "section_5",
+        "title": "Formalizing the Derivative",
+        "content": "Translate the visual geometry into the formal mathematical limit definition. Explain each part of the fraction: the numerator is the change in output, the denominator is the change in input, as the input change approaches zero.",
+        "example": "Display the formula: f'(x) = lim (h->0) [f(x+h) - f(x)] / h. Use color-coding: Blue for vertical change (rise) and Red for horizontal change (run)."
+      },
+      {
+        "id": "section_6",
+        "title": "Application: The Speedometer of Life",
+        "content": "Connect the math back to the Cheetah and physics. Explain that the derivative of a position function is the velocity function. Briefly mention how this applies to other fields like rocket launches or stock market fluctuations.",
+        "example": "A split-screen view: On the left, a rocket launching. On the right, its position graph. The 'steepness' of the graph at any point tells us how much power the engines are delivering at that exact millisecond."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Cheetah's Paradox: Average vs. Instantaneous",
+      "lecture_lines": [
+        "A sprinting cheetah's speed fluctuates every second.",
+        "Average speed measures distance over a time interval.",
+        "But how fast is it at one exact moment?"
+      ],
+      "animations": [
+        "Show a cheetah icon moving from left to right; a speedometer at the top right fluctuates wildly between 40 and 120 km/h.",
+        "Fade in a Position-Time graph (y=0.5x^2) in #3498DB; draw a straight dashed line connecting (0,0) and (10,50) in #E74C3C.",
+        "Highlight a single point on the graph at t=5s; the speedometer freezes at a specific value as a vertical line appears at t=5s."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Slope of a Secant Line",
+      "lecture_lines": [
+        "Consider a curve with two distinct points plotted.",
+        "A secant line connects these two points directly.",
+        "Its slope represents the average rate of change."
+      ],
+      "animations": [
+        "Graph y = x^2 in #3498DB; plot points A(1,1) and B(3,9) with labels in #FFFFFF.",
+        "Draw a yellow (#F1C40F) secant line passing through points A and B; label it 'Secant Line'.",
+        "Display the slope formula (y2-y1)/(x2-x1) next to the line; result '4' appears in #F1C40F."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Limit: Closing the Gap",
+      "lecture_lines": [
+        "Zooming in, we define the points x and x plus h.",
+        "The horizontal distance between these points is h.",
+        "Now, we slide point B toward point A.",
+        "The interval h shrinks toward a value of zero.",
+        "As B moves, the secant line rotates and pivots."
+      ],
+      "animations": [
+        "Zoom in on the graph near point A(1,1); label the x-coordinate of A as 'x' and B as 'x+h' in #FFFFFF.",
+        "Draw a horizontal bracket between x and x+h, labeled 'h' in #F39C12.",
+        "Move point B slowly along the curve toward point A; the secant line (#F1C40F) rotates accordingly.",
+        "The label 'h' shrinks in size and its numerical value decreases toward zero.",
+        "The secant line pivots around point A, becoming steeper as B gets closer."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Birth of the Tangent Line",
+      "lecture_lines": [
+        "At the limit, the secant line becomes the tangent.",
+        "Magnified, the curve appears to be a straight line.",
+        "The tangent line touches the curve at one point.",
+        "Its slope represents the instantaneous rate of change.",
+        "This unique line defines the derivative at this point."
+      ],
+      "animations": [
+        "When B is extremely close to A, change the secant line color to green (#2ECC71) and label it 'Tangent Line'.",
+        "Create a circular zoom window using the [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/magnifier.svg] centered at point A, showing the curve and tangent line as nearly identical straight lines.",
+        "Remove point B and the bracket 'h'; only point A and the green tangent line remain.",
+        "The text 'Slope of Tangent = Instantaneous Rate' appears in #2ECC71 at the top of the screen.",
+        "The tangent line flashes twice to emphasize its unique contact at exactly one point."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Formalizing the Derivative",
+      "lecture_lines": [
+        "We define the derivative using this formal limit.",
+        "The numerator represents the change in vertical output.",
+        "The denominator h represents the shrinking horizontal run.",
+        "The limit shows h approaching zero precisely.",
+        "This resulting value is the derivative, f prime."
+      ],
+      "animations": [
+        "Display the derivative definition: f'(x) = lim_{h->0} [f(x+h)-f(x)] / h in #FFFFFF.",
+        "Highlight the numerator [f(x+h)-f(x)] in #58D68D; a vertical line (Rise) appears on the graph from section 3.",
+        "Highlight the denominator 'h' in #F39C12; the horizontal bracket (Run) from section 3 appears.",
+        "The 'lim h->0' part of the formula pulses; the horizontal bracket 'h' on the graph shrinks to zero.",
+        "The entire formula glows in #FFFFFF as the label 'The Derivative' appears above it."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Application: The Speedometer of Life",
+      "lecture_lines": [
+        "Derivatives help us analyze motion in the real world.",
+        "The tangent slope gives the rocket's exact velocity.",
+        "Calculus allows us to calculate the mathematics of change."
+      ],
+      "animations": [
+        "Show a split screen: a rocket [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/rocket.svg] launching on the left; a position graph y=e^x-1 on the right in #3498DB.",
+        "At t=2s, draw a green (#2ECC71) tangent line on the graph; label its slope as 'Velocity'.",
+        "The rocket [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/rocket.svg]'s speed increases as the tangent line gets steeper; final text 'Calculus is the Mathematics of Change' fades in."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for section 1. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Section1Scene following the teaching script and visual anchor system. Used a 6x6 grid for positioning, implemented the speedometer with fluctuations, the cheetah movement track, and the position-time graph with average and instantaneous rate indicators. All constraints (no Tex, color-only lecture updates, TeachingScene base) are respected."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for section 2. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 2 using the grid system and specified visual style. Implemented the graph of y=x^2, points A and B, the secant line, and the slope calculation as requested. Ensured no Tex or MathTex was used and followed the TeachingScene constraints."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for section 3. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated complete Manim code for Section 3 following the visual anchor system, grid constraints, and teaching script. Used ValueTracker for dynamic h-interval animation while adhering to the 'no-Tex' and 'no-expensive-updaters' rules."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for section 4. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 4 following the Visual Anchor System and teaching script. Used grid-based positioning, handled color changes for lecture lines, and implemented the requested animations (tangent line birth, zoom, and derivative definition)."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for section 5. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated the Section5Scene Manim class. Implemented the formal derivative definition formula using Text components (no MathTex). Added a graphical representation with axes, a curve, and rise/run lines that shrink to demonstrate the limit. Used the 6x6 grid system for positioning. Handled lecture line highlights."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for section 6. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 6 following all constraints: used the TeachingScene base class, grid system, and hexadecimal colors. Implemented a split-screen visualization with a rocket launch and a position graph."
+    },
+    {
+      "id": 19,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Generate 3 lecture lines (max 10 words each) aligned with the provided animation steps. Line 1: Cheetah speed. Line 2: Average speed. Line 3: Instantaneous speed.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated lecture lines for section_1 to match animation steps and word count constraints."
+    },
+    {
+      "id": 20,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Generate 3 lecture lines (max 10 words each) aligned with the provided animation steps. Line 1: The curve. Line 2: The secant line. Line 3: Average rate of change.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated lecture lines for section_2 to match animation steps and word count constraints."
+    },
+    {
+      "id": 21,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Generate 5 lecture lines (max 10 words each) aligned with the provided animation steps. Line 1: Zooming in. Line 2: Introducing h. Line 3: Moving B to A. Line 4: h approaching zero. Line 5: Pivoting line.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated lecture lines for section_3 to match animation steps and word count constraints."
+    },
+    {
+      "id": 22,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Generate 5 lecture lines (max 10 words each) aligned with the provided animation steps. Line 1: The limit reached. Line 2: Local linearity. Line 3: One point contact. Line 4: Defining instantaneous rate. Line 5: The tangent line.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated lecture lines for section_4 to match animation steps and word count constraints."
+    },
+    {
+      "id": 23,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Generate 5 lecture lines (max 10 words each) aligned with the provided animation steps. Line 1: Formal definition. Line 2: The rise. Line 3: The run. Line 4: The limit process. Line 5: The derivative.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated lecture lines for section_5 to match animation steps and word count constraints."
+    },
+    {
+      "id": 24,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Generate 3 lecture lines (max 10 words each) aligned with the provided animation steps. Line 1: Real world motion. Line 2: Velocity as derivative. Line 3: Conclusion.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated lecture lines for section_6 to match animation steps and word count constraints."
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Create a circular zoom window using the [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/magnifier.svg] centered at point A, showing the curve and tangent line as nearly identical straight lines.']",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Replaced the manual Circle zoom window with the magnifier SVG asset at the specified location."
+    },
+    {
+      "id": 26,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a split screen: a rocket [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/rocket.svg] launching on the left; a position graph y=e^x-1 on the right in #3498DB.', \"The rocket [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/rocket.svg]'s speed increases as the tangent line gets steeper; final text 'Calculus is the Mathematics of Change' fades in.\"]",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated rocket asset from /mmfs1/data/home/jthen/Code2Video/assets/icon/rocket.svg into the scene, replacing the primitive shapes."
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The graph's Y-axis label 'Dist' is too close to the lecture notes, creating a cluttered appearance and potential obstruction. Fix: Line 108: self.place_in_area(graph_vg, 'C3', 'F6', scale_factor=0.8) (line=108, object=graph_vg)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved graph_vg to 'C3':'F6' and reduced scale to 0.8 to prevent occlusion with lecture notes."
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The speedometer at A5 is centrally located in the header space, which may interfere with vertical projection lines used later in the animation. Fix: Line 63: self.place_at_grid(speedometer, 'A6', scale_factor=0.8) (line=63, object=speedometer)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved speedometer to 'A6' and scaled by 0.8 to avoid potential interference with future projection lines."
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The horizontal movement path (representing the cheetah's track) is not grid-anchored, leading to inconsistent spacing with the graph below it. Fix: Line 85: self.place_in_area(path_group, 'B3', 'B6') (line=85, object=path_group)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Grouped track and cheetah into path_group and anchored to 'B3':'B6' for consistent grid alignment."
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The slope formula at grid F2 overlaps with the subsequent calculation text at F4 due to its horizontal length and insufficient spacing. Fix: Line 113: self.place_in_area(formula_text, 'F1', 'F2', scale_factor=0.55) (line=113, object=formula_text)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Changed formula_text positioning to place_in_area('F1', 'F2') with scale_factor=0.55 to prevent overlap with calculation text."
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The calculation text at F4 overlaps with the final result at F6, creating a cluttered and unreadable bottom row. Fix: Line 116: self.place_in_area(calc_text, 'F3', 'F5', scale_factor=0.55) (line=116, object=calc_text)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Changed calc_text positioning to place_in_area('F3', 'F5') with scale_factor=0.55 to prevent overlap with the formula and the final result."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The final result 'm = 4' is poorly spaced relative to the calculation, leading to visual crowding at the end of the sequence. Fix: Line 119: self.place_at_grid(result_text, 'F6', scale_factor=0.7) (line=119, object=result_text)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Changed result_text positioning to place_at_grid('F6') with scale_factor=0.7 to improve spacing and readability."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: Labels 'x' and 'x + h' on the x-axis overlap and become illegible as h approaches zero. Fix: Line 80: self.place_at_grid(label_x_plus_h, 'F5', scale_factor=0.5) (line=80, object=label_x_plus_h)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved label_x_plus_h to grid position F5 as requested to avoid overlap with 'x' label near the axis."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The orange 'h' label and its bracket overlap with the white 'x' labels, creating visual clutter. Fix: Line 85: self.place_at_grid(label_h, 'F4', scale_factor=0.5) (line=85, object=label_h)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved label_h to grid position F4 and adjusted positioning of the bracket to avoid visual clutter."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The axes and labels are positioned too low, with labels touching the bottom edge of the frame. Fix: Line 72: self.place_in_area(axes, 'A1', 'E6', scale_factor=0.8) (line=72, object=axes)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Re-positioned axes to area A1-E6 with a scale factor of 0.8 to prevent labels from touching the bottom edge."
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The slope_formula is partially off-screen on the right edge because it spans the full grid width (A1-A6) while being a long label. Fix: Line 183: self.place_in_area(self.slope_formula, 'A1', 'A5', scale_factor=0.7) (line=183, object=slope_formula)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned and scaled the slope formula to A1-A5 with scale 0.7 to ensure it fits on screen."
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The tangent_label at B5 is too distant from the point of tangency, weakening the visual connection between the label and the line. Fix: Line 121: self.place_at_grid(self.tangent_label, 'B4', scale_factor=0.8) (line=121, object=tangent_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved the tangent label to B4 with a scale of 0.8 to bring it closer to the point of tangency."
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The zoom_circle at D2 overlaps with the y-axis tick marks and labels, causing visual obstruction and clutter. Fix: Line 158: self.place_at_grid(self.zoom_circle, 'D2', scale_factor=0.6) (line=158, object=zoom_circle)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted the magnifier/zoom window scale to 0.6 and ensured it is placed at D2 to avoid overlapping axes."
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The coordinate axes and function curve (graph_group) are floating in the right-side space without precise grid alignment, leading to inconsistent margins. Fix: Line 22: self.place_in_area(graph_group, 'A2', 'C5', scale_factor=0.8) (line=22, object=graph_group)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Replaced manual positioning with grid-based positioning. Used self.place_in_area for the graph_group as requested."
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The derivative limit formula (formula_group) is positioned too low and is not anchored to the grid visual system, risking a cluttered look at the bottom of the screen. Fix: Line 45: self.place_in_area(formula_group, 'E2', 'F5', scale_factor=0.85) (line=45, object=formula_group)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Replaced manual positioning for the formula with grid-based positioning using self.place_in_area."
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The orange tangent line in the final sequence extends far into the left-hand side, potentially obstructing the lecture notes area. Fix: Line 60: self.place_at_grid(tangent_line, 'B3', scale_factor=0.6) (line=60, object=tangent_line)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted the final visual state and ensured layout uses the grid system to prevent obstruction of lecture notes. Added a tangent line and positioned it according to the requested grid point."
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The axes_group (A4-F6) overlaps with the final_text (F1-F6) and is positioned too high, potentially crowding the title area. Fix: Line 82: self.place_in_area(axes_group, 'B4', 'E6', scale_factor=0.8) (line=82, object=axes_group)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Relocated axes_group to 'B4'-'E6' at scale 0.8 to prevent overlap with the final text in the bottom row and the title."
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The rocket object uses place_in_area for a single-point coordinate, which violates the grid system convention for single objects. Fix: Line 66: self.place_at_grid(rocket, 'E2', scale_factor=0.8) (line=66, object=rocket)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Changed rocket positioning from place_in_area to place_at_grid('E2') as per grid system conventions for single objects."
+    },
+    {
+      "id": 44,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The velocity_label at scale 1.0 is too large for its proximity to the tangent line and graph curve, causing visual clutter. Fix: Line 114: self.place_at_grid(velocity_label, 'B5', scale_factor=0.8) (line=114, object=velocity_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced velocity_label scale to 0.8 and ensured its placement at 'B5' follows the grid constraint."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 189002,
+        "video_mtime_ns": 1778631412777470406,
+        "code_sha1": "25dcbf5d0bb95128b4b8f39b8eca6066e4dc1356"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The graph's Y-axis label 'Dist' is too close to the lecture notes, creating a cluttered appearance and potential obstruction.",
+              "solution": "Line 108: self.place_in_area(graph_vg, 'C3', 'F6', scale_factor=0.8)",
+              "line_number": 108,
+              "object_affected": "graph_vg"
+            },
+            {
+              "problem": "The speedometer at A5 is centrally located in the header space, which may interfere with vertical projection lines used later in the animation.",
+              "solution": "Line 63: self.place_at_grid(speedometer, 'A6', scale_factor=0.8)",
+              "line_number": 63,
+              "object_affected": "speedometer"
+            },
+            {
+              "problem": "The horizontal movement path (representing the cheetah's track) is not grid-anchored, leading to inconsistent spacing with the graph below it.",
+              "solution": "Line 85: self.place_in_area(path_group, 'B3', 'B6')",
+              "line_number": 85,
+              "object_affected": "path_group"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        27,
+        28,
+        29
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 259350,
+        "video_mtime_ns": 1778631457911305641,
+        "code_sha1": "83a5ec158cbb62635ed69d4fa8492b19f0759a4c"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The slope formula at grid F2 overlaps with the subsequent calculation text at F4 due to its horizontal length and insufficient spacing.",
+              "solution": "Line 113: self.place_in_area(formula_text, 'F1', 'F2', scale_factor=0.55)",
+              "line_number": 113,
+              "object_affected": "formula_text"
+            },
+            {
+              "problem": "The calculation text at F4 overlaps with the final result at F6, creating a cluttered and unreadable bottom row.",
+              "solution": "Line 116: self.place_in_area(calc_text, 'F3', 'F5', scale_factor=0.55)",
+              "line_number": 116,
+              "object_affected": "calc_text"
+            },
+            {
+              "problem": "The final result 'm = 4' is poorly spaced relative to the calculation, leading to visual crowding at the end of the sequence.",
+              "solution": "Line 119: self.place_at_grid(result_text, 'F6', scale_factor=0.7)",
+              "line_number": 119,
+              "object_affected": "result_text"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        30,
+        31,
+        32
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 319472,
+        "video_mtime_ns": 1778631418480415514,
+        "code_sha1": "83425072f80c1b72170fb1c142c075e1fb9a4682"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Labels 'x' and 'x + h' on the x-axis overlap and become illegible as h approaches zero.",
+              "solution": "Line 80: self.place_at_grid(label_x_plus_h, 'F5', scale_factor=0.5)",
+              "line_number": 80,
+              "object_affected": "label_x_plus_h"
+            },
+            {
+              "problem": "The orange 'h' label and its bracket overlap with the white 'x' labels, creating visual clutter.",
+              "solution": "Line 85: self.place_at_grid(label_h, 'F4', scale_factor=0.5)",
+              "line_number": 85,
+              "object_affected": "label_h"
+            },
+            {
+              "problem": "The axes and labels are positioned too low, with labels touching the bottom edge of the frame.",
+              "solution": "Line 72: self.place_in_area(axes, 'A1', 'E6', scale_factor=0.8)",
+              "line_number": 72,
+              "object_affected": "axes"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        33,
+        34,
+        35
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 476672,
+        "video_mtime_ns": 1778631421828560847,
+        "code_sha1": "15239b7197e811b01fb61eee55582b50dc4e9e33"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The slope_formula is partially off-screen on the right edge because it spans the full grid width (A1-A6) while being a long label.",
+              "solution": "Line 183: self.place_in_area(self.slope_formula, 'A1', 'A5', scale_factor=0.7)",
+              "line_number": 183,
+              "object_affected": "slope_formula"
+            },
+            {
+              "problem": "The tangent_label at B5 is too distant from the point of tangency, weakening the visual connection between the label and the line.",
+              "solution": "Line 121: self.place_at_grid(self.tangent_label, 'B4', scale_factor=0.8)",
+              "line_number": 121,
+              "object_affected": "tangent_label"
+            },
+            {
+              "problem": "The zoom_circle at D2 overlaps with the y-axis tick marks and labels, causing visual obstruction and clutter.",
+              "solution": "Line 158: self.place_at_grid(self.zoom_circle, 'D2', scale_factor=0.6)",
+              "line_number": 158,
+              "object_affected": "zoom_circle"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        36,
+        37,
+        38
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 328149,
+        "video_mtime_ns": 1778631549635861673,
+        "code_sha1": "6fa774b43b8d12ffdf5796722fa4c2835fb1080f"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The coordinate axes and function curve (graph_group) are floating in the right-side space without precise grid alignment, leading to inconsistent margins.",
+              "solution": "Line 22: self.place_in_area(graph_group, 'A2', 'C5', scale_factor=0.8)",
+              "line_number": 22,
+              "object_affected": "graph_group"
+            },
+            {
+              "problem": "The derivative limit formula (formula_group) is positioned too low and is not anchored to the grid visual system, risking a cluttered look at the bottom of the screen.",
+              "solution": "Line 45: self.place_in_area(formula_group, 'E2', 'F5', scale_factor=0.85)",
+              "line_number": 45,
+              "object_affected": "formula_group"
+            },
+            {
+              "problem": "The orange tangent line in the final sequence extends far into the left-hand side, potentially obstructing the lecture notes area.",
+              "solution": "Line 60: self.place_at_grid(tangent_line, 'B3', scale_factor=0.6)",
+              "line_number": 60,
+              "object_affected": "tangent_line"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        39,
+        40,
+        41
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 180196,
+        "video_mtime_ns": 1778631413019784527,
+        "code_sha1": "941f6c7e5e25eabb913ba5e24991e97e72e06e2f"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The axes_group (A4-F6) overlaps with the final_text (F1-F6) and is positioned too high, potentially crowding the title area.",
+              "solution": "Line 82: self.place_in_area(axes_group, 'B4', 'E6', scale_factor=0.8)",
+              "line_number": 82,
+              "object_affected": "axes_group"
+            },
+            {
+              "problem": "The rocket object uses place_in_area for a single-point coordinate, which violates the grid system convention for single objects.",
+              "solution": "Line 66: self.place_at_grid(rocket, 'E2', scale_factor=0.8)",
+              "line_number": 66,
+              "object_affected": "rocket"
+            },
+            {
+              "problem": "The velocity_label at scale 1.0 is too large for its proximity to the tangent line and graph curve, causing visual clutter.",
+              "solution": "Line 114: self.place_at_grid(velocity_label, 'B5', scale_factor=0.8)",
+              "line_number": 114,
+              "object_affected": "velocity_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        42,
+        43,
+        44
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/1-Instantaneous_Rate_of_Change_and_the_Derivative",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 233069,
+      "completion_tokens": 39167,
+      "total_tokens": 337191,
+      "call_count": 41
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 279,
+        "completion_tokens": 902,
+        "total_tokens": 1958,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 13251,
+        "completion_tokens": 520,
+        "total_tokens": 13889,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 9911,
+        "completion_tokens": 373,
+        "total_tokens": 10363,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 19058,
+        "completion_tokens": 558,
+        "total_tokens": 20445,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 15777,
+        "completion_tokens": 4146,
+        "total_tokens": 20826,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 18075,
+        "completion_tokens": 5915,
+        "total_tokens": 24511,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 19892,
+        "completion_tokens": 3570,
+        "total_tokens": 23730,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 25112,
+        "completion_tokens": 2293,
+        "total_tokens": 28496,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 20065,
+        "completion_tokens": 5056,
+        "total_tokens": 25389,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 29281,
+        "completion_tokens": 4354,
+        "total_tokens": 34391,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 4516,
+        "completion_tokens": 720,
+        "total_tokens": 15532,
+        "call_count": 12
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 6439,
+        "completion_tokens": 1637,
+        "total_tokens": 15630,
+        "call_count": 1
+      },
+      "scope_refine:section_5": {
+        "prompt_tokens": 33134,
+        "completion_tokens": 7111,
+        "total_tokens": 58641,
+        "call_count": 4
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2718,
+        "completion_tokens": 327,
+        "total_tokens": 6680,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2974,
+        "completion_tokens": 338,
+        "total_tokens": 5953,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3111,
+        "completion_tokens": 319,
+        "total_tokens": 6760,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3441,
+        "completion_tokens": 348,
+        "total_tokens": 9857,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3135,
+        "completion_tokens": 343,
+        "total_tokens": 7020,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2900,
+        "completion_tokens": 337,
+        "total_tokens": 7120,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 233069,
+        "completion_tokens": 39167,
+        "total_tokens": 337191,
+        "call_count": 41
+      }
+    }
+  }
+}

@@ -1,0 +1,1009 @@
+{
+  "topic": "The Mechanics of Attention: How LLMs 'Understand' Context",
+  "target_audience": "University students and aspiring AI developers",
+  "code": [
+    "from manim import *\nimport numpy as np\nimport random\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        title = \"The Intuition: Selective Focus\"\n        lines = [\n            \"Attention is like a flashlight in a dark room.\",\n            \"It lets models focus on what truly matters.\",\n            \"We prioritize relevant information over background noise.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Time tracker for updaters\n        time_tracker = ValueTracker(0)\n        self.add(time_tracker)\n        time_tracker.add_updater(lambda m, dt: m.increment_value(dt))\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight first lecture line\n        self.play(self.lecture[0].animate.set_color(\"#00FF00\"))\n        \n        # Generate noisy dots field\n        dots = VGroup()\n        for _ in range(25):\n            dot = Dot(color=\"#808080\", radius=0.04)\n            # Random position within the grid area B1 to F6\n            rand_x = random.uniform(0.5, 5.5)\n            rand_y = random.uniform(-2.8, 1.5)\n            dot.move_to([rand_x, rand_y, 0])\n            dots.add(dot)\n            \n        green_dot = Dot(color=\"#00FF00\", radius=0.08)\n        # Apply Issue 25: Centered flashlight\n        self.place_in_area(green_dot, \"C3\", \"C4\", scale_factor=1.0)\n        \n        highlight_circle = Circle(radius=0.25, color=\"#00FF00\", stroke_width=2)\n        highlight_circle.add_updater(lambda m: m.move_to(green_dot.get_center()))\n        \n        # Jitter function\n        def jitter_updater(mobj, dt):\n            t = time_tracker.get_value()\n            noise_x = np.sin(t * 3 + mobj.get_x() * 10) * 0.006\n            noise_y = np.cos(t * 3 + mobj.get_y() * 10) * 0.006\n            mobj.shift([noise_x, noise_y, 0])\n\n        for d in dots:\n            d.add_updater(jitter_updater)\n        green_dot.add_updater(jitter_updater)\n        \n        self.play(FadeIn(dots), FadeIn(green_dot))\n        self.play(Create(highlight_circle))\n        self.wait(2)\n        \n        # === Animation for Lecture Line 2 ===\n        # Update lecture colors\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(\"#90EE90\")\n        )\n        \n        # Transition out first animation\n        self.play(FadeOut(dots), FadeOut(green_dot), FadeOut(highlight_circle))\n        \n        # Frog and Fly animation\n        frog = Circle(radius=0.4, color=\"#90EE90\", fill_opacity=0.8)\n        self.place_at_grid(frog, \"C2\")\n        frog_label = Text(\"Frog\", font_size=16, color=\"#90EE90\").next_to(frog, DOWN, buff=0.2)\n        \n        fly = Dot(color=\"#FF6347\", radius=0.1)\n        self.place_at_grid(fly, \"C5\")\n        fly_label = Text(\"Fly\", font_size=16, color=\"#FF6347\").next_to(fly, DOWN, buff=0.2)\n        \n        beam = Line(frog.get_right(), fly.get_left(), color=\"#FFFFFF\", stroke_width=3)\n        beam.set_stroke(opacity=0.6)\n        \n        self.play(FadeIn(frog), FadeIn(frog_label), FadeIn(fly), FadeIn(fly_label))\n        self.play(Create(beam))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Update lecture colors\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(\"#FFD700\")\n        )\n        \n        # Transition out second animation\n        self.play(FadeOut(frog), FadeOut(frog_label), FadeOut(fly), FadeOut(fly_label), FadeOut(beam))\n        \n        # Sequence of words boxes and central Meaning node\n        boxes = VGroup()\n        box_labels = [\"The\", \"frog\", \"sees\", \"the\", \"fly\"]\n        grid_pos = [\"E1\", \"E2\", \"E3\", \"E4\", \"E5\"]\n        \n        for i in range(5):\n            box_rect = Square(side_length=0.7, color=WHITE)\n            self.place_at_grid(box_rect, grid_pos[i])\n            box_text = Text(box_labels[i], font_size=14).move_to(box_rect.get_center())\n            boxes.add(VGroup(box_rect, box_text))\n            \n        meaning_node = Circle(radius=0.5, color=\"#FFD700\", fill_opacity=0.4)\n        meaning_text = Text(\"Meaning\", font_size=18, color=\"#FFD700\").move_to(meaning_node.get_center())\n        node_group = VGroup(meaning_node, meaning_text)\n        \n        # Apply Issue 24: Vertically adjusted meaning node\n        self.place_in_area(node_group, 'C3', 'C4', scale_factor=1.0)\n        \n        lines_to_node = VGroup()\n        for box in boxes:\n            l = Line(box.get_top(), meaning_node.get_bottom(), color=\"#FFD700\", stroke_width=1.5)\n            l.set_stroke(opacity=0.5)\n            lines_to_node.add(l)\n            \n        self.play(FadeIn(boxes))\n        self.play(FadeIn(node_group))\n        self.play(Create(lines_to_node))\n        \n        self.wait(3)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with title and lecture lines\n        self.setup_layout(\n            \"Prerequisite: The Language of Vectors\", \n            [\n                \"Computers process numbers, not raw text.\",\n                \"Embeddings map words into a multi-dimensional space.\",\n                \"Related concepts sit closer together in this space.\"\n            ]\n        )\n        \n        # Define colors\n        KING_COLOR = \"#4169E1\"\n        QUEEN_COLOR = \"#FF69B4\"\n        CAR_COLOR = \"#808080\"\n        HIGHLIGHT_COLOR = YELLOW\n\n        # === Animation for Lecture Line 1 ===\n        # computers process numbers, not raw text.\n        self.play(self.lecture[0].animate.set_color(HIGHLIGHT_COLOR))\n        \n        # Create a grid background for the animation area\n        grid_lines = VGroup()\n        for i in range(7):\n            # Vertical lines\n            start_v = self.grid[\"A1\"] + LEFT * 0.5 + UP * 0.5 + RIGHT * i\n            end_v = self.grid[\"F1\"] + LEFT * 0.5 + DOWN * 0.5 + RIGHT * i\n            grid_lines.add(Line(start_v, end_v, stroke_width=1, color=GRAY_D))\n            # Horizontal lines\n            start_h = self.grid[\"A1\"] + LEFT * 0.5 + UP * 0.5 + DOWN * i\n            end_h = self.grid[\"A6\"] + RIGHT * 0.5 + UP * 0.5 + DOWN * i\n            grid_lines.add(Line(start_h, end_h, stroke_width=1, color=GRAY_D))\n        \n        king_dot = Dot(color=KING_COLOR)\n        king_label = Text(\"King\", font_size=18, color=KING_COLOR).next_to(king_dot, UP, buff=0.1)\n        king_group = VGroup(king_dot, king_label)\n        # Fix Issue 28: Scale factor 0.7\n        self.place_at_grid(king_group, \"B2\", scale_factor=0.7)\n\n        queen_dot = Dot(color=QUEEN_COLOR)\n        queen_label = Text(\"Queen\", font_size=18, color=QUEEN_COLOR).next_to(queen_dot, UP, buff=0.1)\n        queen_group = VGroup(queen_dot, queen_label)\n        # Fix Issue 26: Move to B4 and Scale factor 0.7\n        self.place_at_grid(queen_group, \"B4\", scale_factor=0.7)\n\n        self.play(Create(grid_lines), FadeIn(king_group), FadeIn(queen_group))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Embeddings map words into a multi-dimensional space.\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(HIGHLIGHT_COLOR)\n        )\n        \n        car_dot = Dot(color=CAR_COLOR)\n        car_label = Text(\"Car\", font_size=18, color=CAR_COLOR).next_to(car_dot, UP, buff=0.1)\n        car_group = VGroup(car_dot, car_label)\n        # Fix Issue 27: Move to F6 and Scale factor 0.7\n        self.place_at_grid(car_group, \"F6\", scale_factor=0.7)\n\n        # Arrow highlighting distance between King and Car\n        dist_arrow = DoubleArrow(\n            king_dot.get_center(), \n            car_dot.get_center(), \n            buff=0.1, \n            color=WHITE, \n            stroke_width=2,\n            tip_length=0.15\n        )\n        dist_label = Text(\"Large Distance\", font_size=14, color=WHITE).move_to(dist_arrow.get_center() + UP * 0.3)\n\n        self.play(FadeIn(car_group))\n        self.play(GrowArrow(dist_arrow), Write(dist_label))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Related concepts sit closer together in this space.\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(HIGHLIGHT_COLOR),\n            FadeOut(dist_arrow),\n            FadeOut(dist_label)\n        )\n\n        # Flash King and Queen\n        self.play(Indicate(king_dot), Indicate(queen_dot))\n\n        # Relationship vector (line)\n        rel_line = Line(king_dot.get_center(), queen_dot.get_center(), color=WHITE, stroke_width=2)\n        rel_label = Text(\"Semantic Similarity\", font_size=14, color=WHITE).next_to(rel_line, DOWN, buff=0.1)\n\n        self.play(Create(rel_line), Write(rel_label))\n        self.wait(3)\n\n        # Cleanup highlight\n        self.play(self.lecture[2].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Colors\n        Q_COLOR = \"#FF0000\"\n        K_COLOR = \"#0000FF\"\n        V_COLOR = \"#00FF00\"\n        BANK_COLOR = \"#FFFFFF\"\n\n        lecture_lines = [\n            \"Each word transforms into three specialized vectors.\",\n            \"Query asks: What information am I looking for?\",\n            \"Key says: Here is what I offer others.\",\n            \"Value holds the actual content being shared.\"\n        ]\n\n        self.setup_layout(\"The Triple Identity: Query, Key, and Value\", lecture_lines)\n\n        # Pre-creating Assets\n        # [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/magnifying.svg]\n        magnifying_glass = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/magnifying.svg\").set_color(WHITE)\n        \n        # Barcode (Procedural ISBN represention)\n        barcode = VGroup(*[Line(UP * 0.2, DOWN * 0.2, color=WHITE, stroke_width=2).shift(RIGHT * 0.06 * i) for i in range(7)])\n        \n        # Book (Procedural)\n        book_rect = Rectangle(height=0.4, width=0.3, color=WHITE)\n        book_lines = VGroup(*[Line(LEFT*0.1, RIGHT*0.1, color=WHITE, stroke_width=1).shift(UP*0.08*i) for i in range(-1, 2)])\n        book = VGroup(book_rect, book_lines)\n\n        # Labels\n        q_label = Text(\"Query\", font_size=20, color=Q_COLOR)\n        k_label = Text(\"Key\", font_size=20, color=K_COLOR)\n        v_label = Text(\"Value\", font_size=20, color=V_COLOR)\n\n        # Boxes\n        q_box = VGroup(Square(side_length=0.8, color=Q_COLOR), Text(\"Q\", font_size=24, color=Q_COLOR))\n        k_box = VGroup(Square(side_length=0.8, color=K_COLOR), Text(\"K\", font_size=24, color=K_COLOR))\n        v_box = VGroup(Square(side_length=0.8, color=V_COLOR), Text(\"V\", font_size=24, color=V_COLOR))\n\n        # === Animation for Lecture Line 1 ===\n        # Each word transforms into three specialized vectors.\n        # Requirement: Use columns 2, 4, 6 for spacing (Issue 37)\n        self.lecture[0].set_color(WHITE)\n        bank_rect = Rectangle(width=1.5, height=0.8, color=BANK_COLOR)\n        bank_text = Text(\"Bank\", font_size=24, color=BANK_COLOR)\n        bank_group = VGroup(bank_rect, bank_text)\n        self.place_at_grid(bank_group, \"C4\") # Center aligned\n        \n        self.play(FadeIn(bank_group))\n        self.wait(1)\n\n        # Split into Q, K, V at spread out positions\n        self.place_at_grid(q_box, \"C2\")\n        self.place_at_grid(k_box, \"C4\")\n        self.place_at_grid(v_box, \"C6\")\n\n        self.play(\n            FadeOut(bank_group),\n            FadeIn(q_box),\n            FadeIn(k_box),\n            FadeIn(v_box)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Query asks: What information am I looking for?\n        self.lecture[1].set_color(Q_COLOR)\n        self.place_at_grid(magnifying_glass, \"B2\", scale_factor=0.6)\n        \n        self.play(\n            Indicate(q_box, color=WHITE),\n            FadeIn(magnifying_glass)\n        )\n        self.play(Write(self.place_at_grid(q_label, \"D2\")))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Key says: Here is what I offer others.\n        self.lecture[2].set_color(K_COLOR)\n        self.place_at_grid(barcode, \"B4\", scale_factor=0.8)\n        \n        self.play(\n            Indicate(k_box, color=WHITE),\n            FadeIn(barcode)\n        )\n        self.play(Write(self.place_at_grid(k_label, \"D4\")))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Value holds the actual content being shared.\n        self.lecture[3].set_color(V_COLOR)\n        self.place_at_grid(book, \"B6\", scale_factor=0.8)\n        \n        self.play(\n            Indicate(v_box, color=WHITE),\n            FadeIn(book)\n        )\n        self.play(Write(self.place_at_grid(v_label, \"D6\")))\n        self.wait(2)\n\n        # Final pause to observe the identity spread\n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        title = \"The Math of Matching: Scaled Dot-Product\"\n        lines = [\n            \"We multiply Query and Key to find relevance.\",\n            \"This dot-product measures how well they match.\",\n            \"Scaling ensures the mathematical gradients remain stable.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        Q_COLOR = \"#FF0000\"\n        K_COLOR = \"#0000FF\"\n        HIGHLIGHT_COLOR = \"#FFFF00\"\n        SCORE_BOX_COLOR = WHITE\n        HEATMAP_COLORS = [\"#FFA500\", \"#FF8C00\", \"#FF4500\"]\n\n        # === Animation for Lecture Line 1 ===\n        # Lecture line color change\n        self.play(self.lecture[0].animate.set_color(Q_COLOR))\n\n        # Q vector\n        q_vec = Rectangle(height=0.4, width=1.0, color=Q_COLOR, fill_opacity=0.5)\n        q_label = Text(\"Query (Q)\", font_size=16, color=Q_COLOR)\n        q_group = VGroup(q_vec, q_label).arrange(DOWN, buff=0.1)\n        # Fix Issue 29: Move q_group to C2\n        self.place_at_grid(q_group, \"C2\")\n        \n        # K vectors\n        k_vecs = VGroup(*[\n            Rectangle(height=0.4, width=1.0, color=K_COLOR, fill_opacity=0.5)\n            for _ in range(3)\n        ]).arrange(DOWN, buff=0.5)\n        k_label = Text(\"Keys (K)\", font_size=16, color=K_COLOR)\n        k_group = VGroup(k_vecs, k_label).arrange(UP, buff=0.2)\n        # Fix Issue 29: Move k_group to C4\n        self.place_at_grid(k_group, \"C4\")\n\n        self.play(FadeIn(q_group), FadeIn(k_group))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Lecture line color change\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(HIGHLIGHT_COLOR)\n        )\n\n        # Connection lines\n        connections = VGroup()\n        scores = VGroup()\n        \n        for i, target_k in enumerate(k_vecs):\n            line = Line(q_vec.get_right(), target_k.get_left(), stroke_width=2, color=GREY)\n            connections.add(line)\n            \n            score_val = [12, 50, 8][i]\n            score_box = Rectangle(height=0.3, width=0.5, color=SCORE_BOX_COLOR)\n            score_text = Text(str(score_val), font_size=14)\n            score_item = VGroup(score_box, score_text)\n            score_item.move_to(line.get_center())\n            scores.add(score_item)\n\n        self.play(Create(connections))\n        self.play(FadeIn(scores))\n        self.wait(0.5)\n\n        # Highlight the match (middle one)\n        high_score_line = connections[1]\n        high_score_box = scores[1]\n        \n        self.play(\n            high_score_line.animate.set_stroke(color=HIGHLIGHT_COLOR, width=5),\n            high_score_box[0].animate.set_color(HIGHLIGHT_COLOR),\n            high_score_box[1].animate.set_color(HIGHLIGHT_COLOR).scale(1.2)\n        )\n        self.play(Flash(high_score_box, color=HIGHLIGHT_COLOR, flash_radius=0.3))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Lecture line color change\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(ORANGE)\n        )\n\n        # Formula: Score / sqrt(dk)\n        formula = MathTex(r\"\\text{Score} = \\frac{Q \\cdot K^T}{\\sqrt{d_k}}\", font_size=24, color=WHITE)\n        # Fix Issue 30: Move formula to E2-E4\n        self.place_in_area(formula, \"E2\", \"E4\")\n        \n        # Numeric scaling example\n        val_50 = Text(\"50\", font_size=24, color=HIGHLIGHT_COLOR)\n        divide = Text(\"/\", font_size=24)\n        val_sqrt = Text(\"10\", font_size=24)\n        equals = Text(\"=\", font_size=24)\n        val_5 = Text(\"5\", font_size=24, color=HEATMAP_COLORS[0])\n        \n        scale_example = VGroup(val_50, divide, val_sqrt, equals, val_5).arrange(RIGHT, buff=0.2)\n        # Fix Issue 30: Move scale_example to F2-F4\n        self.place_in_area(scale_example, \"F2\", \"F4\")\n\n        self.play(Write(formula))\n        self.play(FadeIn(scale_example))\n        self.wait(1)\n\n        # Heatmap grid\n        heatmap = VGroup()\n        for i in range(3):\n            for j in range(3):\n                color_idx = (i + j) % 3\n                rect = Rectangle(height=0.4, width=0.4, fill_color=HEATMAP_COLORS[color_idx], fill_opacity=0.8, stroke_width=1)\n                heatmap.add(rect)\n        heatmap.arrange_in_grid(rows=3, cols=3, buff=0.05)\n        # Fix Issue 31: Move heatmap to C5-E6\n        self.place_in_area(heatmap, \"C5\", \"E6\")\n        \n        heatmap_label = Text(\"Attention Scores (Heatmap)\", font_size=16, color=ORANGE)\n        # Fix Issue 31: Move heatmap_label to B5-B6\n        self.place_in_area(heatmap_label, \"B5\", \"B6\")\n        \n        self.play(FadeIn(heatmap_label), LaggedStartMap(FadeIn, heatmap, shift=UP*0.2))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Initialize the layout with specific title and lecture lines\n        self.setup_layout(\"Softmax: Turning Scores into Percentages\", [\n            \"Softmax converts raw scores into clear probabilities.\",\n            \"These weights always sum to one hundred percent.\",\n            \"They determine how much each word contributes.\"\n        ])\n\n        # Color palette for consistency\n        color1 = YELLOW\n        color2 = GREEN\n        color3 = TEAL\n\n        # === Animation for Lecture Line 1 ===\n        # Goal: Display raw scores (10, 2, 1) as a bar chart.\n        self.play(self.lecture[0].animate.set_color(color1))\n\n        # Raw scores data\n        raw_vals = [10, 2, 1]\n        h_scale = 0.2\n        \n        bar1 = Rectangle(width=0.6, height=raw_vals[0]*h_scale, fill_opacity=0.8, fill_color=color1, stroke_color=WHITE)\n        bar2 = Rectangle(width=0.6, height=raw_vals[1]*h_scale, fill_opacity=0.8, fill_color=color1, stroke_color=WHITE)\n        bar3 = Rectangle(width=0.6, height=raw_vals[2]*h_scale, fill_opacity=0.8, fill_color=color1, stroke_color=WHITE)\n        \n        raw_bars = VGroup(bar1, bar2, bar3).arrange(RIGHT, aligned_edge=DOWN, buff=0.4)\n        # Centering the chart in the right side area\n        self.place_in_area(raw_bars, \"B2\", \"D5\")\n\n        label1 = Text(\"10\", font_size=20).next_to(bar1, UP, buff=0.1)\n        label2 = Text(\"2\", font_size=20).next_to(bar2, UP, buff=0.1)\n        label3 = Text(\"1\", font_size=20).next_to(bar3, UP, buff=0.1)\n        labels = VGroup(label1, label2, label3)\n        \n        self.play(Create(raw_bars), Write(labels))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Goal: Transform bars to percentages (80%, 15%, 5%) and show sum.\n        self.play(self.lecture[1].animate.set_color(color2))\n\n        # Probability heights (scaled)\n        prob_h = [2.0, 0.375, 0.125]\n        \n        new_bar1 = Rectangle(width=0.6, height=prob_h[0], fill_opacity=0.8, fill_color=color2, stroke_color=WHITE)\n        new_bar2 = Rectangle(width=0.6, height=prob_h[1], fill_opacity=0.8, fill_color=color2, stroke_color=WHITE)\n        new_bar3 = Rectangle(width=0.6, height=prob_h[2], fill_opacity=0.8, fill_color=color2, stroke_color=WHITE)\n        \n        prob_bars = VGroup(new_bar1, new_bar2, new_bar3).arrange(RIGHT, aligned_edge=DOWN, buff=0.4)\n        # Position using the same area to ensure alignment\n        self.place_in_area(prob_bars, \"B2\", \"D5\")\n        \n        new_label1 = Text(\"80%\", font_size=20, color=color2).next_to(new_bar1, UP, buff=0.1)\n        new_label2 = Text(\"15%\", font_size=20, color=color2).next_to(new_bar2, UP, buff=0.1)\n        new_label3 = Text(\"5%\", font_size=20, color=color2).next_to(new_bar3, UP, buff=0.1)\n        new_labels = VGroup(new_label1, new_label2, new_label3)\n\n        # Summation label - Fixed position according to Issue 34\n        sum_label = Text(\"Sum = 100%\", font_size=24, color=\"#00FF00\")\n        self.place_at_grid(sum_label, \"D3\") # Addressing Issue 34\n\n        self.play(\n            Transform(raw_bars, prob_bars),\n            Transform(labels, new_labels),\n            run_time=1.5\n        )\n        self.play(Write(sum_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Goal: Sentence spotlight on 'River' in 'River bank'.\n        self.play(self.lecture[2].animate.set_color(color3))\n\n        # Cleanup bar chart\n        self.play(FadeOut(raw_bars), FadeOut(labels), FadeOut(sum_label))\n\n        # Setup word boxes for 'River bank'\n        # Smaller width to avoid overlap at adjacent grid points\n        box_w = 0.9\n        river_box = RoundedRectangle(corner_radius=0.1, width=box_w, height=0.8, color=WHITE)\n        river_text = Text(\"River\", font_size=20)\n        \n        # Load asset\n        asset_path = \"/scratch/pawsey1357/jthen/Code2Video/assets/icon/river.svg\"\n        try:\n            river_icon = SVGMobject(asset_path).scale(0.3)\n            river_icon.next_to(river_box, DOWN, buff=0.1)\n            river_word = VGroup(river_box, river_text, river_icon)\n        except Exception:\n            river_word = VGroup(river_box, river_text)\n        \n        bank_box = RoundedRectangle(corner_radius=0.1, width=box_w, height=0.8, color=WHITE)\n        bank_text = Text(\"bank\", font_size=20)\n        bank_word = VGroup(bank_box, bank_text)\n\n        # Positioning based on Issue 32 & 33\n        self.place_at_grid(river_word, \"C3\") # Addressing Issue 32\n        self.place_at_grid(bank_word, \"C4\")  # Addressing Issue 33\n\n        self.play(FadeIn(river_word), FadeIn(bank_word))\n        self.wait(0.5)\n\n        # Highlight 'River' with a spotlight circle and 80% weight\n        spotlight = Circle(radius=0.8, color=color2, fill_opacity=0.2, stroke_width=2).move_to(river_word)\n        label_80 = Text(\"80%\", font_size=20, color=color2).next_to(river_word, UP, buff=0.2)\n        \n        self.play(\n            river_box.animate.set_stroke(color=color2, width=5),\n            bank_word.animate.set_opacity(0.3),\n            Create(spotlight),\n            Write(label_80)\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        title = \"Multi-Head Attention: Parallel Perspectives\"\n        lines = [\n            \"One attention head cannot capture every relationship.\",\n            \"Multi-head attention runs several processes in parallel.\",\n            \"Different heads focus on grammar, logic, or context.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        COLOR_HEAD1 = \"#FF0000\"\n        COLOR_HEAD2 = \"#0000FF\"\n        COLOR_HEAD3 = \"#00FF00\"\n        COLOR_HEAD4 = \"#FFFF00\"\n        COLOR_SINGLE = \"#A9A9A9\"\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        # Single Attention Head\n        head_box = Rectangle(width=1.5, height=1.0, color=COLOR_SINGLE, fill_opacity=0.5)\n        head_label = Text(\"Head 1\", font_size=20, color=WHITE)\n        single_head = VGroup(head_box, head_label)\n        # Centered at C4 to prepare for expansion\n        self.place_at_grid(single_head, \"C4\")\n        \n        self.play(FadeIn(single_head))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n\n        # 4 Colored Boxes\n        box1 = Rectangle(width=1.0, height=0.7, color=COLOR_HEAD1, fill_opacity=0.7)\n        lbl1 = Text(\"Head 1\", font_size=16, color=WHITE)\n        h1 = VGroup(box1, lbl1)\n        \n        box2 = Rectangle(width=1.0, height=0.7, color=COLOR_HEAD2, fill_opacity=0.7)\n        lbl2 = Text(\"Head 2\", font_size=16, color=WHITE)\n        h2 = VGroup(box2, lbl2)\n        \n        box3 = Rectangle(width=1.0, height=0.7, color=COLOR_HEAD3, fill_opacity=0.7)\n        lbl3 = Text(\"Head 3\", font_size=16, color=WHITE)\n        h3 = VGroup(box3, lbl3)\n        \n        box4 = Rectangle(width=1.0, height=0.7, color=COLOR_HEAD4, fill_opacity=0.7)\n        lbl4 = Text(\"Head 4\", font_size=16, color=WHITE)\n        h4 = VGroup(box4, lbl4)\n\n        # Updated Positions per Issue 38\n        self.place_at_grid(h1, \"B3\")\n        self.place_at_grid(h2, \"B5\")\n        self.place_at_grid(h3, \"D3\")\n        self.place_at_grid(h4, \"D5\")\n\n        self.play(\n            ReplacementTransform(single_head, h1),\n            FadeIn(h2),\n            FadeIn(h3),\n            FadeIn(h4)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n\n        # Labels for roles (flanking the heads)\n        role1 = Text(\"Grammar\", font_size=18, color=COLOR_HEAD1)\n        role2 = Text(\"Logic\", font_size=18, color=COLOR_HEAD2)\n        role3 = Text(\"Time\", font_size=18, color=COLOR_HEAD3)\n        role4 = Text(\"Entities\", font_size=18, color=COLOR_HEAD4)\n\n        self.place_at_grid(role1, \"B2\")\n        self.place_at_grid(role2, \"B6\")\n        self.place_at_grid(role3, \"D2\")\n        self.place_at_grid(role4, \"D6\")\n\n        # Words to connect to (shifted right)\n        word_a = Text(\"Word A\", font_size=20)\n        word_b = Text(\"Word B\", font_size=20)\n        self.place_at_grid(word_a, \"A3\")\n        self.place_at_grid(word_b, \"A5\")\n        \n        # Connectors - showing unique perspectives on the same words\n        # Each head connects to both words\n        lines_vgroup = VGroup()\n        for head, color in zip([h1, h2, h3, h4], [COLOR_HEAD1, COLOR_HEAD2, COLOR_HEAD3, COLOR_HEAD4]):\n            l_a = Line(head.get_top(), word_a.get_bottom(), color=color, stroke_width=2, stroke_opacity=0.6)\n            l_b = Line(head.get_top(), word_b.get_bottom(), color=color, stroke_width=2, stroke_opacity=0.6)\n            lines_vgroup.add(l_a, l_b)\n\n        self.play(\n            FadeIn(role1), FadeIn(role2), FadeIn(role3), FadeIn(role4),\n            FadeIn(word_a), FadeIn(word_b)\n        )\n        self.play(Create(lines_vgroup, lag_ratio=0.1))\n        self.wait(2)\n\n        # Merge back into Multi-Head Output block\n        # Create a multi-colored block to represent combined heads\n        mh_bg = Rectangle(width=2.5, height=1.5, color=WHITE, stroke_width=2)\n        c1 = Rectangle(width=0.5, height=0.5, color=COLOR_HEAD1, fill_opacity=0.8, stroke_width=0)\n        c2 = Rectangle(width=0.5, height=0.5, color=COLOR_HEAD2, fill_opacity=0.8, stroke_width=0)\n        c3 = Rectangle(width=0.5, height=0.5, color=COLOR_HEAD3, fill_opacity=0.8, stroke_width=0)\n        c4 = Rectangle(width=0.5, height=0.5, color=COLOR_HEAD4, fill_opacity=0.8, stroke_width=0)\n        colors_grid = VGroup(c1, c2, c3, c4).arrange_in_grid(rows=2, cols=2, buff=0.1)\n        multi_head_label = Text(\"Multi-Head Output\", font_size=20, color=WHITE).next_to(colors_grid, DOWN, buff=0.1)\n        multi_head_block = VGroup(mh_bg, colors_grid, multi_head_label)\n        self.place_at_grid(multi_head_block, \"C4\")\n\n        self.play(\n            FadeOut(lines_vgroup),\n            FadeOut(role1), FadeOut(role2), FadeOut(role3), FadeOut(role4),\n            FadeOut(word_a), FadeOut(word_b),\n            ReplacementTransform(VGroup(h1, h2, h3, h4), multi_head_block)\n        )\n        self.wait(3)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section7Scene(TeachingScene):\n    def construct(self):\n        # Setup layout with title and lecture lines\n        self.setup_layout(\n            \"The Output: A Context-Rich Representation\",\n            [\n                \"- We multiply attention weights by the Value vectors.\",\n                \"- This blends information from all relevant neighbors.\",\n                \"- The result is a word enriched by its context.\"\n            ]\n        )\n\n        # Define colors from storyboard\n        value_color = \"#00FF00\"      # Value vector (#00FF00)\n        bank_start_color = \"#FFFFFF\" # Chameleon icon starting color (#FFFFFF)\n        bank_end_color = \"#0000FF\"   # Chameleon final blue color (#0000FF)\n\n        # === Animation for Lecture Line 1 ===\n        # \"We multiply attention weights by the Value vectors.\"\n        self.lecture[0].set_color(value_color)\n        \n        # Weight representation\n        weight_val = MathTex(\"0.8\", color=WHITE)\n        self.place_at_grid(weight_val, \"B3\") # Fixed via Issue 35\n        \n        # Multiplication operator\n        mult_op = MathTex(\"\\\\times\", color=WHITE)\n        self.place_at_grid(mult_op, \"B4\") # Fixed via Issue 35\n        \n        # Value vector representation\n        value_rect = RoundedRectangle(height=0.6, width=1.6, color=value_color, fill_opacity=0.4)\n        value_label = Text(\"Value (River)\", font_size=18, color=WHITE)\n        value_vector = VGroup(value_rect, value_label)\n        self.place_at_grid(value_vector, \"B5\") # Fixed via Issue 35\n\n        self.play(\n            FadeIn(weight_val),\n            FadeIn(mult_op),\n            Create(value_vector)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"This blends information from all relevant neighbors.\"\n        self.lecture[1].set_color(bank_end_color)\n        \n        # Chameleon representing the word 'Bank' (initially white/neutral)\n        chameleon_body = Circle(radius=0.4, color=bank_start_color, fill_opacity=0.8)\n        chameleon_label = Text(\"Bank\", font_size=20, color=BLACK)\n        chameleon = VGroup(chameleon_body, chameleon_label)\n        self.place_at_grid(chameleon, \"E4\") # Fixed via Issue 36\n        \n        self.play(FadeIn(chameleon))\n        self.wait(0.5)\n        \n        # Represent the blending/impact: a particle moves from the weighted Value to the Chameleon\n        impact_dot = Dot(color=value_color).move_to(self.grid[\"B5\"])\n        \n        self.play(\n            impact_dot.animate.move_to(self.grid[\"E4\"]),\n            run_time=1.5,\n            rate_func=bezier([0, 0, 1, 1])\n        )\n        \n        # Color shift to blue upon blending\n        self.play(\n            chameleon_body.animate.set_color(bank_end_color),\n            chameleon_label.animate.set_color(WHITE),\n            FadeOut(impact_dot),\n            Flash(self.grid[\"E4\"], color=bank_end_color, line_length=0.2)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"The result is a word enriched by its context.\"\n        self.lecture[2].set_color(bank_end_color)\n        \n        # Move the context-rich chameleon to the final output layer (bottom row)\n        self.play(\n            chameleon.animate.move_to(self.grid[\"F4\"]),\n            FadeOut(weight_val),\n            FadeOut(mult_op),\n            FadeOut(value_vector),\n            run_time=1.5\n        )\n        \n        # Glow/highlight effect to show enrichment\n        glow = SurroundingRectangle(chameleon, color=bank_end_color, buff=0.1)\n        self.play(Create(glow))\n        self.play(\n            Indicate(chameleon, color=bank_end_color, scale_factor=1.1),\n            glow.animate.scale(1.2).set_opacity(0)\n        )\n        \n        self.wait(2)\n"
+  ],
+  "outline": {
+    "topic": "The Mechanics of Attention: How LLMs 'Understand' Context",
+    "target_audience": "University students and aspiring AI developers",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Intuition: Selective Focus",
+        "content": "Introduce the concept of attention as a biological necessity. Just as humans ignore background noise to hear a friend, AI uses attention to focus on relevant words in a sequence. This section sets the stage for why 'global' context is better than 'sequential' processing.",
+        "example": "A frog in a pond: It ignores the ripples (noise) and the lily pads (background) to focus specifically on the movement of a fly (target) to plan its strike."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Language of Vectors",
+        "content": "Briefly explain that computers don't see words; they see numbers. Introduce 'Word Embeddings'—representing words as coordinates in a multi-dimensional space where 'King' and 'Queen' are mathematically close to each other.",
+        "example": "A 2D graph where 'Apple' and 'Fruit' are dots positioned closely together, while 'Apple' and 'Car' are far apart."
+      },
+      {
+        "id": "section_3",
+        "title": "The Triple Identity: Query, Key, and Value",
+        "content": "Explain the three specialized vectors created for every word. The Query (Q) is 'What I am looking for', the Key (K) is 'What I offer to others', and the Value (V) is 'The actual information I carry'.",
+        "example": "A Library System: The Query is your search term; the Key is the ISBN/label on the book spine; the Value is the actual knowledge inside the pages of the book."
+      },
+      {
+        "id": "section_4",
+        "title": "The Math of Matching: Scaled Dot-Product",
+        "content": "Visualize the calculation: Q multiplied by K (transpose). Use a heatmap to show how 'scoring' works. Explain the 'Scaling' factor (square root of dimension) to prevent gradient explosions, ensuring the math stays stable.",
+        "example": "A radar scan: The Query sends out a pulse; when it hits a matching Key, the signal 'pings' loudly (high dot-product score), indicating a strong relationship."
+      },
+      {
+        "id": "section_5",
+        "title": "Softmax: Turning Scores into Percentages",
+        "content": "Explain the Softmax step. It converts raw scores into a probability distribution (0 to 1) that sums to 100%. This determines exactly how much 'attention' weight each word receives relative to the current word.",
+        "example": "A spotlight system: In the sentence 'The bank was closed because of the river flood,' when processing 'bank,' the word 'river' gets a bright 80% light, while 'closed' gets a dim 5% light."
+      },
+      {
+        "id": "section_6",
+        "title": "Multi-Head Attention: Parallel Perspectives",
+        "content": "Explain that one 'head' isn't enough. LLMs use multiple attention heads simultaneously to capture different relationships (e.g., one for grammar, one for logic, one for temporal sequence).",
+        "example": "A film crew: The Director of Photography watches the lighting, the Sound Engineer watches the levels, and the Script Supervisor watches the dialogue—all looking at the same scene from different 'heads'."
+      },
+      {
+        "id": "section_7",
+        "title": "The Output: A Context-Rich Representation",
+        "content": "Show the final step: Multiplying the attention weights by the Value (V) vectors. This produces a new vector for the word that is no longer just its dictionary definition, but a definition flavored by its surroundings.",
+        "example": "A chameleon: The word 'Bank' starts as a neutral color, but after the Attention Mechanism, it turns 'Water-Blue' because it focused on the word 'River'."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Intuition: Selective Focus",
+      "lecture_lines": [
+        "Attention is like a flashlight in a dark room.",
+        "It lets models focus on what truly matters.",
+        "We prioritize relevant information over background noise."
+      ],
+      "animations": [
+        "Show a noisy field of gray dots (#808080) and one bright green dot (#00FF00) moving. The green dot gets a circle around it.",
+        "A simple frog icon (#90EE90) appears on the left; a fly icon (#FF6347) appears on the right. A bright beam connects them.",
+        "A sequence of boxes (words) appears. Lines from all boxes converge on a central 'Meaning' node (#FFD700)."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Language of Vectors",
+      "lecture_lines": [
+        "Computers process numbers, not raw text.",
+        "Embeddings map words into a multi-dimensional space.",
+        "Related concepts sit closer together in this space."
+      ],
+      "animations": [
+        "A grid appears. Two points labeled 'King' (#4169E1) and 'Queen' (#FF69B4) appear close to each other.",
+        "Add a point 'Car' (#808080) far away from 'King' and 'Queen'. An arrow highlights the distance between 'King' and 'Car'.",
+        "The points 'King' and 'Queen' flash. A line connecting them shows their relationship vector."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Triple Identity: Query, Key, and Value",
+      "lecture_lines": [
+        "Each word transforms into three specialized vectors.",
+        "Query asks: What information am I looking for?",
+        "Key says: Here is what I offer others.",
+        "Value holds the actual content being shared."
+      ],
+      "animations": [
+        "A word box 'Bank' (#FFFFFF) splits into three colored boxes: Q (#FF0000), K (#0000FF), and V (#00FF00).",
+        "The Q box (#FF0000) glows. A magnifying glass icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/magnifying.svg] appears next to it to represent a search.",
+        "The K box (#0000FF) glows. An ISBN barcode icon appears next to it representing an identifier.",
+        "The V box (#00FF00) glows. A book icon appears to represent the information carried.",
+        "The Q, K, and V boxes arrange in a row, clearly labeled in their colors."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Math of Matching: Scaled Dot-Product",
+      "lecture_lines": [
+        "We multiply Query and Key to find relevance.",
+        "This dot-product measures how well they match.",
+        "Scaling ensures the mathematical gradients remain stable."
+      ],
+      "animations": [
+        "A Q vector (#FF0000) on the left. A column of K vectors (#0000FF) on the right.",
+        "Lines connect Q to each K. Where they meet, a numerical score appears in a small box.",
+        "One connection line thickens and turns bright yellow (#FFFF00) as the high score flashes.",
+        "A formula 'Score / sqrt(dk)' appears. A large number (50) is divided to become a stable number (5).",
+        "The scores arrange into a heatmap grid with varying shades of orange (#FFA500)."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Softmax: Turning Scores into Percentages",
+      "lecture_lines": [
+        "Softmax converts raw scores into clear probabilities.",
+        "These weights always sum to one hundred percent.",
+        "They determine how much each word contributes."
+      ],
+      "animations": [
+        "A bar chart with three bars of different heights representing raw scores (10, 2, 1).",
+        "The bars transform into percentages (80%, 15%, 5%). A label 'Sum = 100%' (#00FF00) appears.",
+        "In the sentence 'River bank', the 'River' box [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/river.svg] gets a bright 80% spotlight while others dim."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Multi-Head Attention: Parallel Perspectives",
+      "lecture_lines": [
+        "One attention head cannot capture every relationship.",
+        "Multi-head attention runs several processes in parallel.",
+        "Different heads focus on grammar, logic, or context."
+      ],
+      "animations": [
+        "A single 'Attention Head' box (#A9A9A9) labeled 'Head 1' appears.",
+        "The box splits into 4 colored boxes: Head 1 (#FF0000), Head 2 (#0000FF), Head 3 (#00FF00), Head 4 (#FFFF00).",
+        "Labels appear for each: 'Grammar', 'Logic', 'Time', 'Entities' next to respective heads.",
+        "Different colored lines connect the same words, showing unique perspectives from each head.",
+        "The 4 boxes merge back into one large, multi-colored 'Multi-Head Output' block."
+      ]
+    },
+    {
+      "id": "section_7",
+      "title": "The Output: A Context-Rich Representation",
+      "lecture_lines": [
+        "We multiply attention weights by the Value vectors.",
+        "This blends information from all relevant neighbors.",
+        "The result is a word enriched by its context."
+      ],
+      "animations": [
+        "The 80% weight from 'River' is multiplied by its Value vector (#00FF00).",
+        "A chameleon icon (#FFFFFF) representing the word 'Bank' changes color to blue (#0000FF) near 'River'.",
+        "The blue 'Bank' vector moves to the final output layer, glowing with its new context-rich identity."
+      ]
+    }
+  ],
+  "turns_run": 3,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animation steps for Section 1 based on the outline."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_1 implementing all three lecture lines and their corresponding animations with the grid system and correct color mapping."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animation steps for Section 2 based on the outline."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_2 with grid, embeddings (King, Queen, Car), and relationship vector as requested in the storyboard."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 4 concise lecture lines for section_3 explaining Q, K, and V."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animation steps for key Section 3 based on the outline."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 3 following the storyboard and visual grid constraints. Implemented the 'Bank' word box splitting into Q, K, and V vectors with corresponding icons and labels. Used color-coded highlights for lecture lines."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animation steps for key Section 4 based on the outline."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section4Scene with Q/K vectors, score connections, scaling formula, and heatmap. Used 6x6 grid system and followed TeachingScene structure."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animation steps for Section 5 based on the outline."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Fixed NameError by changing 'CYAN' to 'TEAL'. Refined layout and animations for consistency with the storyboard."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animation steps for key Section 6 based on the outline."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_6 using the grid system and storyboard animations. Parallel heads for grammar, logic, etc., were visualized and then merged."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_7."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animation steps for Section 7 based on the outline."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_7 using the 6x6 grid system. Implemented the multiplication of weights and value vectors, the chameleon color change effect for 'Bank' near 'River', and the final transition to the output layer with a glow effect."
+    },
+    {
+      "id": 22,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['The Q box (#FF0000) glows. A magnifying glass icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/magnifying.svg] appears next to it to represent a search.']",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated SVGMobject for magnifying glass using the provided asset path."
+    },
+    {
+      "id": 23,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"In the sentence 'River bank', the 'River' box [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/river.svg] gets a bright 80% spotlight while others dim.\"]",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Integrated the river.svg asset into the animation for lecture line 3."
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The meaning_node at B3 is vertically too high, creating long connector lines and excessive white space between the concept and the sentence tokens. Fix: Line 145: self.place_in_area(self.meaning_node, 'C3', 'C4', scale_factor=1.0) (object=meaning_node)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Relocated the meaning_node group to area C3-C4 to reduce vertical gap and center the concept visually, as requested."
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The green_dot representing the flashlight is positioned at C3, which is horizontally off-center relative to the right-side visual field. Fix: Line 77: self.place_in_area(self.green_dot, 'C3', 'C4', scale_factor=1.0) (object=green_dot)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Relocated the green_dot flashlight to area C3-C4 for better horizontal centering within the right-side visual field."
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The label 'Semantic Similarity' is horizontally too long to fit comfortably between adjacent grid points B2 and B3, leading to visual crowding. Fix: Line 87: self.place_at_grid(queen_group, 'B4', scale_factor=0.7) (line=87, object=queen_group)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved queen_group to 'B4' and scaled to 0.7 to avoid crowding with 'Semantic Similarity' label."
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'Large Distance' arrow and its label appear compressed in the center of the grid, reducing the visual impact of the distance concept. Fix: Line 102: self.place_at_grid(car_group, 'F6', scale_factor=0.7) (line=102, object=car_group)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved car_group to 'F6' and scaled to 0.7 to emphasize distance."
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'King' label is slightly oversized for its grid position, which contributes to the cluttered look when semantic lines are drawn nearby. Fix: Line 82: self.place_at_grid(king_group, 'B2', scale_factor=0.7) (line=82, object=king_group)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Scaled king_group to 0.7 for better fit within grid."
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The Query (q_group) and Key (k_group) visual mechanism is positioned too far to the left, causing it to feel crowded against the lecture notes on the left side of the screen. Fix: Line 71: self.place_at_grid(q_group, 'C2'); Line 80: self.place_at_grid(k_group, 'C4') (line=71, object=q_group and k_group)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted Q and K group positions to C2 and C4 respectively to reduce crowding against the lecture notes."
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The mathematical formula and the scale calculation example are left-aligned, which appears visually unbalanced relative to the Query-Key interaction occurring between columns 2 and 4. Fix: Line 133: self.place_in_area(formula, 'E2', 'E4'); Line 143: self.place_in_area(scale_example, 'F2', 'F4') (line=133, object=formula and scale_example)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Re-positioned formula and scaling example to columns 2-4 for better visual balance within the interaction area."
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The Attention Score heatmap and its label are placed too high in the grid, leaving the bottom-right corner of the visual area underutilized and creating an uneven distribution of visual weight. Fix: Line 157: self.place_in_area(heatmap, 'C5', 'E6'); Line 160: self.place_in_area(heatmap_label, 'B5', 'B6') (line=157, object=heatmap and heatmap_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved heatmap and label lower (C5-E6 and B5-B6) to better utilize space and balance visual weight."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'river_word' and 'bank_word' (at C2 and C4) are too spread out, leaving an empty grid cell at C3 and creating a visual disconnect. Fix: Line 149: self.place_at_grid(river_word, 'C3') (line=149, object=river_word)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved river_word to grid position C3 to reduce whitespace and improve visual connection as suggested."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'bank_word' at C4 is not well-centered on the right-side layout area when paired with the 'river_word'. Fix: Line 150: self.place_at_grid(bank_word, 'C4') (line=150, object=bank_word)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Confirmed bank_word at C4 and adjusted river_word to C3 to center the pair properly in the layout. Reduced box widths to avoid overlap."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'sum_label' at E3 is positioned too low, creating disconnected whitespace between the bar chart and its summary label. Fix: Line 108: self.place_at_grid(sum_label, 'D3') (line=108, object=sum_label)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved sum_label from E3 to D3 to bring it closer to the bar chart baseline and reduce disconnected whitespace."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The mathematical formula components (weight_val, mult_op, value_vector) are currently positioned in column 1 to 3, which is too close to the lecture notes on the left. Fix: Line 68: self.place_at_grid(weight_val, 'B3'); Line 72: self.place_at_grid(mult_op, 'B4'); Line 78: self.place_at_grid(value_vector, 'B5') (line=68, object=weight_val)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved mathematical formula components to B3, B4, and B5 to avoid crowding the lecture notes."
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The chameleon 'Bank' object at D3 is vertically too close to the formula components, leading to a cramped visual representation. Fix: Line 95: self.place_at_grid(chameleon, 'E4') (line=95, object=chameleon)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved the chameleon 'Bank' object to E4 and updated animations to prevent vertical overlap with the formula."
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The Query, Key, and Value components (boxes, icons, and labels) are horizontally crowded in adjacent columns (2, 3, 4), making the visual layout feel cramped and underutilizing the available right-side grid space. Fix: Spread the elements across columns 2, 4, and 6. Update q_box to 'C2', k_box to 'C4', and v_box to 'C6'. Correspondingly, move icons to 'B2', 'B4', 'B6' and labels to 'D2', 'D4', 'D6'. Additionally, move bank_group to 'C4' to ensure it is centered relative to the final spread-out layout.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Expanded the layout by spreading Q, K, V across columns 2, 4, and 6 as requested to reduce crowding. Centered the bank_group at C4."
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: Elements in the first column (role1 at B1, role3 at D1) are too close to the lecture notes boundary, creating potential visual clutter and lack of margin. Fix: Shift primary interactive elements one column right to improve spacing: h1 to 'B3', h2 to 'B5', h3 to 'D3', h4 to 'D5', word_a to 'A3', word_b to 'A5'. Update role labels to flank the new head positions: role1 to 'B2', role2 to 'B6', role3 to 'D2', role4 to 'D6'.",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Shifted all elements one column to the right as requested to avoid proximity to lecture notes.\nUpdated positions:\n- Head 1: B3, Head 2: B5, Head 3: D3, Head 4: D5\n- Word A: A3, Word B: A5\n- Role labels: Grammar at B2, Logic at B6, Time at D2, Entities at D6.\nAlso improved the visual representation of the Multi-Head Output block and ensure all heads connect to both words to show parallel perspectives."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6",
+    "section_7": "Coder7"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5,
+    "section_7": 6
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_6/480p15/Section6Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_7/480p15/Section7Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 277917,
+        "video_mtime_ns": 1785205852000000000,
+        "code_sha1": "e403be19984f4faafdb0fb602a26a2f10cbaee9e"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The meaning_node at B3 is vertically too high, creating long connector lines and excessive white space between the concept and the sentence tokens.",
+              "solution": "Line 145: self.place_in_area(self.meaning_node, 'C3', 'C4', scale_factor=1.0)",
+              "object_affected": "meaning_node"
+            },
+            {
+              "problem": "The green_dot representing the flashlight is positioned at C3, which is horizontally off-center relative to the right-side visual field.",
+              "solution": "Line 77: self.place_in_area(self.green_dot, 'C3', 'C4', scale_factor=1.0)",
+              "object_affected": "green_dot"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        24,
+        25
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 256883,
+        "video_mtime_ns": 1785205851000000000,
+        "code_sha1": "6186f22b958de76d1a4a5fe1d1cb964a45afae3b"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The label 'Semantic Similarity' is horizontally too long to fit comfortably between adjacent grid points B2 and B3, leading to visual crowding.",
+              "solution": "Line 87: self.place_at_grid(queen_group, 'B4', scale_factor=0.7)",
+              "line_number": 87,
+              "object_affected": "queen_group"
+            },
+            {
+              "problem": "The 'Large Distance' arrow and its label appear compressed in the center of the grid, reducing the visual impact of the distance concept.",
+              "solution": "Line 102: self.place_at_grid(car_group, 'F6', scale_factor=0.7)",
+              "line_number": 102,
+              "object_affected": "car_group"
+            },
+            {
+              "problem": "The 'King' label is slightly oversized for its grid position, which contributes to the cluttered look when semantic lines are drawn nearby.",
+              "solution": "Line 82: self.place_at_grid(king_group, 'B2', scale_factor=0.7)",
+              "line_number": 82,
+              "object_affected": "king_group"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        26,
+        27,
+        28
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 313054,
+        "video_mtime_ns": 1785205845000000000,
+        "code_sha1": "bc996031973903a5c22a9d0ee24898685685bfab"
+      },
+      "analysis": {
+        "raw_response": "```json\n{\n    \"layout\": {\n        \"has_issues\": true,\n        \"improvements\": [\n            {\n                \"problem\": \"The Query, Key, and Value components (boxes, icons, and labels) are horizontally crowded in adjacent columns (2, 3, 4), making the visual layout feel cramped and underutilizing the available right-side grid space.\",\n                \"solution\": \"Spread the elements across columns 2, 4, and 6. Update q_box to 'C2' (Line 92), k_box to 'C4' (Line 93), and v_box to 'C6' (Line 94). Correspondingly, move icons to 'B2', 'B4', 'B6' (Lines 107, 119, 131) and labels to 'D2', 'D4', 'D6' (Lines 145, 146, 147).\",\n                \"line_number\": 92,\n                \"object_affected\": \"q_box, k_box, v_box\"\n            },\n            {\n                \"problem\": \"The initial 'Bank' group is positioned at C3, which will not be centered relative to the final spread-out layout (columns 2, 4, and 6).\",\n                \"solution\": \"Line 82: self.place_at_grid(bank_group,"
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 333866,
+        "video_mtime_ns": 1785205853000000000,
+        "code_sha1": "94628912dfbe236100184188d026f21149b01da6"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The Query (q_group) and Key (k_group) visual mechanism is positioned too far to the left, causing it to feel crowded against the lecture notes on the left side of the screen.",
+              "solution": "Line 71: self.place_at_grid(q_group, 'C2'); Line 80: self.place_at_grid(k_group, 'C4')",
+              "line_number": 71,
+              "object_affected": "q_group and k_group"
+            },
+            {
+              "problem": "The mathematical formula and the scale calculation example are left-aligned, which appears visually unbalanced relative to the Query-Key interaction occurring between columns 2 and 4.",
+              "solution": "Line 133: self.place_in_area(formula, 'E2', 'E4'); Line 143: self.place_in_area(scale_example, 'F2', 'F4')",
+              "line_number": 133,
+              "object_affected": "formula and scale_example"
+            },
+            {
+              "problem": "The Attention Score heatmap and its label are placed too high in the grid, leaving the bottom-right corner of the visual area underutilized and creating an uneven distribution of visual weight.",
+              "solution": "Line 157: self.place_in_area(heatmap, 'C5', 'E6'); Line 160: self.place_in_area(heatmap_label, 'B5', 'B6')",
+              "line_number": 157,
+              "object_affected": "heatmap and heatmap_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        29,
+        30,
+        31
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 249572,
+        "video_mtime_ns": 1785205969000000000,
+        "code_sha1": "bbf1774645c9c0622b63e498d752b88369d3a3dc"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'river_word' and 'bank_word' (at C2 and C4) are too spread out, leaving an empty grid cell at C3 and creating a visual disconnect.",
+              "solution": "Line 149: self.place_at_grid(river_word, 'C3')",
+              "line_number": 149,
+              "object_affected": "river_word"
+            },
+            {
+              "problem": "The 'bank_word' at C4 is not well-centered on the right-side layout area when paired with the 'river_word'.",
+              "solution": "Line 150: self.place_at_grid(bank_word, 'C4')",
+              "line_number": 150,
+              "object_affected": "bank_word"
+            },
+            {
+              "problem": "The 'sum_label' at E3 is positioned too low, creating disconnected whitespace between the bar chart and its summary label.",
+              "solution": "Line 108: self.place_at_grid(sum_label, 'D3')",
+              "line_number": 108,
+              "object_affected": "sum_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 212104,
+        "video_mtime_ns": 1785205841000000000,
+        "code_sha1": "e0c3e80d85307be1445a3e33d7d4f1e5b465ffb5"
+      },
+      "analysis": {
+        "raw_response": "```json\n{\n    \"layout\": {\n        \"has_issues\": true,\n        \"improvements\": [\n            {\n                \"problem\": \"Elements in the first column (role1 at B1, role3 at D1) are too close to the lecture notes boundary, creating potential visual clutter and lack of margin.\",\n                \"solution\": \"Shift primary interactive elements one column right to improve spacing: Line 97: self.place_at_grid('B3'), Line 98: self.place_at_grid('B5'), Line 99: self.place_at_grid('D3'), Line 100: self.place_at_grid('D5'), Line 128: self.place_at_grid('A3'), Line 129: self.place_at_grid('A5')\",\n                \"line_number\": 97,\n                \"object_affected\": \"h1, h2, h3, h4, word_a, word_b\"\n            },\n            {\n                \"problem\": \"The role labels (Grammar, Logic, Time, Entities) need repositioning to maintain proximity with the shifted heads and avoid the left-side text boundary.\",\n                \"solution\": \"Update label positions to flank the new head positions: Line 120: self.place_at_grid('B2'), Line 121: self.place_at_grid('B6'), Line"
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_7",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_7/480p15/Section7Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context/media/videos/section_7/480p15/Section7Scene.mp4",
+        "video_size": 212987,
+        "video_mtime_ns": 1785205845000000000,
+        "code_sha1": "400b184fac00cd7457fba8a084bfb1deb6fced82"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The mathematical formula components (weight_val, mult_op, value_vector) are currently positioned in column 1 to 3, which is too close to the lecture notes on the left.",
+              "solution": "Line 68: self.place_at_grid(weight_val, 'B3'); Line 72: self.place_at_grid(mult_op, 'B4'); Line 78: self.place_at_grid(value_vector, 'B5')",
+              "line_number": 68,
+              "object_affected": "weight_val"
+            },
+            {
+              "problem": "The chameleon 'Bank' object at D3 is vertically too close to the formula components, leading to a cramped visual representation.",
+              "solution": "Line 95: self.place_at_grid(chameleon, 'E4')",
+              "line_number": 95,
+              "object_affected": "chameleon"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35,
+        36
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/3-The_Mechanics_of_Attention_How_LLMs_Understand_Context",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 569374,
+      "completion_tokens": 88798,
+      "total_tokens": 771455,
+      "call_count": 45
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 279,
+        "completion_tokens": 941,
+        "total_tokens": 1736,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 13633,
+        "completion_tokens": 1061,
+        "total_tokens": 16160,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 30300,
+        "completion_tokens": 1749,
+        "total_tokens": 34078,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 85396,
+        "completion_tokens": 1490,
+        "total_tokens": 90110,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 40210,
+        "completion_tokens": 12245,
+        "total_tokens": 54306,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 52572,
+        "completion_tokens": 8466,
+        "total_tokens": 65223,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 51221,
+        "completion_tokens": 11488,
+        "total_tokens": 66681,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 47968,
+        "completion_tokens": 9904,
+        "total_tokens": 61312,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 62477,
+        "completion_tokens": 9334,
+        "total_tokens": 80788,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 95708,
+        "completion_tokens": 14859,
+        "total_tokens": 131267,
+        "call_count": 3
+      },
+      "agent:Coder7": {
+        "prompt_tokens": 52306,
+        "completion_tokens": 9112,
+        "total_tokens": 69804,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 5293,
+        "completion_tokens": 966,
+        "total_tokens": 17146,
+        "call_count": 14
+      },
+      "scope_refine:section_5": {
+        "prompt_tokens": 11074,
+        "completion_tokens": 4986,
+        "total_tokens": 23103,
+        "call_count": 4
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3143,
+        "completion_tokens": 222,
+        "total_tokens": 8983,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2993,
+        "completion_tokens": 328,
+        "total_tokens": 6635,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3410,
+        "completion_tokens": 320,
+        "total_tokens": 11406,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3129,
+        "completion_tokens": 420,
+        "total_tokens": 6994,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2796,
+        "completion_tokens": 323,
+        "total_tokens": 9357,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2719,
+        "completion_tokens": 320,
+        "total_tokens": 10715,
+        "call_count": 1
+      },
+      "video_review:section_7": {
+        "prompt_tokens": 2747,
+        "completion_tokens": 264,
+        "total_tokens": 5651,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 569374,
+        "completion_tokens": 88798,
+        "total_tokens": 771455,
+        "call_count": 45
+      }
+    }
+  }
+}

@@ -1,0 +1,947 @@
+{
+  "topic": "The Windmill Problem: A Dance of Geometry and Combinatorics",
+  "target_audience": "High school students interested in competition math (IMO level concepts) and curious problem solvers.",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Section data\n        title_text = \"Introduction: The Infinite Spinner\"\n        lecture_lines = [\n            \"Imagine points like stars scattered across a map.\",\n            \"We place a rotating line through one central point.\",\n            \"As the line spins, it strikes another point.\",\n            \"The pivot point then jumps to this new star.\",\n            \"Can this simple dance visit every single point?\"\n        ]\n        \n        self.setup_layout(title_text, lecture_lines)\n\n        # Define point positions on the grid (A2 to E6 as per Issue 21)\n        # Avoid Column 1 (x=0.5) to prevent overlap with lecture\n        p1_pos = self.grid['C3'] # Central point (Initial Pivot)\n        p2_pos = self.grid['B2']\n        p3_pos = self.grid['D5']\n        p4_pos = self.grid['F4']\n        p5_pos = self.grid['B6']\n        \n        points = VGroup(\n            Dot(p1_pos, color=\"#FFFFFF\"),\n            Dot(p2_pos, color=\"#FFFFFF\"),\n            Dot(p3_pos, color=\"#FFFFFF\"),\n            Dot(p4_pos, color=\"#FFFFFF\"),\n            Dot(p5_pos, color=\"#FFFFFF\")\n        )\n\n        # Issue 22: Ensure central point is anchored properly\n        self.place_at_grid(points[0], 'C3', scale_factor=0.8)\n\n        # === Animation for Lecture Line 1 ===\n        # Fade in 5 points at random positions (color: #FFFFFF). self.wait(1.5).\n        self.play(\n            self.lecture[0].animate.set_color(\"#FFFFFF\"),\n            FadeIn(points)\n        )\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 2 ===\n        # Create a long line through a central point (color: #FFD700). self.wait(2.0).\n        angle_tracker = ValueTracker(0)\n        # We'll use a local copy for the pivot coordinate that we can update\n        current_pivot_coord = p1_pos.copy()\n        \n        # Issue 20: Keep line within grid bounds (A1-F6, scale 0.9)\n        # Grid width is 5. Max line half-length 2.25.\n        line_half_length = 2.25\n        \n        windmill_line = Line(\n            current_pivot_coord - np.array([1, 0, 0]) * line_half_length,\n            current_pivot_coord + np.array([1, 0, 0]) * line_half_length,\n            color=\"#FFD700\"\n        )\n        \n        def windmill_updater(mob):\n            angle = angle_tracker.get_value()\n            direction = np.array([np.cos(angle), np.sin(angle), 0])\n            start = current_pivot_coord - direction * line_half_length\n            end = current_pivot_coord + direction * line_half_length\n            mob.set_points_as_corners([start, end])\n            \n        windmill_line.add_updater(windmill_updater)\n        \n        self.play(\n            self.lecture[1].animate.set_color(\"#FFD700\"),\n            Create(windmill_line)\n        )\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 3 ===\n        # Rotate the line clockwise; when it hits another point, flash that point (color: #00FF00). self.wait(1.5).\n        # Vector P1->P3 (C3 to D5) is (2.0, -1.0). Angle is atan2(-1, 2)\n        target_angle_1 = np.arctan2(-1.0, 2.0) # Clockwise from 0\n        \n        self.play(\n            self.lecture[2].animate.set_color(\"#00FF00\"),\n            angle_tracker.animate.set_value(target_angle_1),\n            run_time=2.5,\n            rate_func=rate_functions.linear\n        )\n        # Flash the hit point (P3)\n        self.play(Indicate(points[2], color=\"#00FF00\"))\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 4 ===\n        # Shift the line's pivot point to the hit point and continue rotation. self.wait(2.0).\n        # Update current_pivot_coord in-place\n        current_pivot_coord[:] = p3_pos\n        \n        # Next target: P4 (F4). Vector P3->P4 is (-1.0, -2.0). Angle is atan2(-2, -1)\n        target_angle_2 = np.arctan2(-2.0, -1.0)\n        # Ensure clockwise (decreasing)\n        while target_angle_2 > target_angle_1:\n            target_angle_2 -= TAU\n            \n        self.play(\n            self.lecture[3].animate.set_color(\"#FFD700\"),\n            angle_tracker.animate.set_value(target_angle_2),\n            run_time=3.0,\n            rate_func=rate_functions.linear\n        )\n        # Flash the new hit point (P4)\n        self.play(Indicate(points[3], color=\"#00FF00\"))\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 5 ===\n        # Highlight all points with a pulsing glow to indicate potential visitation (color: #FF4500). self.wait(2.0).\n        self.play(\n            self.lecture[4].animate.set_color(\"#FF4500\"),\n            *[Indicate(p, color=\"#FF4500\") for p in points]\n        )\n        self.wait(2.0)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Initialization\n        title = \"Prerequisite: The Rules of the Game\"\n        lines = [\n            \"No three points lie on a single straight line.\",\n            \"The line rotates until it strikes exactly one point.\",\n            \"The pivot immediately shifts to this new point.\"\n        ]\n        self.setup_layout(title, lines)\n        \n        # Colors\n        WHITE_COLOR = \"#FFFFFF\"\n        GOLD_COLOR = \"#FFD700\"\n        GREEN_COLOR = \"#00FF00\"\n        RED_COLOR = \"#FF0000\"\n        \n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(RED_COLOR)\n        \n        # Show 3 points in a triangle - Fix per Issue 25\n        p1 = Dot(color=WHITE_COLOR)\n        p2 = Dot(color=WHITE_COLOR)\n        p3 = Dot(color=WHITE_COLOR)\n        \n        # Triangle positions from Issue 25\n        self.place_at_grid(p1, \"B4\")\n        self.place_at_grid(p2, \"C6\")\n        self.place_at_grid(p3, \"D4\")\n        \n        points = VGroup(p1, p2, p3)\n        self.play(FadeIn(points))\n        self.wait(1.0)\n        \n        # Move to collinear position (B4, B5, B6) to demonstrate the \"invalid\" condition\n        # This keeps the objects further from the lecture area per Issue 25\n        self.play(\n            p1.animate.move_to(self.grid[\"B4\"]),\n            p2.animate.move_to(self.grid[\"B5\"]),\n            p3.animate.move_to(self.grid[\"B6\"]),\n            run_time=1.5\n        )\n        \n        # Draw invalid line and X\n        # Line from B3 to B6+ (x=2.5 to x=6.0)\n        invalid_line = Line(self.grid[\"B3\"], self.grid[\"B6\"] + RIGHT * 0.5, color=RED_COLOR)\n        cross = VGroup(\n            Line(LEFT + UP, RIGHT + DOWN, color=RED_COLOR),\n            Line(LEFT + DOWN, RIGHT + UP, color=RED_COLOR)\n        ).scale(0.3).move_to(self.grid[\"B5\"])\n        \n        self.play(Create(invalid_line))\n        self.play(Create(cross))\n        self.wait(2.0)\n        \n        # Clean up\n        self.play(FadeOut(points), FadeOut(invalid_line), FadeOut(cross))\n        self.lecture[0].set_color(WHITE_COLOR)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(GOLD_COLOR)\n        self.wait(1.5) \n        \n        # Setup for rotation - Fix per Issue 23 and 24\n        pivot_dot = Dot(color=GOLD_COLOR)\n        target_dot = Dot(color=WHITE_COLOR)\n        other_dot = Dot(color=WHITE_COLOR)\n        \n        # Positioned far enough right to avoid overlap\n        self.place_at_grid(pivot_dot, \"C4\")  # Issue 23 fix\n        self.place_at_grid(target_dot, \"D6\") # Issue 24 fix\n        self.place_at_grid(other_dot, \"B6\")  # Issue 24 fix\n        \n        # Rotation mechanics\n        # Starting angle slightly counter-clockwise from target (approx 0.5 rad above horiz)\n        angle_tracker = ValueTracker(0.5) \n        \n        # The line rotates clockwise around a single pivot point\n        # Use length 6 (3 each way) so centered at C4 (x=3.5) it spans x=0.5 to x=6.5\n        windmill_line = Line(LEFT * 3, RIGHT * 3, color=GOLD_COLOR)\n        windmill_line.add_updater(lambda m: m.set_angle(angle_tracker.get_value()).move_to(pivot_dot.get_center()))\n        \n        self.play(FadeIn(pivot_dot), FadeIn(target_dot), FadeIn(other_dot))\n        self.add(windmill_line)\n        self.wait(1.0)\n        \n        # Target angle calculation (D6 relative to C4)\n        # C4 is (3.5, 0.2), D6 is (5.5, -0.8)\n        # dx = 2.0, dy = -1.0\n        target_angle = np.arctan2(-1.0, 2.0)\n        \n        # Rotate clockwise (decrease angle) using rate_functions.linear per [L024]\n        self.play(angle_tracker.animate.set_value(target_angle), run_time=3, rate_func=rate_functions.linear)\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(GREEN_COLOR)\n        self.wait(2.0)\n        \n        # Highlight intersection using Indicate per [L004]\n        self.play(Indicate(target_dot, color=GREEN_COLOR))\n        self.wait(0.5)\n        \n        # Pivot immediately shifts to this new point\n        self.play(\n            pivot_dot.animate.move_to(target_dot.get_center()),\n            windmill_line.animate.set_color(GREEN_COLOR),\n            FadeOut(target_dot, run_time=0.5),\n            run_time=1.5\n        )\n        \n        # New line rotation around the new pivot\n        windmill_line.clear_updaters()\n        windmill_line.add_updater(lambda m: m.set_angle(angle_tracker.get_value()).move_to(pivot_dot.get_center()))\n        \n        # Continue clockwise rotation\n        self.play(angle_tracker.animate.set_value(target_angle - 1.0), run_time=2, rate_func=rate_functions.linear)\n        self.wait(2.0)\n        \n        # Final cleanup/reset colors\n        self.lecture[1].set_color(WHITE_COLOR)\n        self.lecture[2].set_color(WHITE_COLOR)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # === Fetching data ===\n        title_text = \"The Mechanism of the Pivot\"\n        lecture_lines = [\n            \"Watch the line sweep across the plane like radar.\",\n            \"Upon impact, the center of rotation instantly changes.\",\n            \"The clockwise motion remains constant throughout the dance.\"\n        ]\n        \n        self.setup_layout(title_text, lecture_lines)\n        \n        # === Visual Assets ===\n        # Points at grid locations requested in issues 26, 27, 28 (L002: Avoid Col 1)\n        p1 = Dot(color=\"#FFFFFF\")\n        p2 = Dot(color=\"#FFFFFF\")\n        p3 = Dot(color=\"#FFFFFF\")\n        \n        self.place_at_grid(p1, \"C3\") # Issue 26: Moved from C2 to C3 to avoid lecture obstruction\n        self.place_at_grid(p2, \"E5\") # Issue 27: Moved from D4 to E5 for better spacing\n        self.place_at_grid(p3, \"B6\") # Issue 28: Moved from B5 to B6 for better coverage\n        \n        # Labels scaled and positioned (L002)\n        p1_label = Text(\"P1\", font_size=20, color=\"#FFFFFF\").scale(0.8).next_to(p1, UP, buff=0.1)\n        p2_label = Text(\"P2\", font_size=20, color=\"#FFFFFF\").scale(0.8).next_to(p2, DOWN, buff=0.1)\n        p3_label = Text(\"P3\", font_size=20, color=\"#FFFFFF\").scale(0.8).next_to(p3, RIGHT, buff=0.1)\n        \n        points_group = VGroup(p1, p2, p3, p1_label, p2_label, p3_label)\n        self.add(points_group)\n        \n        # Animation state tracking\n        state = {\"pivot\": p1}\n        angle_tracker = ValueTracker(90 * DEGREES) # Start pointing UP\n        \n        # Primary rotating line (L027: Persistent mobject + updater)\n        line = Line(start=LEFT*5, end=RIGHT*5, color=\"#00FFFF\", stroke_width=3)\n        \n        def line_updater(obj):\n            angle = angle_tracker.get_value()\n            center = state[\"pivot\"].get_center()\n            direction = np.array([np.cos(angle), np.sin(angle), 0])\n            obj.set_points_as_corners([\n                center - 5.0 * direction,\n                center + 5.0 * direction\n            ])\n            \n        line.add_updater(line_updater)\n        \n        # === Animation for Lecture Line 1 ===\n        # Radar sweep like a beam\n        self.play(self.lecture[0].animate.set_color(\"#00FFFF\"))\n        self.add(line)\n        \n        # Trail 1\n        # L031: Use fill_opacity in constructor\n        trail1 = Sector(\n            radius=6,\n            start_angle=90 * DEGREES,\n            angle=0,\n            color=\"#FFD700\",\n            fill_opacity=0.2,\n            stroke_width=0\n        ).move_to(p1.get_center())\n        self.add(trail1)\n        \n        # Sector angle update for clockwise sweep\n        trail1.add_updater(lambda m: m.set_angle(angle_tracker.get_value() - 90 * DEGREES))\n        \n        # Target angle to hit P2 from P1 (dx=2, dy=-2)\n        target_angle_1 = np.arctan2(-2.0, 2.0) # -45 degrees\n        \n        self.play(angle_tracker.animate.set_value(target_angle_1), run_time=2.5, rate_func=linear)\n        trail1.clear_updaters()\n        self.wait(1.5) # Absorption time\n\n        # === Animation for Lecture Line 2 ===\n        # Instant shift and impact flash\n        self.play(\n            self.lecture[0].animate.set_color(\"#FFFFFF\"),\n            self.lecture[1].animate.set_color(\"#00FF00\")\n        )\n        \n        # Update state variable for the line updater\n        state[\"pivot\"] = p2\n        self.play(Indicate(p2, color=\"#00FF00\", scale_factor=1.8)) # L004: Indicate\n        self.wait(2.0) # Absorption time\n\n        # === Animation for Lecture Line 3 ===\n        # Continued sweep\n        self.play(\n            self.lecture[1].animate.set_color(\"#FFFFFF\"),\n            self.lecture[2].animate.set_color(\"#FFD700\")\n        )\n        \n        # Trail 2 from P2\n        trail2 = Sector(\n            radius=6,\n            start_angle=target_angle_1,\n            angle=0,\n            color=\"#FFD700\",\n            fill_opacity=0.2,\n            stroke_width=0\n        ).move_to(p2.get_center())\n        self.add(trail2)\n        \n        trail2.add_updater(lambda m: m.set_angle(angle_tracker.get_value() - target_angle_1))\n        \n        # Continue sweep clockwise (e.g., 120 degrees more)\n        target_angle_2 = target_angle_1 - 120 * DEGREES\n        \n        self.play(angle_tracker.animate.set_value(target_angle_2), run_time=2.5, rate_func=linear)\n        trail2.clear_updaters()\n        self.wait(1.5) # Absorption time\n\n        # Final state cleanup\n        self.play(self.lecture[2].animate.set_color(\"#FFFFFF\"))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Title and lecture lines from shared state\n        title_text = \"The Hidden Invariant: The 'Balanced' Line\"\n        lecture_lines = [\n            \"Color points on each side of the line differently.\",\n            \"Pick a line splitting points into two equal sets.\",\n            \"As the line pivots, points swap sides across it.\",\n            \"The current pivot and the new pivot trade places.\",\n            \"The total count on each side remains perfectly balanced.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Hexadecimal colors (L008)\n        BLUE_CLR = \"#0000FF\" \n        RED_CLR = \"#FF0000\"\n        WHITE_CLR = \"#FFFFFF\"\n        YELLOW_CLR = \"#FFFF00\"\n        GREEN_CLR = \"#00FF00\"\n\n        # Points setup - avoiding collinearity for clear rotation\n        pivot_p = Dot(color=WHITE_CLR)\n        blue_1 = Dot(color=BLUE_CLR)\n        blue_2 = Dot(color=BLUE_CLR)\n        red_1 = Dot(color=RED_CLR)\n        red_2 = Dot(color=RED_CLR)\n\n        # Positioning using the 6x6 grid system (Rule L002)\n        # Using specific grid anchors to keep visuals in the safe right-side area\n        self.place_at_grid(pivot_p, 'C3')\n        self.place_at_grid(blue_1, 'B2')\n        self.place_at_grid(blue_2, 'E2')\n        self.place_at_grid(red_1, 'B4')\n        self.place_at_grid(red_2, 'D5')\n        \n        all_points = VGroup(pivot_p, blue_1, blue_2, red_1, red_2)\n\n        # === Animation for Lecture Line 1 ===\n        # \"Color points on each side of the line differently.\"\n        self.lecture[0].set_color(YELLOW_CLR)\n        \n        # Initial vertical-ish line passing through the pivot at C3\n        windmill_line = Line(\n            self.grid['A3'] + UP*0.5, \n            self.grid['F3'] + DOWN*0.5, \n            color=WHITE_CLR\n        )\n        \n        self.add(all_points)\n        self.play(Create(windmill_line))\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 2 ===\n        # \"Pick a line splitting points into two equal sets.\"\n        self.lecture[0].set_color(WHITE_CLR)\n        self.lecture[1].set_color(YELLOW_CLR)\n        \n        blue_group = VGroup(blue_1, blue_2)\n        red_group = VGroup(red_1, red_2)\n        \n        # Visual groupings using SurroundingRectangles\n        rect_blue = SurroundingRectangle(blue_group, color=BLUE_CLR, buff=0.2)\n        rect_red = SurroundingRectangle(red_group, color=RED_CLR, buff=0.2)\n        \n        # Issue 31: blue_count at A2, scaled to 0.7\n        blue_count = Text(\"2\", color=BLUE_CLR, font_size=24)\n        self.place_at_grid(blue_count, 'A2', scale_factor=0.7)\n        \n        # Issue 29/30: red_count at B5, scaled to 0.8\n        red_count = Text(\"2\", color=RED_CLR, font_size=24)\n        self.place_at_grid(red_count, 'B5', scale_factor=0.8)\n        \n        self.play(Create(rect_blue), Create(rect_red))\n        self.play(Write(blue_count), Write(red_count))\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 3 ===\n        # \"As the line pivots, points swap sides across it.\"\n        self.lecture[1].set_color(WHITE_CLR)\n        self.lecture[2].set_color(YELLOW_CLR)\n        \n        self.play(FadeOut(rect_blue), FadeOut(rect_red))\n        \n        # Track the pivot center with a hidden Mobject to avoid NoneType issues\n        pivot_pos_tracker = Dot(pivot_p.get_center(), radius=0).set_opacity(0)\n        self.add(pivot_pos_tracker)\n        \n        # Angle tracker for rotation (start at vertical PI/2)\n        angle_tracker = ValueTracker(PI/2)\n\n        def line_updater(l):\n            angle = angle_tracker.get_value()\n            center = pivot_pos_tracker.get_center()\n            dir_vec = np.array([np.cos(angle), np.sin(angle), 0])\n            # Extend line enough to cover the grid height\n            l.set_points_by_ends(center - dir_vec * 3.5, center + dir_vec * 3.5)\n\n        windmill_line.add_updater(line_updater)\n        \n        # Rotate clockwise to hit red_1 (PI/4 angle from C3)\n        self.play(angle_tracker.animate.set_value(PI/4), run_time=2.0)\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 4 ===\n        # \"The current pivot and the new pivot trade places.\"\n        self.lecture[2].set_color(WHITE_CLR)\n        self.lecture[3].set_color(YELLOW_CLR)\n        \n        # Arrows for exchange (visual hint)\n        arrow_to_red1 = Arrow(pivot_p.get_center(), red_1.get_center(), color=GREEN_CLR, buff=0.1)\n        \n        self.play(GrowArrow(arrow_to_red1))\n        self.wait(0.5)\n        \n        # Swap colors and pivot position\n        # The line will automatically update its position because of the updater on pivot_pos_tracker\n        self.play(\n            pivot_p.animate.set_color(RED_CLR),\n            red_1.animate.set_color(WHITE_CLR),\n            pivot_pos_tracker.animate.move_to(red_1.get_center()),\n            FadeOut(arrow_to_red1),\n            run_time=1.0\n        )\n        \n        # Continue rotation to show it's now pivoting around red_1\n        self.play(angle_tracker.animate.set_value(angle_tracker.get_value() - PI/6), run_time=1.5)\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 5 ===\n        # \"The total count on each side remains perfectly balanced.\"\n        self.lecture[3].set_color(WHITE_CLR)\n        self.lecture[4].set_color(YELLOW_CLR)\n        \n        # New visual groups showing count preservation\n        new_blue_group = VGroup(blue_1, blue_2)\n        new_red_group = VGroup(pivot_p, red_2)\n        \n        rect_blue_f = SurroundingRectangle(new_blue_group, color=BLUE_CLR, buff=0.2)\n        rect_red_f = SurroundingRectangle(new_red_group, color=RED_CLR, buff=0.2)\n        \n        self.play(Create(rect_blue_f), Create(rect_red_f))\n        # Use Indicate for pulsing (L004)\n        self.play(Indicate(blue_count, color=YELLOW_CLR), Indicate(red_count, color=YELLOW_CLR))\n        self.wait(2.0)\n        \n        # Clean up updater\n        windmill_line.remove_updater(line_updater)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Fetching data from shared state\n        title = \"The 180-Degree Flip\"\n        lecture_lines = [\n            \"After a half-rotation, the line returns to its angle.\",\n            \"However, the line is now oriented in reverse.\",\n            \"Points originally on the left are now on the right.\",\n            \"Every point must cross the line to swap sides.\",\n            \"This proves the windmill hits every star eventually.\"\n        ]\n        \n        self.setup_layout(title, lecture_lines)\n        \n        # Colors (L008)\n        BLUE_PT = \"#0000FF\"\n        RED_PT = \"#FF0000\"\n        GOLD_LINE = \"#FFD700\"\n        GREEN_PT = \"#00FF00\"\n        WHITE_HEX = \"#FFFFFF\"\n        \n        # === Animation for Lecture Line 1 ===\n        # Show the initial balanced line with labeled sides and colored points\n        \n        # Visual elements following VideoCritic suggestions (Issue 32, 33, 34)\n        pivot_dot = Dot(color=WHITE_HEX, radius=0.1)\n        self.place_at_grid(pivot_dot, \"D3\", scale_factor=0.8)\n        pivot_pos = pivot_dot.get_center()\n        \n        # Blue dots on the left (Issue 33)\n        blue_dot1 = Dot(color=BLUE_PT, radius=0.08)\n        blue_dot2 = Dot(color=BLUE_PT, radius=0.08)\n        blue_dots = VGroup(blue_dot1, blue_dot2).arrange(DOWN, buff=0.6)\n        self.place_in_area(blue_dots, \"B2\", \"C2\", scale_factor=0.7)\n        \n        # Red dots on the right (Issue 33)\n        red_dot1 = Dot(color=RED_PT, radius=0.08)\n        red_dot2 = Dot(color=RED_PT, radius=0.08)\n        red_dots = VGroup(red_dot1, red_dot2).arrange(DOWN, buff=0.6)\n        self.place_in_area(red_dots, \"E4\", \"F4\", scale_factor=0.7)\n        \n        # Labels (Issue 32)\n        label_l = Text(\"L\", font_size=24, color=BLUE_PT)\n        label_r = Text(\"R\", font_size=24, color=RED_PT)\n        self.place_at_grid(label_l, \"D2\", scale_factor=0.8)\n        self.place_at_grid(label_r, \"D4\", scale_factor=0.8)\n        \n        # Initial line (start vertical)\n        line = Line(pivot_pos + DOWN*3, pivot_pos + UP*3, color=GOLD_LINE, stroke_width=4)\n        \n        self.lecture[0].set_color(GOLD_LINE)\n        self.play(\n            FadeIn(pivot_dot), \n            FadeIn(blue_dots), \n            FadeIn(red_dots), \n            Create(line), \n            Write(label_l), \n            Write(label_r)\n        )\n        self.wait(1.5)\n        \n        # === Animation for Lecture Line 2 ===\n        # Rotate the line slowly 180 degrees using a 'smooth' rate function\n        \n        self.lecture[0].set_color(WHITE_HEX)\n        self.lecture[1].set_color(GOLD_LINE)\n        \n        angle_tracker = ValueTracker(0)\n        \n        # Updaters for rotation (L010/L011)\n        def line_updater(m):\n            angle = PI/2 + angle_tracker.get_value()\n            direction = np.array([np.cos(angle), np.sin(angle), 0])\n            m.put_start_and_end_on(pivot_pos - 3.5 * direction, pivot_pos + 3.5 * direction)\n            \n        def labels_updater(vgroup):\n            angle = PI/2 + angle_tracker.get_value()\n            # Normal vector for 'Left' side relative to the line direction\n            normal = np.array([-np.sin(angle), np.cos(angle), 0])\n            # Using Proximity Rule (L002) - approx 1 unit distance\n            vgroup[0].move_to(pivot_pos + normal * 1.0)\n            vgroup[1].move_to(pivot_pos - normal * 1.0)\n            \n        labels_vgroup = VGroup(label_l, label_r)\n        line.add_updater(line_updater)\n        labels_vgroup.add_updater(labels_updater)\n        \n        # Perform 180-degree rotation (PI radians)\n        self.play(angle_tracker.animate.set_value(PI), run_time=5, rate_func=rate_functions.smooth)\n        self.wait(3.0)\n        \n        line.clear_updaters()\n        labels_vgroup.clear_updaters()\n        \n        # === Animation for Lecture Line 3 ===\n        # Morph the side labels and point colors to show the sides have completely swapped.\n        \n        self.lecture[1].set_color(WHITE_HEX)\n        self.lecture[2].set_color(BLUE_PT)\n        \n        # Swap colors visually to represent the change in state relative to the line orientation\n        self.play(\n            blue_dots.animate.set_color(RED_PT),\n            red_dots.animate.set_color(BLUE_PT),\n            label_l.animate.set_color(RED_PT),\n            label_r.animate.set_color(BLUE_PT),\n            run_time=2\n        )\n        self.wait(2.0)\n        \n        # === Animation for Lecture Line 4 ===\n        # Highlight each point in sequence as the line passes through it.\n        \n        self.lecture[2].set_color(WHITE_HEX)\n        self.lecture[3].set_color(GOLD_LINE)\n        \n        # Indicate points to represent their crossing event\n        all_stars = [blue_dot1, blue_dot2, red_dot1, red_dot2]\n        for star in all_stars:\n            self.play(Indicate(star, color=GOLD_LINE, scale_factor=1.5), run_time=0.8)\n        \n        self.wait(1.5)\n        \n        # === Animation for Lecture Line 5 ===\n        # Flash all points in green (#00FF00) to signify the proof is complete.\n        \n        self.lecture[3].set_color(WHITE_HEX)\n        self.lecture[4].set_color(GREEN_PT)\n        \n        all_points = VGroup(pivot_dot, *all_stars)\n        self.play(\n            *[Flash(p, color=GREEN_PT) for p in all_points],\n            all_points.animate.set_color(GREEN_PT),\n            run_time=2\n        )\n        \n        self.wait(2.0)\n",
+    "from manim import *\nimport numpy as np\n\n# === Base TeachingScene Class ===\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\n# === Section 6 Scene ===\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Initialize Layout\n        title_text = \"Conclusion and Application\"\n        lecture_lines = [\n            \"- Local rules create a beautiful, predictable global cycle.\",\n            \"- This visual logic solved the hardest IMO 2011 problem.\",\n            \"- Simple rotations reveal deep truths in geometry and combinatorics.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Show a fast-motion animation of a 10-point windmill [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/windmill.svg]\n        # completing a full cycle. self.wait(2.0).\n        \n        # Highlight first lecture line\n        self.lecture[0].set_color(\"#00FFFF\") # Cyan\n        \n        # Asset: windmill.svg icon\n        windmill_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/windmill.svg\")\n        self.place_at_grid(windmill_icon, \"A1\", scale_factor=0.3)\n        self.add(windmill_icon)\n        \n        # Define 10 points in the visual area (B2 to F6)\n        point_coords = [\n            self.grid[\"B3\"] + [0.2, 0.3, 0],\n            self.grid[\"B5\"] + [-0.1, -0.2, 0],\n            self.grid[\"C2\"] + [0.4, 0.1, 0],\n            self.grid[\"C5\"] + [-0.3, 0.5, 0],\n            self.grid[\"D3\"] + [0.5, -0.4, 0],\n            self.grid[\"D6\"] + [-0.2, 0.2, 0],\n            self.grid[\"E2\"] + [0.3, 0.6, 0],\n            self.grid[\"E4\"] + [0.1, -0.3, 0],\n            self.grid[\"F3\"] + [-0.4, 0.2, 0],\n            self.grid[\"F5\"] + [-0.1, -0.5, 0],\n        ]\n        points = VGroup(*[Dot(coord, color=\"#00FFFF\", radius=0.08) for coord in point_coords])\n        self.add(points)\n        \n        # Initial pivot point\n        pivot_idx = 2 # Start at C2\n        points[pivot_idx].set_color(\"#FF00FF\") # Magenta for pivot\n        \n        # Rotating line\n        line = Line(points[pivot_idx].get_center() - 2.5*RIGHT, points[pivot_idx].get_center() + 2.5*RIGHT, color=\"#FFFFFF\")\n        line.set_stroke(width=2)\n        self.add(line)\n        \n        # Fast-motion pivot sequence simulation\n        pivots_seq = [5, 7, 1, 9, 0] # Sequence of indices for \"hitting\" points\n        for next_p in pivots_seq:\n            # Rotate around current pivot\n            self.play(Rotate(line, angle=PI/2, about_point=points[pivot_idx].get_center()), run_time=0.3, rate_func=linear)\n            # Switch pivot \"instantly\"\n            self.play(\n                points[pivot_idx].animate.set_color(\"#00FFFF\"),\n                points[next_p].animate.set_color(\"#FF00FF\"),\n                line.animate.move_to(points[next_p].get_center()),\n                run_time=0.1\n            )\n            pivot_idx = next_p\n            \n        # Final rotation to finish the \"cycle\"\n        self.play(Rotate(line, angle=PI, about_point=points[pivot_idx].get_center()), run_time=0.5, rate_func=linear)\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 2 ===\n        # Display the text 'IMO 2011 Problem 2' in gold (#FFD700) alongside a medal icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/medal.svg].\n        \n        # Highlight second lecture line and revert first\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(\"#FFD700\"), # Gold\n            run_time=0.5\n        )\n        \n        # Fix Issue 35: Position label in area A1-A6\n        imo_text = Text(\"IMO 2011 Problem 2\", color=\"#FFD700\", font_size=32)\n        self.place_in_area(imo_text, \"A1\", \"A6\", scale_factor=0.7)\n        \n        # Asset: medal.svg icon\n        medal_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/medal.svg\")\n        medal_icon.scale(0.3)\n        medal_icon.next_to(imo_text, LEFT, buff=0.2)\n        \n        self.play(\n            Write(imo_text),\n            FadeIn(medal_icon)\n        )\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 3 ===\n        # Fade out the points and line into a final geometric pattern. self.wait(2.0).\n        \n        # Highlight third lecture line and revert second\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(\"#00FF00\"), # Green\n            run_time=0.5\n        )\n        \n        # Create a final geometric pattern (Decagon with diagonals)\n        pattern_inner = RegularPolygon(n=10, color=\"#00FF00\")\n        # Fix Issue 36: Position pattern in area B1-F6\n        self.place_in_area(pattern_inner, \"B1\", \"F6\", scale_factor=0.8)\n        \n        # Adding diagonals\n        vertices = pattern_inner.get_vertices()\n        diagonals = VGroup()\n        for i in range(len(vertices)):\n            for j in range(i + 1, len(vertices)):\n                diagonals.add(Line(vertices[i], vertices[j], stroke_width=0.5, color=\"#00FF00\", stroke_opacity=0.4))\n        \n        final_visual = VGroup(pattern_inner, diagonals)\n        \n        # Fade out elements and show final pattern\n        self.play(\n            FadeOut(points),\n            FadeOut(line),\n            FadeOut(imo_text),\n            FadeOut(medal_icon),\n            FadeOut(windmill_icon),\n            FadeIn(final_visual),\n            run_time=1.5\n        )\n        \n        # Final indication - [L004] use Indicate\n        self.play(Indicate(final_visual, color=\"#00FF00\", scale_factor=1.1))\n        \n        self.wait(2.0)\n"
+  ],
+  "outline": {
+    "topic": "The Windmill Problem: A Dance of Geometry and Combinatorics",
+    "target_audience": "High school students interested in competition math (IMO level concepts) and curious problem solvers.",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "Introduction: The Infinite Spinner",
+        "content": "Introduce the physical metaphor of the windmill. Imagine a set of 'stars' (points) on a map and a 'laser beam' (line) that rotates. Hook the audience with the central mystery: If this beam keeps spinning and switching its pivot point, will it hit every star eventually?",
+        "example": "A tiny robot named 'Dusty' stands on a point in a field of 5 scattered points. He holds a long pole and starts spinning clockwise. When the pole hits another point, Dusty jumps to that new point and keeps spinning."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Rules of the Game",
+        "content": "Define the mathematical constraints clearly to avoid edge cases. Explain 'General Position' (no three points are collinear) and the 'Pivot' mechanism. Use visuals to show a line rotating around a fixed center until it intersects exactly one other point.",
+        "example": "Visual: 3 points arranged in a triangle. Show the line rotating 60 degrees from point A to point B. If three points were in a straight line, the robot wouldn't know which one to jump to first!"
+      },
+      {
+        "id": "section_3",
+        "title": "The Mechanism of the Pivot",
+        "content": "Demonstrate the transition. When the line hits a new point, the 'pivot' point changes. Emphasize that the rotation direction (clockwise) never changes. Animate the line 'sweeping' through the plane like a radar.",
+        "example": "Graphical Animation: A blue line pivots on Point P. As it rotates, it strikes Point Q. The center of rotation instantly shifts from P to Q, and the line continues its clockwise sweep from its new position."
+      },
+      {
+        "id": "section_4",
+        "title": "The Hidden Invariant: The 'Balanced' Line",
+        "content": "Introduce the core insight needed to solve the problem: The 'Side-Count'. If we choose a line that splits the points into two equal (or near-equal) sets, what happens to that count when the line pivots?",
+        "example": "Visual: Color points on the 'left' side of the line Blue and points on the 'right' side Red. When the line pivots on Point P to hit Point Q, Point P moves to the other side of the line, and Point Q moves to the pivot. The total number of points on each side stays exactly the same!"
+      },
+      {
+        "id": "section_5",
+        "title": "The 180-Degree Flip",
+        "content": "Explain the global behavior. After the line has rotated 180 degrees, it returns to its original orientation but is 'flipped'. Every point that was on the left is now on the right, and vice versa. This transition proves that the line must have passed through every point to 'swap' their positions.",
+        "example": "Imagine 5 points. The line starts with 2 points on the left and 2 on the right. After a half-rotation (180°), the 2 points that were on the left MUST have been crossed to end up on the right. Since this applies to any point, the 'Windmill' must visit everyone."
+      },
+      {
+        "id": "section_6",
+        "title": "Conclusion and Application",
+        "content": "Summarize the beauty of the problem: how a simple local rule (rotating and hitting points) leads to a predictable global outcome. Mention that this was the 'hardest' problem of the 2011 International Mathematical Olympiad, yet its solution is purely visual logic.",
+        "example": "Show a fast-motion animation of a 10-point windmill completing a full 360-degree cycle, highlighting how each point takes its turn as the 'heart' (pivot) of the system."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "Introduction: The Infinite Spinner",
+      "lecture_lines": [
+        "Imagine points like stars scattered across a map.",
+        "We place a rotating line through one central point.",
+        "As the line spins, it strikes another point.",
+        "The pivot point then jumps to this new star.",
+        "Can this simple dance visit every single point?"
+      ],
+      "animations": [
+        "Fade in 5 points at random positions (color: #FFFFFF). self.wait(1.5).",
+        "Create a long line through a central point (color: #FFD700). self.wait(2.0).",
+        "Rotate the line clockwise; when it hits another point, flash that point (color: #00FF00). self.wait(1.5).",
+        "Shift the line's pivot point to the hit point and continue rotation. self.wait(2.0).",
+        "Highlight all points with a pulsing glow to indicate potential visitation (color: #FF4500). self.wait(2.0)."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Rules of the Game",
+      "lecture_lines": [
+        "No three points lie on a single straight line.",
+        "The line rotates until it strikes exactly one point.",
+        "The pivot immediately shifts to this new point."
+      ],
+      "animations": [
+        "Show 3 points in a triangle (#FFFFFF); draw a line through two and show a red 'X' to indicate invalidity. self.wait(2.0).",
+        "Show a line rotating clockwise around a single pivot point (color: #FFD700). self.wait(1.5).",
+        "Rotate the line until it strikes exactly one new point; highlight the intersection (color: #00FF00). self.wait(2.0)."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Mechanism of the Pivot",
+      "lecture_lines": [
+        "Watch the line sweep across the plane like radar.",
+        "Upon impact, the center of rotation instantly changes.",
+        "The clockwise motion remains constant throughout the dance."
+      ],
+      "animations": [
+        "Animate the line sweeping clockwise like a radar beam, leaving a faint trail (color: #FFD700). self.wait(1.5).",
+        "When the line hits a point, shift the pivot point instantly and flash the new pivot (color: #00FF00). self.wait(2.0).",
+        "Continue the clockwise sweep from the new pivot position without pause. self.wait(1.5)."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Hidden Invariant: The 'Balanced' Line",
+      "lecture_lines": [
+        "Color points on each side of the line differently.",
+        "Pick a line splitting points into two equal sets.",
+        "As the line pivots, points swap sides across it.",
+        "The current pivot and the new pivot trade places.",
+        "The total count on each side remains perfectly balanced."
+      ],
+      "animations": [
+        "Draw a balanced line through a pivot with 2 blue points (#0000FF) on the left and 2 red points (#FF0000) on the right. self.wait(2.0).",
+        "Use blue and red SurroundingRectangles to group the points on either side. self.wait(1.5).",
+        "Rotate the line; show the current pivot moving to the other side as the new point becomes the pivot. self.wait(2.0).",
+        "Use Arrows to show the points effectively exchanging places relative to the line. self.wait(1.5).",
+        "Flash the blue and red groups to show the total counts (2 on each side) remain unchanged. self.wait(2.0)."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The 180-Degree Flip",
+      "lecture_lines": [
+        "After a half-rotation, the line returns to its angle.",
+        "However, the line is now oriented in reverse.",
+        "Points originally on the left are now on the right.",
+        "Every point must cross the line to swap sides.",
+        "This proves the windmill hits every star eventually."
+      ],
+      "animations": [
+        "Show the initial balanced line with labeled sides and colored points (#0000FF and #FF0000). self.wait(1.5).",
+        "Rotate the line slowly 180 degrees using a 'smooth' rate function (color: #FFD700). self.wait(3.0).",
+        "Morph the side labels and point colors to show the sides have completely swapped. self.wait(2.0).",
+        "Highlight each point in sequence as the line passes through it during the rotation. self.wait(1.5).",
+        "Flash all points in green (#00FF00) to signify the proof is complete. self.wait(2.0)."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Conclusion and Application",
+      "lecture_lines": [
+        "Local rules create a beautiful, predictable global cycle.",
+        "This visual logic solved the hardest IMO 2011 problem.",
+        "Simple rotations reveal deep truths in geometry and combinatorics."
+      ],
+      "animations": [
+        "Show a fast-motion animation of a 10-point windmill [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/windmill.svg] completing a full cycle. self.wait(2.0).",
+        "Display the text 'IMO 2011 Problem 2' in gold (#FFD700) alongside a medal icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/medal.svg]. self.wait(1.5).",
+        "Fade out the points and line into a final geometric pattern. self.wait(2.0)."
+      ]
+    }
+  ],
+  "turns_run": 3,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Expanded to 5 lecture lines to match the AnimationPlanner's 5 steps and maintain a 1:1 mapping. Section 1 is now treated as a Key Section."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated animation steps for section 1 aligned with the outline."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Refactored code to address layout issues and ensure proper grid alignment and line constraints."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (under 10 words each) for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated animation steps for section 2 aligned with the outline."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated Manim code for section_2 with layout fixes."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (under 10 words each) for Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated animation steps for section 3 aligned with the outline."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repaired code, addressed layout issues 26, 27, 28, and applied lessons L002, L004, L008, L027, L031."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (under 10 words each) for Key Section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated animation steps for section 4 aligned with the outline."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section 4, implementing the pivot swap logic and applying layout fixes. Fixed ValueTracker usage for positions and ensured all grid references are valid."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (under 10 words each) for Key Section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated animation steps for section 5 aligned with the outline."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Rebuilt Section5Scene to strictly follow the grid system and address VideoCritic issues. Used place_at_grid for the pivot and labels, and place_in_area for dot groups. Aligned animation sequence with lecture lines and storyboard."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (under 10 words each) for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated animation steps for section 6 aligned with the outline."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated SVG assets (windmill and medal), fixed layout issues (imo_text at A1-A6, pattern at B1-F6), and ensured all animation requirements from the storyboard are met."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a fast-motion animation of a 10-point windmill [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/windmill.svg] completing a full cycle. self.wait(2.0).', \"Display the text 'IMO 2011 Problem 2' in gold (#FFD700) alongside a medal icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/medal.svg]. self.wait(1.5).\"]",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated windmill.svg and medal.svg assets as requested by the enhanced storyboard."
+    },
+    {
+      "id": 20,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The rotating yellow line extends into the left-side lecture notes, obstructing the text 'Imagine points...'. Fix: Line 12: self.place_in_area(rotating_line, 'A1', 'F6', scale_factor=0.9) (line=12, object=rotating_line)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted windmill line length (line_half_length = 2.25) and used updated grid points to ensure the rotating line stays within the right-side grid area and does not obstruct lecture text."
+    },
+    {
+      "id": 21,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The scattered star points are positioned too close to the vertical midline, risking overlap with the lecture lines. Fix: Line 8: self.place_in_area(star_points, 'A2', 'E6', scale_factor=0.8) (line=8, object=star_points)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Relocated star points to Column 2 and further right (C3, B2, D5, F4, B6) to maintain distance from the lecture text on the left."
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The central pivot point is not anchored to a specific grid coordinate, leading to imprecise spatial alignment during the rotation animation. Fix: Line 10: self.place_at_grid(central_point, 'C3', scale_factor=0.8) (line=10, object=central_point)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Explicitly anchored the initial pivot point (points[0]) at grid coordinate 'C3' using self.place_at_grid."
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The rotating lines (yellow and green) originating from pivot_dot at C3 extend into the lecture area, obscuring the text on the left. Fix: Line 112: self.place_at_grid(pivot_dot, 'C4') (line=112, object=pivot_dot)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved pivot_dot to C4 to avoid obscuring lecture text."
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The placement of target_dot (D5) and other_dot (B5) causes the rotation sweep and striking line to overlap with the left-side notes. Fix: Line 113: self.place_at_grid(target_dot, 'D6'); Line 114: self.place_at_grid(other_dot, 'B6') (line=113, object=target_dot and other_dot)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved target_dot to D6 and other_dot to B6 to prevent overlap with notes."
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Points p1, p2, and p3 are too close to the lecture area, causing the red strike-through line and 'X' animation to crowd the text. Fix: Line 72: self.place_at_grid(p1, 'B4'); Line 73: self.place_at_grid(p2, 'C6'); Line 74: self.place_at_grid(p3, 'D4') (line=72, object=p1, p2, and p3)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned points p1, p2, p3 to B4, C6, D4 respectively and adjusted collinear animation to keep them away from the lecture area."
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The sweeping radar line obstructs the lecture notes on the left side when rotating through the horizontal plane. Fix: Line 63: self.place_at_grid(p1, 'C3', scale_factor=1.0) (line=63, object=p1)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved p1 to 'C3' to prevent the rotating line from obstructing the lecture notes on the left."
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: Point p2 is positioned too close to the center, causing the pivot transition to feel cramped. Fix: Line 64: self.place_at_grid(p2, 'E5', scale_factor=1.0) (line=64, object=p2)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved p2 to 'E5' to improve the visual spacing of the pivot transition."
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: Point p3 is underutilizing the right-side grid area, which limits the scale of the visual demonstration. Fix: Line 65: self.place_at_grid(p3, 'B6', scale_factor=1.0) (line=65, object=p3)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved p3 to 'B6' to better utilize the right-side grid area."
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The red_count label at A4 is poorly positioned relative to the red point cluster (C3, D5) in the final scene, creating a proximity violation (2 grid units away from the box edge). Fix: Line 114: self.place_at_grid(red_count, 'B5', scale_factor=0.8) (line=114, object=red_count)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Relocated red_count to B5 and scaled to 0.8 as requested to maintain proximity and avoid clutter."
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: At Column 4, the red_count, pivot_p, and the animated line align vertically in the second half, causing visual clutter and making the count label '2' appear as a label for the pivot point. Fix: Line 114: Relocate red_count to B5 to break the vertical stack and maintain clear separation from the pivot point at B4. (line=114, object=red_count)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Relocated red_count to B5 to break the vertical stack with the pivot and improve clarity."
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The blue_count label at A2 is positioned directly on the edge of the grid boundary, which can feel cramped when the blue selection box expands to row E. Fix: Line 113: self.place_at_grid(blue_count, 'A2', scale_factor=0.7) (line=113, object=blue_count)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Scaled blue_count to 0.7 at A2 to ensure it doesn't feel cramped near the grid boundary."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'L' and 'R' labels are positioned too close to the central pivot, causing potential overlap with the rotating line and the dots as they swap sides. Fix: Line 15: self.place_at_grid(l_label, 'D2', scale_factor=0.8); Line 16: self.place_at_grid(r_label, 'D4', scale_factor=0.8) (line=15, object=l_label, r_label)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Positioned 'L' and 'R' labels at grid points D2 and D4 respectively, using a scale factor of 0.8 as suggested."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The blue and red dot groups lack specific grid-aligned positioning, which reduces the clarity of the 180-degree spatial transformation. Fix: Line 20: self.place_in_area(blue_dots, 'B2', 'C2', scale_factor=0.7); Line 22: self.place_in_area(red_dots, 'E4', 'F4', scale_factor=0.7) (line=20, object=blue_dots, red_dots)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Positioned blue dots in area B2-C2 and red dots in area E4-F4 using place_in_area."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The central white pivot point and the rotating yellow line are not anchored to the visual grid, risking misalignment with the accompanying text labels. Fix: Line 12: self.place_at_grid(pivot_dot, 'D3', scale_factor=0.8) (line=12, object=pivot_dot)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Anchored the central pivot dot to grid point D3."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The label 'imo_text' ('IMO 2011 Problem 2') is a long string positioned at a single grid point (A4), causing it to be off-center relative to the animation below and risk right-edge clipping. Fix: Line 120: self.place_in_area(imo_text, 'A1', 'A6', scale_factor=0.7) (line=120, object=imo_text)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Positioned 'imo_text' in area A1-A6 to prevent clipping and improve centering."
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'pattern' asset is constrained to area B2-F6, which results in asymmetrical horizontal margins and underutilizes the available grid width on the right side. Fix: Line 137: self.place_in_area(pattern, 'B1', 'F6', scale_factor=0.8) (line=137, object=pattern)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Positioned 'pattern' in area B1-F6 to utilize available width and improve margins."
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[section_6] Ensure that the SVG assets (windmill.svg and medal.svg) from Issue 19 are properly integrated and scaled to avoid cluttering the layout, especially considering the layout fixes in Issues 35 and 36. Use SVGMobject for loading the icons.",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated SVG assets using SVGMobject and scaled them appropriately for the layout."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 361555,
+        "video_mtime_ns": 1784632749000000000,
+        "code_sha1": "d51b63a770bd562edf7a18da5139c16ce0838eaa"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The rotating yellow line extends into the left-side lecture notes, obstructing the text 'Imagine points...'.",
+              "solution": "Line 12: self.place_in_area(rotating_line, 'A1', 'F6', scale_factor=0.9)",
+              "line_number": 12,
+              "object_affected": "rotating_line"
+            },
+            {
+              "problem": "The scattered star points are positioned too close to the vertical midline, risking overlap with the lecture lines.",
+              "solution": "Line 8: self.place_in_area(star_points, 'A2', 'E6', scale_factor=0.8)",
+              "line_number": 8,
+              "object_affected": "star_points"
+            },
+            {
+              "problem": "The central pivot point is not anchored to a specific grid coordinate, leading to imprecise spatial alignment during the rotation animation.",
+              "solution": "Line 10: self.place_at_grid(central_point, 'C3', scale_factor=0.8)",
+              "line_number": 10,
+              "object_affected": "central_point"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        20,
+        21,
+        22
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 348936,
+        "video_mtime_ns": 1784632736000000000,
+        "code_sha1": "57d38ddec04e48d0b9083350924cec9d23ac9917"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The rotating lines (yellow and green) originating from pivot_dot at C3 extend into the lecture area, obscuring the text on the left.",
+              "solution": "Line 112: self.place_at_grid(pivot_dot, 'C4')",
+              "line_number": 112,
+              "object_affected": "pivot_dot"
+            },
+            {
+              "problem": "The placement of target_dot (D5) and other_dot (B5) causes the rotation sweep and striking line to overlap with the left-side notes.",
+              "solution": "Line 113: self.place_at_grid(target_dot, 'D6'); Line 114: self.place_at_grid(other_dot, 'B6')",
+              "line_number": 113,
+              "object_affected": "target_dot and other_dot"
+            },
+            {
+              "problem": "Points p1, p2, and p3 are too close to the lecture area, causing the red strike-through line and 'X' animation to crowd the text.",
+              "solution": "Line 72: self.place_at_grid(p1, 'B4'); Line 73: self.place_at_grid(p2, 'C6'); Line 74: self.place_at_grid(p3, 'D4')",
+              "line_number": 72,
+              "object_affected": "p1, p2, and p3"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        23,
+        24,
+        25
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 302479,
+        "video_mtime_ns": 1784632817000000000,
+        "code_sha1": "aee13994c97dbe7a1ea4c0e454e6f7048aa1a6a1"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The sweeping radar line obstructs the lecture notes on the left side when rotating through the horizontal plane.",
+              "solution": "Line 63: self.place_at_grid(p1, 'C3', scale_factor=1.0)",
+              "line_number": 63,
+              "object_affected": "p1"
+            },
+            {
+              "problem": "Point p2 is positioned too close to the center, causing the pivot transition to feel cramped.",
+              "solution": "Line 64: self.place_at_grid(p2, 'E5', scale_factor=1.0)",
+              "line_number": 64,
+              "object_affected": "p2"
+            },
+            {
+              "problem": "Point p3 is underutilizing the right-side grid area, which limits the scale of the visual demonstration.",
+              "solution": "Line 65: self.place_at_grid(p3, 'B6', scale_factor=1.0)",
+              "line_number": 65,
+              "object_affected": "p3"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        26,
+        27,
+        28
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    null,
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 388165,
+        "video_mtime_ns": 1784632799000000000,
+        "code_sha1": "8d9f334bfc64220eeeb9fe4a95df37eaa9fa81da"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'L' and 'R' labels are positioned too close to the central pivot, causing potential overlap with the rotating line and the dots as they swap sides.",
+              "solution": "Line 15: self.place_at_grid(l_label, 'D2', scale_factor=0.8); Line 16: self.place_at_grid(r_label, 'D4', scale_factor=0.8)",
+              "line_number": 15,
+              "object_affected": "l_label, r_label"
+            },
+            {
+              "problem": "The blue and red dot groups lack specific grid-aligned positioning, which reduces the clarity of the 180-degree spatial transformation.",
+              "solution": "Line 20: self.place_in_area(blue_dots, 'B2', 'C2', scale_factor=0.7); Line 22: self.place_in_area(red_dots, 'E4', 'F4', scale_factor=0.7)",
+              "line_number": 20,
+              "object_affected": "blue_dots, red_dots"
+            },
+            {
+              "problem": "The central white pivot point and the rotating yellow line are not anchored to the visual grid, risking misalignment with the accompanying text labels.",
+              "solution": "Line 12: self.place_at_grid(pivot_dot, 'D3', scale_factor=0.8)",
+              "line_number": 12,
+              "object_affected": "pivot_dot"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 372248,
+        "video_mtime_ns": 1784632743000000000,
+        "code_sha1": "5905a78d76816a6e5ff130912ebb413daaff0188"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The label 'imo_text' ('IMO 2011 Problem 2') is a long string positioned at a single grid point (A4), causing it to be off-center relative to the animation below and risk right-edge clipping.",
+              "solution": "Line 120: self.place_in_area(imo_text, 'A1', 'A6', scale_factor=0.7)",
+              "line_number": 120,
+              "object_affected": "imo_text"
+            },
+            {
+              "problem": "The 'pattern' asset is constrained to area B2-F6, which results in asymmetrical horizontal margins and underutilizes the available grid width on the right side.",
+              "solution": "Line 137: self.place_in_area(pattern, 'B1', 'F6', scale_factor=0.8)",
+              "line_number": 137,
+              "object_affected": "pattern"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35,
+        36
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/8-The_Windmill_Problem_A_Dance_of_Geometry_and_Combinatorics",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 296022,
+      "completion_tokens": 35375,
+      "total_tokens": 411644,
+      "call_count": 40
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 274,
+        "completion_tokens": 949,
+        "total_tokens": 1867,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 9671,
+        "completion_tokens": 317,
+        "total_tokens": 10114,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 12208,
+        "completion_tokens": 410,
+        "total_tokens": 12863,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 25117,
+        "completion_tokens": 681,
+        "total_tokens": 25973,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 29263,
+        "completion_tokens": 2583,
+        "total_tokens": 32065,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 30282,
+        "completion_tokens": 4132,
+        "total_tokens": 34544,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 53610,
+        "completion_tokens": 5430,
+        "total_tokens": 60381,
+        "call_count": 3
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 23753,
+        "completion_tokens": 4904,
+        "total_tokens": 39796,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 31217,
+        "completion_tokens": 4370,
+        "total_tokens": 36129,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 35353,
+        "completion_tokens": 4234,
+        "total_tokens": 39992,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 4632,
+        "completion_tokens": 593,
+        "total_tokens": 16314,
+        "call_count": 12
+      },
+      "scope_refine:section_5": {
+        "prompt_tokens": 7585,
+        "completion_tokens": 2358,
+        "total_tokens": 20574,
+        "call_count": 2
+      },
+      "scope_refine:section_3": {
+        "prompt_tokens": 13659,
+        "completion_tokens": 2354,
+        "total_tokens": 28144,
+        "call_count": 2
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3073,
+        "completion_tokens": 316,
+        "total_tokens": 5919,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 3582,
+        "completion_tokens": 395,
+        "total_tokens": 12412,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3054,
+        "completion_tokens": 301,
+        "total_tokens": 6252,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3430,
+        "completion_tokens": 374,
+        "total_tokens": 13401,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3477,
+        "completion_tokens": 406,
+        "total_tokens": 9082,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2782,
+        "completion_tokens": 268,
+        "total_tokens": 5822,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 296022,
+        "completion_tokens": 35375,
+        "total_tokens": 411644,
+        "call_count": 40
+      }
+    }
+  }
+}

@@ -1,0 +1,553 @@
+{
+  "topic": "Infinite Journeys in Finite Spaces: Understanding Space-Filling Curves",
+  "target_audience": "Undergraduate students in Mathematics or Computer Science, and advanced high school students.",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Initial layout setup\n        title = \"The Geometric Paradox\"\n        lines = [\n            \"A line has one dimension, while a square has two.\",\n            \"Intuitively, a line cannot cover every point in space.\",\n            \"Imagine a path that visits every coordinate perfectly.\",\n            \"This mathematical marvel is called a space-filling curve.\",\n            \"Can a continuous line truly fill an entire area?\"\n        ]\n        self.setup_layout(title, lines)\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        # 1D Line\n        line_1d = Line(LEFT, RIGHT, color=\"#00FF00\", stroke_width=4)\n        self.place_at_grid(line_1d, \"B2\", scale_factor=0.8)\n        line_label = Text(\"1D Line\", font_size=18, color=\"#00FF00\").next_to(line_1d, UP, buff=0.1)\n        \n        # 2D Square\n        square_2d = Square(side_length=2, color=\"#0080FF\", fill_opacity=0.4, stroke_width=2)\n        self.place_at_grid(square_2d, \"B5\", scale_factor=0.8)\n        square_label = Text(\"2D Square\", font_size=18, color=\"#0080FF\").next_to(square_2d, UP, buff=0.1)\n\n        self.play(Create(line_1d), Create(line_label))\n        self.play(Create(square_2d), Create(square_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Clear specific elements to focus on the square\n        self.play(FadeOut(line_1d), FadeOut(line_label), FadeOut(square_label))\n        # Move square to a larger central area for the next animations\n        self.play(self.place_in_area(square_2d, \"C2\", \"F5\", scale_factor=1.2).animate)\n\n        # Random dot movement inside the square\n        dot = Dot(color=WHITE, radius=0.05)\n        dot.move_to(square_2d.get_center())\n        \n        random_path = VMobject(color=WHITE, stroke_width=1)\n        random_path.set_points_as_corners([dot.get_center()])\n\n        def update_path(path):\n            new_point = dot.get_center()\n            path.add_points_as_corners([new_point])\n\n        self.add(dot, random_path)\n        \n        # Simulate \"random\" movement within boundaries\n        s_side = square_2d.side_length * 0.9 / 2\n        c = square_2d.get_center()\n        \n        points = [\n            c + np.array([np.random.uniform(-s_side, s_side), np.random.uniform(-s_side, s_side), 0])\n            for _ in range(8)\n        ]\n        \n        random_path.add_updater(update_path)\n        for p in points:\n            self.play(dot.animate.move_to(p), run_time=0.4, rate_func=linear)\n        \n        random_path.remove_updater(update_path)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        self.play(FadeOut(dot), FadeOut(random_path))\n\n        # Helper to generate Hilbert Curve points\n        def get_hilbert_points(n, side=2.0):\n            def rot(n, x, y, rx, ry):\n                if ry == 0:\n                    if rx == 1:\n                        x = n - 1 - x\n                        y = n - 1 - y\n                    return y, x\n                return x, y\n\n            points = []\n            for i in range(4**n):\n                t = i\n                x = 0\n                y = 0\n                s = 1\n                while s < 2**n:\n                    rx = 1 & (t // 2)\n                    ry = 1 & (t ^ rx)\n                    x, y = rot(s, x, y, rx, ry)\n                    x += s * rx\n                    y += s * ry\n                    t //= 4\n                    s *= 2\n                points.append(np.array([x, y, 0]))\n            \n            # Normalize and center\n            points = np.array(points)\n            points = points - (2**n - 1) / 2\n            points = points * (side / (2**n))\n            return points\n\n        # Create the dense path (Hilbert Curve Order 4)\n        h_points = get_hilbert_points(4, side=square_2d.side_length * 1.5)\n        h_points += square_2d.get_center() # Align with square\n        \n        hilbert_curve = VMobject(color=\"#FFFF00\", stroke_width=1.5)\n        hilbert_curve.set_points_as_corners(h_points)\n\n        self.play(Create(hilbert_curve), run_time=5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n\n        curve_label = Text(\"Space-Filling Curve\", font_size=24, color=\"#FFFF00\")\n        self.place_at_grid(curve_label, \"B3\", scale_factor=1.0) # Positioned above the square area\n        \n        self.play(Write(curve_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n\n        self.play(FadeOut(curve_label))\n        \n        # Increase thickness until it fills the square\n        self.play(\n            hilbert_curve.animate.set_stroke(width=15),\n            run_time=3\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Section title and lecture lines\n        title_text = \"Prerequisite: Iterative Functions and Limits\"\n        lecture_lines = [\n            \"Complex shapes often emerge from simple, repeated rules.\",\n            \"We divide a square into a smaller, recursive grid.\",\n            \"Repeating this process infinitely creates the final structure.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        \n        # Display a simple square outline in #FFFFFF\n        # Based on 6x6 grid, B2 to E5 defines a 3x3 grid unit square area\n        main_square = Square(side_length=3.0, color=\"#FFFFFF\")\n        # Place in area spanning B2 to E5 (central on the right side)\n        self.place_in_area(main_square, \"B2\", \"E5\")\n        \n        self.play(Create(main_square))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW)\n        )\n\n        def get_grid(n, size=3.0, color=\"#555555\"):\n            grid_lines = VGroup()\n            step = size / n\n            # Start from the bottom-left corner of the positioned square\n            start_pos = main_square.get_corner(DL)\n            \n            # Vertical subdivision lines\n            for i in range(1, n):\n                v_line = Line(\n                    start_pos + RIGHT * i * step,\n                    start_pos + RIGHT * i * step + UP * size,\n                    color=color,\n                    stroke_width=1\n                )\n                grid_lines.add(v_line)\n                \n            # Horizontal subdivision lines\n            for i in range(1, n):\n                h_line = Line(\n                    start_pos + UP * i * step,\n                    start_pos + UP * i * step + RIGHT * size,\n                    color=color,\n                    stroke_width=1\n                )\n                grid_lines.add(h_line)\n            return grid_lines\n\n        # Divide square into 2x2\n        grid_2x2 = get_grid(2)\n        self.play(Create(grid_2x2))\n        self.wait(0.5)\n        \n        # Subdivide each cell into another 2x2 grid (results in 4x4)\n        grid_4x4 = get_grid(4)\n        self.play(ReplacementTransform(grid_2x2, grid_4x4))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW)\n        )\n        \n        # Rapidly animate the grid refining from 4x4 to 8x8 to 16x16 cells\n        grid_8x8 = get_grid(8)\n        grid_16x16 = get_grid(16)\n        \n        self.play(ReplacementTransform(grid_4x4, grid_8x8), run_time=0.6)\n        self.play(ReplacementTransform(grid_8x8, grid_16x16), run_time=0.4)\n        \n        self.wait(3)\n",
+    "",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Initial Setup\n        title = \"Critical Properties: Continuity and Locality\"\n        lecture_lines = [\n            \"The curve is continuous; the pen never lifts.\",\n            \"Locality means nearby points on the line stay close.\",\n            \"Standard scanning patterns create jumps, breaking this proximity.\",\n            \"This preservation of distance is a unique topological feature.\",\n            \"Continuity and locality define the power of Hilbert curves.\"\n        ]\n        self.setup_layout(title, lecture_lines)\n\n        # Hilbert Curve Coordinates (Order 2: 4x4 grid)\n        # Normalized to 0-3 range\n        hilbert_coords = [\n            [0,0], [1,0], [1,1], [0,1], \n            [0,2], [0,3], [1,3], [1,2], \n            [2,2], [2,3], [3,3], [3,2], \n            [3,1], [2,1], [2,0], [3,0]\n        ]\n        \n        # Scaling factor to fit coordinates in the grid system\n        scale_val = 0.6\n        \n        def coords_to_vgroup(coords):\n            pts = [np.array([c[0], c[1], 0]) for c in coords]\n            vg = VGroup()\n            for i in range(len(pts) - 1):\n                vg.add(Line(pts[i], pts[i+1], stroke_width=4))\n            return vg\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(WHITE)\n        \n        # Create the Hilbert Curve\n        hilbert_vg = coords_to_vgroup(hilbert_coords)\n        self.place_in_area(hilbert_vg, \"B2\", \"E5\", scale_factor=0.8)\n        \n        # Create a trace path for the dot\n        trace_path = VMobject(color=\"#FFFFFF\")\n        trace_path.set_points_as_corners([l.get_start() for l in hilbert_vg] + [hilbert_vg[-1].get_end()])\n        \n        dot = Dot(color=\"#FFFFFF\", radius=0.1)\n        dot.move_to(trace_path.get_start())\n        \n        self.add(dot)\n        self.play(\n            Create(hilbert_vg),\n            MoveAlongPath(dot, trace_path),\n            run_time=4,\n            rate_func=linear\n        )\n        self.remove(dot)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(\"#FFFF00\")\n        \n        # Pick two points that are close on the curve (e.g., points 8 and 9)\n        p1_pos = hilbert_vg[8].get_start()\n        p2_pos = hilbert_vg[8].get_end()\n        \n        c1 = Circle(radius=0.15, color=\"#FFFF00\").move_to(p1_pos)\n        c2 = Circle(radius=0.15, color=\"#FFFF00\").move_to(p2_pos)\n        dist_line = Line(p1_pos, p2_pos, color=\"#FFFF00\", stroke_width=6)\n        \n        self.play(Create(c1), Create(c2))\n        self.play(Create(dist_line))\n        self.wait(1)\n        self.play(FadeOut(c1, c2, dist_line))\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(WHITE)\n        \n        # Scanning pattern points (top to bottom, left to right)\n        scan_coords = [\n            [0,3], [1,3], [2,3], [3,3],\n            [0,2], [1,2], [2,2], [3,2],\n            [0,1], [1,1], [2,1], [3,1],\n            [0,0], [1,0], [2,0], [3,0]\n        ]\n        \n        scan_vg = VGroup()\n        for i in range(len(scan_coords)-1):\n            l = Line(np.array([scan_coords[i][0], scan_coords[i][1], 0]), \n                     np.array([scan_coords[i+1][0], scan_coords[i+1][1], 0]))\n            # Color the \"jump\" differently\n            if scan_coords[i][1] != scan_coords[i+1][1]:\n                l.set_color(RED)\n            else:\n                l.set_color(GRAY)\n            scan_vg.add(l)\n            \n        self.place_in_area(scan_vg, \"B2\", \"E5\", scale_factor=0.8)\n        \n        self.play(hilbert_vg.animate.set_stroke(opacity=0.2))\n        self.play(Create(scan_vg), run_time=3)\n        \n        # Highlight a jump\n        jump_line = scan_vg[3] # (3,3) to (0,2)\n        jump_label = Text(\"JUMP\", font_size=16, color=RED)\n        self.place_at_grid(jump_label, \"B4\") # Near the jump\n        \n        self.play(jump_line.animate.set_stroke(width=8), Flash(jump_line, color=RED))\n        self.wait(1)\n        self.play(FadeOut(scan_vg, jump_label), hilbert_vg.animate.set_stroke(opacity=1))\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(WHITE)\n        \n        # Rainbow color gradient along the curve\n        rainbow_colors = [RED, ORANGE, YELLOW, GREEN, BLUE, PURPLE]\n        hilbert_vg.set_color_by_gradient(*rainbow_colors)\n        \n        self.play(Indicate(hilbert_vg))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(\"#00FFFF\")\n        \n        # Final flash and consistent color\n        self.play(hilbert_vg.animate.set_color(\"#00FFFF\"))\n        self.play(Flash(hilbert_vg, color=\"#00FFFF\", line_length=0.4, num_lines=20))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # 1. Setup layout\n        title_text = \"Real-World Application: Data Mapping\"\n        lecture_lines = [\n            \"Hilbert curves map 2D data into 1D memory sequences.\",\n            \"This clustering keeps related spatial data physically close.\",\n            \"This optimization speeds up complex database and map queries.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors\n        COLOR_MAP_BG = \"#444444\"\n        COLOR_MEM_BG = \"#AAAAAA\"\n        COLOR_L1 = \"#FFFF00\"  # Yellow\n        COLOR_L2 = \"#00FFFF\"  # Cyan\n        COLOR_L3 = \"#FF8800\"  # Orange\n\n        # === Animation for Lecture Line 1 ===\n        # Show a 2D grid 'Map' in #444444 and a 1D horizontal bar 'Memory' in #AAAAAA.\n        self.play(self.lecture[0].animate.set_color(COLOR_L1))\n\n        # Create Map (4x4)\n        map_cells = VGroup()\n        cell_positions = []\n        # Logical grid mapping: B1-B4, C1-C4, D1-D4, E1-E4\n        grid_rows = [\"B\", \"C\", \"D\", \"E\"]\n        grid_cols = [\"1\", \"2\", \"3\", \"4\"]\n        for r in grid_rows:\n            for c in grid_cols:\n                pos = self.grid[f\"{r}{c}\"]\n                cell_positions.append(pos)\n                sq = Square(side_length=0.9, stroke_color=COLOR_MAP_BG, fill_color=COLOR_MAP_BG, fill_opacity=0.2)\n                sq.move_to(pos)\n                map_cells.add(sq)\n        \n        map_label = Text(\"2D Map Data\", font_size=20, color=WHITE)\n        self.place_at_grid(map_label, \"A2\", scale_factor=1.0)\n\n        # Create Memory Bar (1x16 squares)\n        memory_blocks = VGroup(*[Square(side_length=0.2, stroke_color=COLOR_MEM_BG, fill_color=COLOR_MEM_BG, fill_opacity=0.2) for _ in range(16)])\n        memory_blocks.arrange(RIGHT, buff=0.1)\n        self.place_in_area(memory_blocks, \"F1\", \"F6\")\n        \n        memory_label = Text(\"1D Memory Sequence\", font_size=20, color=WHITE)\n        self.place_at_grid(memory_label, \"E6\", scale_factor=1.0)\n\n        self.play(\n            FadeIn(map_cells), \n            FadeIn(map_label), \n            FadeIn(memory_blocks), \n            FadeIn(memory_label)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Trace the Hilbert curve on the Map and highlight corresponding contiguous segments on the Memory bar.\n        self.play(self.lecture[1].animate.set_color(COLOR_L2))\n\n        # Hilbert Path Sequence (indices in cell_positions: 0=B1, 1=B2, 2=B3, 3=B4, 4=C1, ...)\n        # Path: B1 -> C1 -> C2 -> B2 -> B3 -> B4 -> C4 -> C3 -> D3 -> D4 -> E4 -> E3 -> E2 -> D2 -> D1 -> E1\n        path_indices = [0, 4, 5, 1, 2, 3, 7, 6, 10, 11, 15, 14, 13, 9, 8, 12]\n        \n        curve_segments = VGroup()\n        for i in range(len(path_indices)):\n            # Memory highlight animation\n            mem_anim = memory_blocks[i].animate.set_fill(COLOR_L2, opacity=0.8).set_stroke(COLOR_L2)\n            \n            if i > 0:\n                seg = Line(cell_positions[path_indices[i-1]], cell_positions[path_indices[i]], color=COLOR_L2, stroke_width=4)\n                curve_segments.add(seg)\n                self.play(Create(seg), mem_anim, run_time=0.2)\n            else:\n                self.play(mem_anim, run_time=0.2)\n        \n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Highlight a square region on the Map; show its data points clustering together in Memory.\n        self.play(self.lecture[2].animate.set_color(COLOR_L3))\n\n        # Regional Cluster (e.g., top-right quadrant): B3, B4, C3, C4 (Indices 2, 3, 6, 7 in cell_positions)\n        region_sq_indices = [2, 3, 6, 7]\n        region_highlights = VGroup(*[map_cells[idx].copy().set_fill(COLOR_L3, opacity=0.8).set_stroke(COLOR_L3, width=4) for idx in region_sq_indices])\n        \n        # Memory blocks 4, 5, 6, 7 in the Hilbert sequence correspond to B3, B4, C4, C3\n        mem_cluster_indices = [4, 5, 6, 7]\n        mem_highlights = VGroup(*[memory_blocks[idx].copy().set_fill(COLOR_L3, opacity=0.8).set_stroke(COLOR_L3, width=4) for idx in mem_cluster_indices])\n\n        self.play(FadeIn(region_highlights), FadeIn(mem_highlights))\n        self.play(\n            Indicate(region_highlights, color=COLOR_L3), \n            Indicate(mem_highlights, color=COLOR_L3)\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Setup layout with title and lecture lines\n        lecture_lines = [\n            \"At infinity, the 1D line occupies the 2D area.\",\n            \"It challenges our basic intuition of geometry and dimension.\",\n            \"A finite space holds an infinite, perfectly continuous journey.\"\n        ]\n        self.setup_layout(\"Summary and the Infinite Limit\", lecture_lines)\n\n        # Helper function for Hilbert Curve points (iterative d2xy)\n        def get_hilbert_points(order, scale_val):\n            n = 2**order\n            points = []\n            for i in range(n * n):\n                x, y = 0, 0\n                t = i\n                s = 1\n                while s < n:\n                    rx = 1 & (t // 2)\n                    ry = 1 & (t ^ rx)\n                    # rot\n                    if ry == 0:\n                        if rx == 1:\n                            x, y = s - 1 - x, s - 1 - y\n                        x, y = y, x\n                    x += s * rx\n                    y += s * ry\n                    t //= 4\n                    s *= 2\n                # Center and scale\n                points.append(np.array([\n                    (x / (n - 1) - 0.5) * scale_val,\n                    (y / (n - 1) - 0.5) * scale_val,\n                    0\n                ]))\n            return points\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight lecture line 1 in Cyan\n        self.play(self.lecture[0].animate.set_color(\"#00FFFF\"))\n\n        # Create Hilbert Curve (Order 5 for density)\n        # B2 is (1.5, 1.2), E5 is (4.5, -1.8). Center (3.0, -0.3). Side length 3.0.\n        order_5_points = get_hilbert_points(5, 3.0)\n        hilbert_curve = VMobject(color=\"#00FFFF\")\n        hilbert_curve.set_points_as_corners(order_5_points)\n        hilbert_curve.set_stroke(width=2)\n        \n        self.place_in_area(hilbert_curve, 'B2', 'E5')\n        self.play(Create(hilbert_curve), run_time=3)\n\n        # Zoom into the curve until it becomes a solid square\n        # We simulate the \"limit\" by transforming the dense curve into a solid square\n        limit_square = Square(side_length=3.0, fill_opacity=1.0, fill_color=\"#00FFFF\", stroke_width=0)\n        self.place_in_area(limit_square, 'B2', 'E5')\n\n        self.play(\n            hilbert_curve.animate.scale(1.5),\n            ReplacementTransform(hilbert_curve, limit_square),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight lecture line 2 in White\n        self.play(self.lecture[1].animate.set_color(\"#FFFFFF\"))\n\n        # Display text '1D Path fills 2D Space' in #FFFFFF at the center\n        limit_text = Text(\"1D Path fills 2D Space\", font_size=24, color=\"#FFFFFF\")\n        # Place text slightly above center to not be fully obscured if needed, \n        # but prompt says \"at the center\".\n        self.place_in_area(limit_text, 'C3', 'D4')\n        \n        self.play(Write(limit_text))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Highlight lecture line 3 in Green\n        self.play(self.lecture[2].animate.set_color(\"#00FF00\"))\n\n        # The filled square pulses with a soft #00FF00 glow before fading to black.\n        pulse_overlay = limit_square.copy().set_fill(\"#00FF00\", opacity=0.0)\n        \n        self.play(\n            pulse_overlay.animate.set_fill(opacity=0.6).scale(1.05),\n            limit_square.animate.set_color(\"#00FF00\"),\n            run_time=1,\n            rate_func=there_and_back\n        )\n        self.wait(1)\n\n        # Fade everything to black\n        self.play(\n            FadeOut(limit_square),\n            FadeOut(limit_text),\n            FadeOut(pulse_overlay),\n            FadeOut(self.lecture),\n            FadeOut(self.title),\n            run_time=2\n        )\n        self.wait(1)\n"
+  ],
+  "outline": {
+    "topic": "Infinite Journeys in Finite Spaces: Understanding Space-Filling Curves",
+    "target_audience": "Undergraduate students in Mathematics or Computer Science, and advanced high school students.",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Geometric Paradox",
+        "content": "Introduce the counter-intuitive concept: a one-dimensional line that completely fills a two-dimensional area. Explain the classical definition of dimension (1D line vs. 2D plane) and pose the question: Can a continuous line visit every single point in a square without leaving it?",
+        "example": "Imagine a tiny robotic ladybug with an infinite supply of ink. It wants to paint a white square completely black without ever lifting its legs or crossing its own path."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: Iterative Functions and Limits",
+        "content": "Before building the curve, explain the 'Divide and Conquer' logic. Introduce the idea of an iterative process: taking a simple shape and replacing its segments with a more complex pattern, repeating this 'to infinity'.",
+        "example": "Visualizing a 'Level 0' square divided into a 2x2 grid, then each of those cells divided into a 2x2 grid, and so on, creating a recursive structure."
+      },
+      {
+        "id": "section_3",
+        "title": "The Hilbert Curve Construction",
+        "content": "Step-by-step visual assembly of the Hilbert Curve. Start with the 'Order 1' (a simple U-shape). Move to 'Order 2', showing how four smaller U-shapes are rotated and connected to form a more complex path. Explain that as the order 'n' approaches infinity, the line fills the space.",
+        "example": "A 'Connect-the-Dots' animation where the dots represent the centers of the grid cells. As the grid gets finer, the line connecting them becomes so dense it looks like a solid block of color."
+      },
+      {
+        "id": "section_4",
+        "title": "Critical Properties: Continuity and Locality",
+        "content": "Explain two key mathematical properties: 1. Continuity (the pen never lifts). 2. Locality Preservation (points that are close together on the 1D line are usually close together in the 2D plane). Contrast this with a simple 'scanning' pattern (like a printer head) which has 'jumps'.",
+        "example": "Two squirrels, Alpha and Beta, sitting on the curve. If they move a small distance along the 'line', they remain physically close in the 'square', unlike a scanning line where the end of one row is far from the start of the next."
+      },
+      {
+        "id": "section_5",
+        "title": "Real-World Application: Data Mapping",
+        "content": "Discuss why this matters in technology. Space-filling curves are used to map 2D data (like images or maps) into 1D sequences (like computer memory or databases) while keeping related data near each other to speed up processing.",
+        "example": "A smartphone map app using a Hilbert Curve to store regional map data. When you zoom in on a park, the phone can load the surrounding streets faster because they are 'stored' nearby on the device's memory chip."
+      },
+      {
+        "id": "section_6",
+        "title": "Summary and the Infinite Limit",
+        "content": "Conclude with the philosophical and mathematical beauty of the curve. At the limit (infinity), the line has an area of 1 but a width of 0, blurring the lines between dimensions.",
+        "example": "A final zoom-out animation showing the curve transitioning from a visible 'wiggly line' into a solid, perfect 2D square as the iterations increase."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Geometric Paradox",
+      "lecture_lines": [
+        "A line has one dimension, while a square has two.",
+        "Intuitively, a line cannot cover every point in space.",
+        "Imagine a path that visits every coordinate perfectly.",
+        "This mathematical marvel is called a space-filling curve.",
+        "Can a continuous line truly fill an entire area?"
+      ],
+      "animations": [
+        "Display a thin horizontal line (1D) in #00FF00 and a solid square (2D) in #0080FF side-by-side.",
+        "Animate a small dot moving randomly inside the square, leaving significant white space.",
+        "Show a dense path systematically filling the square from corner to corner.",
+        "Label the dense path 'Space-Filling Curve' in #FFFF00 positioned above the square.",
+        "Fade labels and animate the curve's thickness increasing until the square appears solid."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: Iterative Functions and Limits",
+      "lecture_lines": [
+        "Complex shapes often emerge from simple, repeated rules.",
+        "We divide a square into a smaller, recursive grid.",
+        "Repeating this process infinitely creates the final structure."
+      ],
+      "animations": [
+        "Display a simple square outline in #FFFFFF.",
+        "Divide the square into a 2x2 grid, then subdivide each cell into another 2x2 grid in #555555.",
+        "Rapidly animate the grid refining from 4x4 to 8x8 to 16x16 cells."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Hilbert Curve Construction",
+      "lecture_lines": [
+        "Start with a simple U-shape in a 2x2 grid.",
+        "For higher orders, rotate and connect four smaller U-shapes.",
+        "Each iteration increases the path's complexity and density.",
+        "As the grid refines, the curve visits every cell.",
+        "At the infinite limit, the curve fills the square."
+      ],
+      "animations": [
+        "Draw a basic U-shaped path in #FF00FF connecting centers of a 2x2 grid.",
+        "Show four smaller U-shapes; rotate the bottom two and connect them with dashed lines.",
+        "Transition the curve from Order 2 to Order 3, showing increased complexity.",
+        "Overlay a fine grid and highlight the curve passing through every single cell.",
+        "Animate the Order 5 curve filling the square area as the line width decreases."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Critical Properties: Continuity and Locality",
+      "lecture_lines": [
+        "The curve is continuous; the pen never lifts.",
+        "Locality means nearby points on the line stay close.",
+        "Standard scanning patterns create jumps, breaking this proximity.",
+        "This preservation of distance is a unique topological feature.",
+        "Continuity and locality define the power of Hilbert curves."
+      ],
+      "animations": [
+        "Animate a bright dot in #FFFFFF tracing the Hilbert curve smoothly without breaks.",
+        "Highlight two points close on the curve in #FFFF00 and draw a short distance line between them.",
+        "Contrast with a row-by-row scanning line that shows a long jump from the end of one row to the next.",
+        "Apply a rainbow color gradient along the curve to show the continuous 1D to 2D mapping.",
+        "Flash the entire curve in #00FFFF to highlight its structural consistency."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Real-World Application: Data Mapping",
+      "lecture_lines": [
+        "Hilbert curves map 2D data into 1D memory sequences.",
+        "This clustering keeps related spatial data physically close.",
+        "This optimization speeds up complex database and map queries."
+      ],
+      "animations": [
+        "Show a 2D grid 'Map' in #444444 and a 1D horizontal bar 'Memory' in #AAAAAA.",
+        "Trace the Hilbert curve on the Map and highlight corresponding contiguous segments on the Memory bar.",
+        "Highlight a square region on the Map; show its data points clustering together in Memory."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Summary and the Infinite Limit",
+      "lecture_lines": [
+        "At infinity, the 1D line occupies the 2D area.",
+        "It challenges our basic intuition of geometry and dimension.",
+        "A finite space holds an infinite, perfectly continuous journey."
+      ],
+      "animations": [
+        "Zoom into a high-order Hilbert curve until it becomes indistinguishable from a solid square.",
+        "Display text '1D Path fills 2D Space' in #FFFFFF at the center.",
+        "The filled square pulses with a soft #00FF00 glow before fading to black."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps aligned with the lecture lines for Section 1."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Section1Scene following all constraints, including the 6x6 grid system and TeachingScene base class. implemented the geometric paradox visualization with a comparison between 1D and 2D, a random walk inside a square, and a Hilbert curve to represent the space-filling curve."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps aligned with the lecture lines for Section 2."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_2 following the Animation Planner's steps. Included iterative grid subdivision from 2x2 to 16x16, synchronized with the lecture lines. Applied colors and grid-based positioning as per guidelines."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps aligned with the lecture lines for Section 3."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps aligned with the lecture lines for Section 4."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated the Manim code for Section 4, including the Hilbert curve visualization, continuity demonstration, locality comparison with a scanning pattern, and property highlights as requested."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps aligned with the lecture lines for Section 5."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for Section 5, implementing the 2D-to-1D mapping visualization using Hilbert curves. The animation includes a 4x4 Map grid and a 1D Memory bar, tracing the curve to show how spatial data is serialized while maintaining proximity. Added regional highlighting to demonstrate clustering optimization."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps aligned with the lecture lines for Section 6."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented Section6Scene with Hilbert curve generation, zoom-to-square animation, and color-coded lecture highlights as per specifications."
+    },
+    {
+      "id": 19,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Please provide 5 concise lecture lines (max 10 words each) for Section 1: The Geometric Paradox, following the high-level plan and example.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "ScriptWriter has already provided the lecture lines."
+    },
+    {
+      "id": 20,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Please provide 3 concise lecture lines (max 10 words each) for Section 2: Prerequisite: Iterative Functions and Limits.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "ScriptWriter has already provided the lecture lines."
+    },
+    {
+      "id": 21,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Please provide 5 concise lecture lines (max 10 words each) for Section 3: The Hilbert Curve Construction.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "ScriptWriter has already provided the lecture lines."
+    },
+    {
+      "id": 22,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Please provide 3 concise lecture lines (max 10 words each) for Section 4: Critical Properties: Continuity and Locality.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "ScriptWriter has already provided the lecture lines."
+    },
+    {
+      "id": 23,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Please provide 3 concise lecture lines (max 10 words each) for Section 5: Real-World Application: Data Mapping.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "ScriptWriter has already provided the lecture lines."
+    },
+    {
+      "id": 24,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Please provide 5 concise lecture lines (max 10 words each) for Section 6: Summary and the Infinite Limit.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "ScriptWriter has already provided the lecture lines."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260325_113150/7-Infinite_Journeys_in_Finite_Spaces_Understanding_Space-Filling_Curves/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260325_113150/7-Infinite_Journeys_in_Finite_Spaces_Understanding_Space-Filling_Curves/media/videos/section_2/480p15/Section2Scene.mp4",
+    null,
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260325_113150/7-Infinite_Journeys_in_Finite_Spaces_Understanding_Space-Filling_Curves/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260325_113150/7-Infinite_Journeys_in_Finite_Spaces_Understanding_Space-Filling_Curves/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260325_113150/7-Infinite_Journeys_in_Finite_Spaces_Understanding_Space-Filling_Curves/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    null,
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "run_output_dir": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260325_113150/7-Infinite_Journeys_in_Finite_Spaces_Understanding_Space-Filling_Curves",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 70630,
+      "completion_tokens": 9163,
+      "total_tokens": 94890,
+      "call_count": 14
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 275,
+        "completion_tokens": 872,
+        "total_tokens": 2138,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 4503,
+        "completion_tokens": 140,
+        "total_tokens": 4698,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 10516,
+        "completion_tokens": 355,
+        "total_tokens": 11538,
+        "call_count": 2
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 9489,
+        "completion_tokens": 351,
+        "total_tokens": 10014,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 962,
+        "completion_tokens": 81,
+        "total_tokens": 3054,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 5716,
+        "completion_tokens": 1824,
+        "total_tokens": 7900,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 6638,
+        "completion_tokens": 1370,
+        "total_tokens": 8253,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 8248,
+        "completion_tokens": 218,
+        "total_tokens": 8499,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 6575,
+        "completion_tokens": 1860,
+        "total_tokens": 8666,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 2439,
+        "completion_tokens": 2067,
+        "total_tokens": 14068,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 15269,
+        "completion_tokens": 25,
+        "total_tokens": 16062,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 70630,
+        "completion_tokens": 9163,
+        "total_tokens": 94890,
+        "call_count": 14
+      }
+    }
+  }
+}

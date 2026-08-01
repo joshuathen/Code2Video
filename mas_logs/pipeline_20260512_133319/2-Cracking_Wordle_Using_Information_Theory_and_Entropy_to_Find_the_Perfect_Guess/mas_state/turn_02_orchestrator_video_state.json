@@ -1,0 +1,1220 @@
+{
+  "topic": "Cracking Wordle: Using Information Theory and Entropy to Find the Perfect Guess",
+  "target_audience": "Undergraduate students or tech-savvy hobbyists with a basic interest in math and puzzles.",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        title = \"The Wordle Puzzle: A Search for Information\"\n        lines = [\n            'Wordle is a search for a hidden five-letter word.',\n            'Each guess reduces the list of 2,300 potential suspects.',\n            'The goal is maximizing information gained from every guess.'\n        ]\n        self.setup_layout(title, lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Display 5 empty gray (#808080) squares in the center.\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        \n        squares = VGroup(*[Square(side_length=0.6, color=\"#808080\", stroke_width=4) for _ in range(5)])\n        squares.arrange(RIGHT, buff=0.15)\n        self.place_in_area(squares, \"C2\", \"C5\")\n        \n        self.play(Create(squares), run_time=1.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Surround the squares with a cloud of 2,300 faint white (#FFFFFF) text labels.\n        # Highlight a magnifying glass moving through the cloud.\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW)\n        )\n\n        # Cloud representation: ~150 dots and a few labels to simulate 2300 without lag\n        cloud_dots = VGroup()\n        for _ in range(150):\n            dot = Dot(radius=0.015, color=\"#FFFFFF\", fill_opacity=0.4)\n            # Scatter within the grid area A1-F6\n            x_pos = np.random.uniform(0.5, 5.5)\n            y_pos = np.random.uniform(-2.8, 2.2)\n            dot.move_to([x_pos, y_pos, 0])\n            cloud_dots.add(dot)\n\n        cloud_labels = VGroup()\n        word_list = [\"REBUT\", \"SCARE\", \"THOSE\", \"PLATE\", \"LIGHT\"]\n        for _ in range(12):\n            lbl = Text(str(np.random.choice(word_list)), font_size=10, color=\"#FFFFFF\", fill_opacity=0.3)\n            x_pos = np.random.uniform(0.5, 5.5)\n            y_pos = np.random.uniform(-2.8, 2.2)\n            lbl.move_to([x_pos, y_pos, 0])\n            cloud_labels.add(lbl)\n\n        # Magnifying glass\n        mag_circle = Circle(radius=0.3, color=\"#FFFFFF\", stroke_width=3)\n        mag_handle = Line(\n            mag_circle.point_at_angle(-45*DEGREES), \n            mag_circle.point_at_angle(-45*DEGREES) + [0.3, -0.3, 0], \n            color=\"#FFFFFF\", stroke_width=3\n        )\n        magnifying_glass = VGroup(mag_circle, mag_handle)\n        self.place_at_grid(magnifying_glass, \"A1\")\n\n        self.play(FadeIn(cloud_dots), FadeIn(cloud_labels), run_time=1)\n        \n        # Search path\n        search_path = [self.grid[\"A5\"], self.grid[\"D2\"], self.grid[\"F6\"]]\n        for target in search_path:\n            self.play(magnifying_glass.animate.move_to(target), run_time=0.8, rate_func=smooth)\n        \n        self.play(FadeOut(magnifying_glass))\n\n        # === Animation for Lecture Line 3 ===\n        # Flip the 5 squares to reveal a pattern: Green (#00FF00), Gray (#808080), Yellow (#FFFF00), Gray, Gray.\n        # Animate most words fading away, leaving a small bright cluster.\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW)\n        )\n\n        target_colors = [\"#00FF00\", \"#808080\", \"#FFFF00\", \"#808080\", \"#808080\"]\n        reveal_anims = []\n        for i, (sq, col) in enumerate(zip(squares, target_colors)):\n            reveal_anims.append(sq.animate.set_fill(col, opacity=1.0).set_color(col).rotate(PI, axis=RIGHT))\n\n        # Words fading\n        cluster_size = 10\n        all_cloud_indices = list(range(len(cloud_dots)))\n        np.random.shuffle(all_cloud_indices)\n        keep_indices = all_cloud_indices[:cluster_size]\n        fade_indices = all_cloud_indices[cluster_size:]\n\n        dots_to_fade = VGroup(*[cloud_dots[i] for i in fade_indices])\n        dots_to_keep = VGroup(*[cloud_dots[i] for i in keep_indices])\n\n        self.play(\n            *reveal_anims,\n            FadeOut(dots_to_fade),\n            FadeOut(cloud_labels),\n            run_time=2\n        )\n\n        # Highlight cluster\n        self.play(\n            dots_to_keep.animate.set_color(YELLOW).scale(3).set_opacity(1),\n            Flash(dots_to_keep, color=YELLOW, flash_radius=0.5)\n        )\n        \n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\n            \"Prerequisite: The 'Bit' as a Unit of Information\", \n            [\n                \"Information is measured in units called bits.\", \n                \"One bit of information cuts your uncertainty in half.\", \n                \"Ten bits narrow 1,024 possibilities down to just one.\"\n            ]\n        )\n        \n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        # Display \"1 BIT\" at the top\n        bit_text = Text(\"1 BIT\", weight=\"BOLD\", color=\"#FFFFFF\")\n        self.place_in_area(bit_text, 'A3', 'A4', scale_factor=1.2)\n        \n        # Show 8 white circles in a row\n        circles = VGroup(*[Circle(radius=0.15, color=\"#FFFFFF\", stroke_width=2) for _ in range(8)])\n        circles.arrange(RIGHT, buff=0.2)\n        self.place_in_area(circles, 'B1', 'B6', scale_factor=1.0)\n        \n        self.play(Write(bit_text))\n        self.play(Create(circles), run_time=1.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Draw vertical line and turn right half gray\n        divider = Line(\n            circles.get_top() + UP * 0.3,\n            circles.get_bottom() + DOWN * 0.3,\n            color=\"#FFFFFF\",\n            stroke_width=2\n        )\n        \n        self.play(Create(divider))\n        self.play(\n            *[circles[i].animate.set_color(\"#404040\") for i in range(4, 8)],\n            run_time=1\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Transition: Fade out bit visual to make room for tree\n        self.play(FadeOut(circles), FadeOut(divider), FadeOut(bit_text))\n        \n        # Build Binary Tree coordinates\n        root_pos = (self.grid['C3'] + self.grid['C4']) / 2\n        tree_height = 3.5\n        tree_width = 5.0\n        levels = 10\n        \n        all_tree_lines = VGroup()\n        leaf_dots = VGroup()\n        \n        # To keep performance high, we pre-calculate nodes\n        # and only draw the path as separate animatable objects.\n        # The main tree is drawn more efficiently.\n        \n        path_indices = [0] # indices of nodes in the path (at each level)\n        # Choosing a zig-zag path for visualization\n        current_idx = 0\n        for l in range(levels):\n            # Alternate left (0) and right (1)\n            step = 1 if l % 2 == 0 else 0\n            current_idx = current_idx * 2 + step\n            path_indices.append(current_idx)\n            \n        path_lines = VGroup()\n        \n        # Generate levels\n        for l in range(levels):\n            num_nodes = 2**l\n            y_curr = root_pos[1] - l * (tree_height / levels)\n            y_next = root_pos[1] - (l + 1) * (tree_height / levels)\n            \n            # Level-specific node spacing\n            for i in range(num_nodes):\n                x_curr = root_pos[0] + (i - (num_nodes - 1) / 2) * (tree_width / num_nodes) if num_nodes > 1 else root_pos[0]\n                \n                # Children\n                for step in [0, 1]: # 0 for left, 1 for right\n                    child_idx = i * 2 + step\n                    num_next = 2**(l+1)\n                    x_next = root_pos[0] + (child_idx - (num_next - 1) / 2) * (tree_width / num_next)\n                    \n                    line = Line(\n                        [x_curr, y_curr, 0], \n                        [x_next, y_next, 0], \n                        stroke_width=max(0.5, 2 - l*0.2), \n                        color=\"#FFFFFF\"\n                    )\n                    \n                    # If part of path, keep separate for animation\n                    if i == path_indices[l] and child_idx == path_indices[l+1]:\n                        p_line = line.copy().set_color(\"#FFFF00\").set_stroke(width=3)\n                        path_lines.add(p_line)\n                    \n                    # Optimization: only add every N lines for dense levels to save render time,\n                    # but keep the structure visible.\n                    if l < 6:\n                        all_tree_lines.add(line)\n                    elif l < 8 and (i % 2 == 0):\n                        all_tree_lines.add(line)\n                    elif l < 10 and (i % 4 == 0):\n                         all_tree_lines.add(line)\n\n        # 1024 Tiny Dots at the bottom level\n        y_bottom = root_pos[1] - tree_height\n        for i in range(1024):\n            # Only draw dots every 16 to keep performance within budget while looking dense\n            if i % 16 == 0:\n                x = root_pos[0] + (i - 1023 / 2) * (tree_width / 1024)\n                leaf_dots.add(Dot([x, y_bottom, 0], radius=0.02, color=\"#FFFFFF\"))\n\n        # Animate Tree\n        self.play(FadeIn(all_tree_lines), FadeIn(leaf_dots), run_time=2)\n        \n        # Trace path\n        for branch in path_lines:\n            self.play(Create(branch), run_time=0.3)\n            \n        # Highlight the final destination dot\n        final_dot = Dot(path_lines[-1].get_end(), radius=0.08, color=\"#FFFF00\")\n        self.play(Flash(final_dot, color=\"#FFFF00\"), FadeIn(final_dot))\n        \n        self.wait(2)\n        self.lecture[2].set_color(WHITE)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Setup layout with title and lecture lines\n        self.setup_layout(\n            \"The Feedback Mechanics: 243 Possible Universes\",\n            [\n                \"Every guess returns one of 243 possible color patterns.\",\n                \"Each pattern acts as a filter for the word list.\",\n                \"We can visualize these patterns as buckets for words.\"\n            ]\n        )\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        \n        # Display the word 'TRACE' with gray boxes\n        word_trace = \"TRACE\"\n        trace_boxes = VGroup()\n        for i, char in enumerate(word_trace):\n            box = Square(side_length=0.7, fill_color=\"#808080\", fill_opacity=1, stroke_color=WHITE)\n            letter = Text(char, font_size=36, color=WHITE)\n            trace_boxes.add(VGroup(box, letter).arrange(ORIGIN))\n        \n        trace_boxes.arrange(RIGHT, buff=0.1)\n        self.place_in_area(trace_boxes, \"B1\", \"B6\", scale_factor=1.0)\n        \n        self.play(FadeIn(trace_boxes))\n        self.wait(1)\n        \n        # Mathematical sequence '3 x 3 x 3 x 3 x 3 = 243'\n        math_seq = Text(\"3 x 3 x 3 x 3 x 3 = 243\", font_size=32, color=WHITE)\n        self.place_in_area(math_seq, \"C1\", \"C6\", scale_factor=1.0)\n        \n        self.play(Write(math_seq))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW)\n        )\n        \n        # Draw a grid of 243 tiny white empty squares (buckets)\n        buckets = VGroup()\n        rows_count = 9\n        cols_count = 27 # 9 * 27 = 243\n        for _ in range(243):\n            buckets.add(Square(side_length=0.1, stroke_width=1, stroke_color=WHITE))\n        \n        buckets.arrange_in_grid(rows=rows_count, cols=cols_count, buff=0.05)\n        self.place_in_area(buckets, \"D1\", \"F6\", scale_factor=0.95)\n        \n        self.play(FadeOut(trace_boxes), FadeOut(math_seq))\n        self.play(Create(buckets), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW)\n        )\n        \n        # Animate a stream of words falling into buckets\n        falling_words_list = [\"CRANE\", \"SLATE\", \"ADIEU\", \"STARE\", \"AUDIO\"]\n        falling_word_mobs = VGroup(*[Text(w, font_size=14, color=WHITE) for w in falling_words_list])\n        \n        # Position words at the top (near row A) to start falling\n        for i, word_mob in enumerate(falling_word_mobs):\n            self.place_at_grid(word_mob, f\"A{i+1}\")\n        \n        # Animate falling into the grid area\n        falling_animations = []\n        for i, word_mob in enumerate(falling_word_mobs):\n            # Target a random-ish bucket location\n            target_pos = buckets[10 * (i+1)].get_center()\n            falling_animations.append(word_mob.animate.move_to(target_pos).set_opacity(0))\n            \n        self.play(AnimationGroup(*[FadeIn(w) for w in falling_word_mobs], lag_ratio=0.2))\n        self.play(AnimationGroup(*falling_animations, lag_ratio=0.1), run_time=2)\n        \n        # Scale up one bucket (Green-Gray-Yellow-Gray-Gray)\n        # We simulate the bucket by creating a 5-box pattern\n        big_bucket_pattern = VGroup()\n        colors = [\"#6AAA64\", \"#808080\", \"#C9B458\", \"#808080\", \"#808080\"]\n        for color in colors:\n            big_bucket_pattern.add(Square(side_length=0.4, fill_color=color, fill_opacity=1, stroke_color=WHITE))\n        big_bucket_pattern.arrange(RIGHT, buff=0.05)\n        \n        # Create 5 words inside or near the revealed bucket\n        inside_words = VGroup(\n            Text(\"TREAD\", font_size=20),\n            Text(\"TRAMS\", font_size=20),\n            Text(\"TRAPS\", font_size=20),\n            Text(\"TRACK\", font_size=20),\n            Text(\"TRASH\", font_size=20)\n        ).arrange(DOWN, buff=0.2)\n        \n        zoom_group = VGroup(big_bucket_pattern, inside_words).arrange(DOWN, buff=0.3)\n        self.place_in_area(zoom_group, \"B1\", \"E6\", scale_factor=1.2)\n        \n        self.play(buckets.animate.set_opacity(0.2))\n        self.play(FadeIn(big_bucket_pattern), Write(inside_words))\n        self.wait(3)\n\n        # Cleanup\n        self.play(self.lecture[2].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Setup reproducibility\n        np.random.seed(42)\n\n        # Setup layout\n        self.setup_layout(\n            \"Defining Entropy: The Average Surprise\", \n            [\n                'Entropy measures the expected information of a guess.', \n                'High entropy means words spread evenly across many buckets.', \n                'Low entropy means most words fall into one bucket.', \n                '\"MUMMY\" is low entropy; many words stay in play.', \n                '\"SALET\" is high entropy; it fragments the search space.'\n            ]\n        )\n        \n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        \n        entropy_formula = Text(\"H = Average Information\", font_size=24, color=WHITE)\n        self.place_in_area(entropy_formula, \"A2\", \"A5\", scale_factor=1.0)\n        \n        self.play(Write(entropy_formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW)\n        )\n        \n        salet_label = Text(\"SALET: High Entropy\", font_size=18, color=WHITE)\n        self.place_in_area(salet_label, \"B1\", \"B3\", scale_factor=1.0)\n        \n        # 5 bars of roughly equal height for SALET\n        salet_bars = VGroup(*[\n            Rectangle(width=0.3, height=0.7, fill_opacity=0.8, fill_color=\"#83C167\", stroke_width=1) # Green\n            for _ in range(5)\n        ]).arrange(RIGHT, buff=0.1)\n        \n        # Slightly vary heights manually to look like a distribution\n        heights = [0.65, 0.72, 0.68, 0.75, 0.62]\n        for bar, h in zip(salet_bars, heights):\n            bar.stretch_to_fit_height(h)\n        \n        self.place_in_area(salet_bars, \"C1\", \"D3\", scale_factor=1.0)\n        salet_bars.align_to(self.grid[\"D1\"], DOWN)\n        \n        self.play(FadeIn(salet_label), Create(salet_bars))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW)\n        )\n        \n        mummy_label = Text(\"MUMMY: Low Entropy\", font_size=18, color=WHITE)\n        self.place_in_area(mummy_label, \"B4\", \"B6\", scale_factor=1.0)\n        \n        # 5 bars for MUMMY: 1 tall, others short\n        mummy_bars = VGroup(\n            Rectangle(width=0.3, height=1.6, fill_opacity=0.8, fill_color=\"#58C4DD\", stroke_width=1), # Blue\n            Rectangle(width=0.3, height=0.1, fill_opacity=0.8, fill_color=\"#58C4DD\", stroke_width=1),\n            Rectangle(width=0.3, height=0.05, fill_opacity=0.8, fill_color=\"#58C4DD\", stroke_width=1),\n            Rectangle(width=0.3, height=0.1, fill_opacity=0.8, fill_color=\"#58C4DD\", stroke_width=1),\n            Rectangle(width=0.3, height=0.08, fill_opacity=0.8, fill_color=\"#58C4DD\", stroke_width=1),\n        ).arrange(RIGHT, buff=0.1)\n        \n        self.place_in_area(mummy_bars, \"C4\", \"D6\", scale_factor=1.0)\n        mummy_bars.align_to(self.grid[\"D4\"], DOWN)\n        \n        self.play(FadeIn(mummy_label), Create(mummy_bars))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(YELLOW)\n        )\n        \n        # Distribution animation for MUMMY (Spiky distribution)\n        start_point_mummy = self.grid[\"E5\"]\n        mummy_words = VGroup(*[\n            Square(side_length=0.1, fill_opacity=1, color=WHITE, stroke_width=0.5) \n            for _ in range(25)\n        ])\n        mummy_words.move_to(start_point_mummy)\n        \n        self.play(FadeIn(mummy_words))\n        \n        m_anims = []\n        for i, word in enumerate(mummy_words):\n            if i < 20: # 80% to the big bucket\n                target_pos = mummy_bars[0].get_center() + np.array([np.random.uniform(-0.1, 0.1), np.random.uniform(-0.5, 0.5), 0])\n            else:\n                idx = (i % 4) + 1\n                target_pos = mummy_bars[idx].get_center() + np.array([np.random.uniform(-0.05, 0.05), 0, 0])\n            m_anims.append(word.animate.move_to(target_pos))\n            \n        self.play(*m_anims, run_time=1.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(YELLOW)\n        )\n        \n        # Distribution animation for SALET (Flat distribution)\n        start_point_salet = self.grid[\"E2\"]\n        salet_words = VGroup(*[\n            Square(side_length=0.1, fill_opacity=1, color=WHITE, stroke_width=0.5) \n            for _ in range(25)\n        ])\n        salet_words.move_to(start_point_salet)\n        \n        self.play(FadeIn(salet_words))\n        \n        s_anims = []\n        for i, word in enumerate(salet_words):\n            idx = i % 5\n            target_pos = salet_bars[idx].get_center() + np.array([np.random.uniform(-0.1, 0.1), np.random.uniform(-0.2, 0.2), 0])\n            s_anims.append(word.animate.move_to(target_pos))\n            \n        self.play(*s_anims, run_time=1.5)\n        self.wait(2)\n        \n        # Cleanup colors\n        self.play(self.lecture[4].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # 1. Basic Requirements\n        lines = [\n            'Mathematics quantifies the surprise factor of each feedback pattern.', \n            'Rare patterns provide more information than common ones.', \n            'Entropy calculates the weighted average of these surprises.'\n        ]\n        self.setup_layout(\"The Math: Probability meets Information\", lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight line 1\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        \n        # Formula construction: H = Σ p(i) log₂(1/p(i))\n        # Note: Using Unicode for Σ (\\u03a3) and log₂ (\\u2082)\n        f_h = Text(\"H = \", font_size=32, color=WHITE)\n        f_sum = Text(\"\\u03a3 p(i) \", font_size=32, color=WHITE)\n        f_log = Text(\"log\\u2082(1/p(i))\", font_size=32, color=WHITE)\n        formula = VGroup(f_h, f_sum, f_log).arrange(RIGHT, buff=0.1)\n        \n        # Mandatory Positioning: A1-B6 for formula\n        self.place_in_area(formula, \"A1\", \"B6\")\n        self.play(Write(formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Switch highlight to line 2\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW),\n            f_log.animate.set_color(\"#FFFF00\") # Highlight log term as 'Surprise'\n        )\n        \n        # Label for 'Surprise' component\n        surprise_label = Text(\"Surprise\", font_size=20, color=\"#FFFF00\")\n        surprise_label.next_to(f_log, DOWN, buff=0.3)\n        \n        # Visualizing Surprise vs Probability: Common vs Rare\n        # Common: High p(i), Low Surprise\n        bar_common = Rectangle(width=0.8, height=0.6, fill_opacity=0.8, color=WHITE, stroke_width=2)\n        lbl_common = Text(\"Common\\n(High p)\", font_size=16, color=WHITE)\n        group_common = VGroup(bar_common, lbl_common).arrange(DOWN, buff=0.2)\n        self.place_at_grid(group_common, \"D2\")\n        \n        # Rare: Low p(i), High Surprise\n        # To show increase, we can transform or simply show the contrast\n        bar_rare = Rectangle(width=0.8, height=2.4, fill_opacity=0.8, color=\"#FFFF00\", stroke_width=2)\n        lbl_rare = Text(\"Rare\\n(Low p)\", font_size=16, color=\"#FFFF00\")\n        group_rare = VGroup(bar_rare, lbl_rare).arrange(DOWN, buff=0.2)\n        self.place_at_grid(group_rare, \"D5\")\n\n        self.play(\n            FadeIn(surprise_label),\n            FadeIn(group_common),\n            FadeIn(group_rare)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Switch highlight to line 3\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW)\n        )\n        \n        # Show Average Bits as a weighted balance line\n        # Use C1-C6 row for the horizontal line\n        avg_line = Line(start=self.grid[\"C1\"] + LEFT*0.5, end=self.grid[\"C6\"] + RIGHT*0.5, color=\"#00FF00\", stroke_width=4)\n        # Shift line to represent the \"average\" height between the short and tall bar\n        avg_line.shift(DOWN * 0.4) \n        \n        avg_label = Text(\"Average Bits (Entropy)\", font_size=22, color=\"#00FF00\")\n        avg_label.next_to(avg_line, UP, buff=0.1)\n        \n        self.play(\n            Create(avg_line),\n            Write(avg_label),\n            Indicate(f_sum, color=\"#00FF00\") # Highlight sum term to show weighted concept\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with title and lecture lines\n        lecture_lines = [\n            'Let\\'s compare \"FUZZY\" against a top starter like \"CRANE\".',\n            '\"FUZZY\" leaves a massive cloud of remaining word possibilities.',\n            '\"CRANE\" shatters the word list into tiny, manageable groups.',\n            'After \"CRANE\", about sixty words remain on average.',\n            '\"FUZZY\" barely reduces the search space at all.'\n        ]\n        self.setup_layout(\"The Simulation: Why 'CRANE' Wins\", lecture_lines)\n\n        # Define Colors\n        COLOR_CRANE = \"#2ECC71\"  # Emerald Green\n        COLOR_FUZZY = \"#E74C3C\"  # Alizarin Red\n        COLOR_TEXT = \"#F1C40F\"   # Sun Flower Yellow\n        COLOR_DOT = \"#BDC3C7\"    # Silver\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(COLOR_TEXT)\n        \n        word_crane = Text('\"CRANE\"', color=COLOR_CRANE, weight=BOLD)\n        word_fuzzy = Text('\"FUZZY\"', color=COLOR_FUZZY, weight=BOLD)\n        \n        self.place_at_grid(word_crane, \"A2\", scale_factor=0.8)\n        self.place_at_grid(word_fuzzy, \"A5\", scale_factor=0.8)\n        \n        label_crane = Text(\"Suspects:\", font_size=20, color=WHITE)\n        label_fuzzy = Text(\"Suspects:\", font_size=20, color=WHITE)\n        \n        # Using Text instead of Integer to avoid TeX requirement\n        count_crane = Text(\"2300\", color=WHITE).scale(0.8)\n        count_fuzzy = Text(\"2300\", color=WHITE).scale(0.8)\n        \n        group_crane_count = VGroup(label_crane, count_crane).arrange(RIGHT, buff=0.2)\n        group_fuzzy_count = VGroup(label_fuzzy, count_fuzzy).arrange(RIGHT, buff=0.2)\n        \n        self.place_at_grid(group_crane_count, \"B2\", scale_factor=0.9)\n        self.place_at_grid(group_fuzzy_count, \"B5\", scale_factor=0.9)\n        \n        self.play(\n            FadeIn(word_crane),\n            FadeIn(word_fuzzy),\n            FadeIn(group_crane_count),\n            FadeIn(group_fuzzy_count)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(COLOR_FUZZY)\n        \n        # Create a \"massive cloud\" for FUZZY\n        fuzzy_dots = VGroup(*[\n            Dot(radius=0.03, color=COLOR_DOT, fill_opacity=0.6).move_to(\n                self.grid[\"D5\"] + np.array([np.random.uniform(-1.2, 1.2), np.random.uniform(-0.8, 0.8), 0])\n            ) for _ in range(150)\n        ])\n        \n        self.play(FadeIn(fuzzy_dots, lag_ratio=0.01))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(COLOR_CRANE)\n        \n        # Create initial cloud for CRANE then shatter it\n        crane_dots = VGroup(*[\n            Dot(radius=0.03, color=COLOR_DOT, fill_opacity=0.6).move_to(\n                self.grid[\"D2\"] + np.array([np.random.uniform(-0.5, 0.5), np.random.uniform(-0.5, 0.5), 0])\n            ) for _ in range(150)\n        ])\n        \n        # Fragment positions\n        fragment_centers = [\n            self.grid[\"D1\"], self.grid[\"D3\"], self.grid[\"F1\"], self.grid[\"F3\"], self.grid[\"E2\"]\n        ]\n        \n        # Target positions for shattering\n        fragment_targets = []\n        for i, dot in enumerate(crane_dots):\n            center = fragment_centers[i % len(fragment_centers)]\n            offset = np.array([np.random.uniform(-0.3, 0.3), np.random.uniform(-0.3, 0.3), 0])\n            fragment_targets.append(dot.animate.move_to(center + offset).set_color(COLOR_CRANE))\n\n        self.play(FadeIn(crane_dots))\n        self.play(*fragment_targets, run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(COLOR_CRANE)\n        \n        # CRANE drops to 60 using manual text update to avoid Tex\n        start_val_crane = 2300\n        end_val_crane = 60\n        \n        self.play(\n            UpdateFromAlphaFunc(\n                count_crane,\n                lambda m, a: m.become(\n                    Text(str(int(interpolate(start_val_crane, end_val_crane, a))), color=WHITE)\n                    .match_height(m)\n                    .move_to(m.get_center())\n                )\n            ),\n            Flash(count_crane, color=COLOR_CRANE, line_length=0.2, flash_radius=0.3),\n            run_time=2,\n            rate_func=smooth\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(COLOR_FUZZY)\n        \n        # FUZZY drops slowly to 1500\n        start_val_fuzzy = 2300\n        end_val_fuzzy = 1500\n        \n        self.play(\n            UpdateFromAlphaFunc(\n                count_fuzzy,\n                lambda m, a: m.become(\n                    Text(str(int(interpolate(start_val_fuzzy, end_val_fuzzy, a))), color=WHITE)\n                    .match_height(m)\n                    .move_to(m.get_center())\n                )\n            ),\n            run_time=3,\n            rate_func=linear\n        )\n        \n        # Final emphasis: Pulse the fuzzy dots and cloud\n        self.play(\n            fuzzy_dots.animate.scale(1.1).set_color(COLOR_FUZZY),\n            rate_func=there_and_back,\n            run_time=2\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section7Scene(TeachingScene):\n    def construct(self):\n        # Initializing scene layout\n        lecture_lines = [\n            'Optimal Wordle play prioritizes information over lucky guessing.', \n            'Good players act as efficient information gatherers every turn.', \n            'Guess, observe, calculate entropy, and repeat until solved.'\n        ]\n        self.setup_layout(\"Conclusion: Information as a Tool\", lecture_lines)\n\n        # Colors for highlights\n        HIGHLIGHT_COLOR_1 = \"#FFFF00\" # Yellow\n        HIGHLIGHT_COLOR_2 = \"#00FFFF\" # Cyan\n        HIGHLIGHT_COLOR_3 = \"#00FF00\" # Green\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(HIGHLIGHT_COLOR_1)\n        \n        # Create strategy cycle labels\n        guess_txt = Text(\"Guess\", font_size=24, color=\"#ADD8E6\")\n        pattern_txt = Text(\"Pattern\", font_size=24, color=\"#FFD700\")\n        entropy_txt = Text(\"Entropy\", font_size=24, color=\"#FF69B4\")\n        repeat_txt = Text(\"Repeat\", font_size=24, color=\"#FFFFFF\")\n\n        self.place_in_area(guess_txt, \"B3\", \"B4\")\n        self.place_in_area(pattern_txt, \"C5\", \"D6\")\n        self.place_in_area(entropy_txt, \"E3\", \"E4\")\n        self.place_in_area(repeat_txt, \"C1\", \"D2\")\n\n        # Create Arrows\n        arrow1 = CurvedArrow(guess_txt.get_right(), pattern_txt.get_top(), color=WHITE, radius=2)\n        arrow2 = CurvedArrow(pattern_txt.get_bottom(), entropy_txt.get_right(), color=WHITE, radius=2)\n        arrow3 = CurvedArrow(entropy_txt.get_left(), repeat_txt.get_bottom(), color=WHITE, radius=2)\n        arrow4 = CurvedArrow(repeat_txt.get_top(), guess_txt.get_left(), color=WHITE, radius=2)\n\n        cycle_group = VGroup(guess_txt, pattern_txt, entropy_txt, repeat_txt, arrow1, arrow2, arrow3, arrow4)\n        \n        self.play(FadeIn(cycle_group))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(HIGHLIGHT_COLOR_2)\n        \n        self.play(FadeOut(cycle_group))\n\n        # Wordle colors\n        W_GRAY = \"#3A3A3C\"\n        W_YELLOW = \"#B59F3B\"\n        W_GREEN = \"#00FF00\" # As requested\n\n        def create_wordle_row(colors):\n            row = VGroup(*[Square(side_length=0.6, fill_opacity=1, fill_color=c, stroke_color=WHITE, stroke_width=1) for c in colors])\n            row.arrange(RIGHT, buff=0.1)\n            return row\n\n        row1 = create_wordle_row([W_GRAY, W_YELLOW, W_GRAY, W_GRAY, W_GRAY])\n        row2 = create_wordle_row([W_GREEN, W_GRAY, W_YELLOW, W_GRAY, W_GRAY])\n        row3 = create_wordle_row([W_GREEN, W_GREEN, W_GREEN, W_GREEN, W_GREEN])\n\n        grid_vgroup = VGroup(row1, row2, row3).arrange(DOWN, buff=0.1)\n        self.place_in_area(grid_vgroup, \"B2\", \"E5\")\n\n        # Animate row by row\n        for row in grid_vgroup:\n            self.play(FadeIn(row, shift=UP * 0.2), run_time=0.6)\n            self.wait(0.2)\n        \n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(HIGHLIGHT_COLOR_3)\n\n        self.play(FadeOut(grid_vgroup))\n\n        info_text = Text(\"Information = Efficiency\", font_size=32, color=\"#FFFFFF\")\n        self.place_in_area(info_text, \"C2\", \"D5\")\n\n        self.play(Write(info_text))\n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "Cracking Wordle: Using Information Theory and Entropy to Find the Perfect Guess",
+    "target_audience": "Undergraduate students or tech-savvy hobbyists with a basic interest in math and puzzles.",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Wordle Puzzle: A Search for Information",
+        "content": "Introduce the game Wordle and frame it as a problem of 'reducing the search space.' Define the goal not just as guessing the word, but as maximizing the information gained from each guess.",
+        "example": "Imagine a detective (Detective Pixel) facing 2,300 suspects (words). Each guess is an interrogation that clears some suspects while keeping others."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The 'Bit' as a Unit of Information",
+        "content": "Introduce Claude Shannon’s concept of a 'bit.' Explain that 1 bit of information cuts your uncertainty in half. Use a visual of a binary tree to show how 10 bits can narrow down 1,024 possibilities to 1.",
+        "example": "If Detective Pixel asks 'Is the suspect male?' and the answer is 'Yes,' he halves the search space, gaining exactly 1 bit of information."
+      },
+      {
+        "id": "section_3",
+        "title": "The Feedback Mechanics: 243 Possible Universes",
+        "content": "Explain the Wordle scoring (Gray, Yellow, Green). Since there are 5 tiles and 3 possible colors for each, there are 3^5 (243) possible patterns. Visually represent these as 243 'buckets' where the remaining words can fall.",
+        "example": "If you guess 'TRACE', the game might return 'Green-Gray-Yellow-Gray-Gray'. This specific pattern acts as a filter, discarding all words that don't fit that specific color code."
+      },
+      {
+        "id": "section_4",
+        "title": "Defining Entropy: The Average Surprise",
+        "content": "Introduce Entropy (H) as the 'expected information' of a guess. Use a graphical bar chart showing word distributions. If a guess spreads words evenly across many buckets, it has high entropy. If most words fall into one bucket, it has low entropy.",
+        "example": "Guessing 'MUMMY' is a 'low entropy' move because most words will just result in 'all Gray,' leaving a huge pile of suspects. Guessing 'SALET' is 'high entropy' because it likely splits suspects into many small, manageable piles."
+      },
+      {
+        "id": "section_5",
+        "title": "The Math: Probability meets Information",
+        "content": "Show the formula H = Σ p(x) * log2(1/p(x)) using a simplified visual. Explain that high-probability patterns provide low information, while rare patterns provide high information. Entropy is the weighted average of these 'surprises.'",
+        "example": "If a pattern has a 50% chance of occurring, it gives 1 bit. If it has a 10% chance, it gives 3.32 bits. We want the word that gives us the most bits on average."
+      },
+      {
+        "id": "section_6",
+        "title": "The Simulation: Why 'CRANE' Wins",
+        "content": "Compare two starting words using a side-by-side animation. Show 'FUZZY' vs. 'CRANE'. Visualize the 'Search Space' shrinking: 'FUZZY' leaves a large cloud of possibilities, while 'CRANE' shatters the cloud into tiny fragments.",
+        "example": "After 'CRANE', the average number of remaining words drops from 2,300 to about 60. After 'FUZZY', you might still have 1,500 words to deal with."
+      },
+      {
+        "id": "section_7",
+        "title": "Conclusion: Information as a Tool",
+        "content": "Summarize that winning at Wordle isn't about being lucky; it's about being an efficient 'Information Gatherer.' Review the workflow: Guess -> Observe Pattern -> Calculate Remaining Entropy -> Repeat.",
+        "example": "Detective Pixel doesn't guess the killer's name immediately; he asks the highest-entropy questions to clear the room as fast as possible."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Wordle Puzzle: A Search for Information",
+      "lecture_lines": [
+        "Wordle begins with five empty slots for a hidden word.",
+        "We start with a cloud of 2,300 potential words.",
+        "A detective searches this massive word list for clues.",
+        "Each guess reveals a pattern of green and yellow tiles.",
+        "This feedback eliminates words that don't fit the pattern."
+      ],
+      "animations": [
+        "Create five gray (#808080) squares in the center.",
+        "Generate a cloud of 2,300 small white (#FFFFFF) text labels (random words) around the squares.",
+        "Animate a detective [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/detective.svg] using a magnifying glass (white #FFFFFF circle and line) scanning across the word cloud.",
+        "Flip the five squares to show colors: Green (#00FF00), Gray (#808080), Yellow (#FFFF00), Gray (#808080), Gray (#808080).",
+        "Fade out 95% of the words in the cloud, leaving a small cluster of bright white (#FFFFFF) words near the squares."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The 'Bit' as a Unit of Information",
+      "lecture_lines": [
+        "Information is measured in units called bits.",
+        "Start with a row of possible options.",
+        "One bit of information cuts your uncertainty in half.",
+        "Ten bits narrow down over one thousand possibilities.",
+        "Every choice leads you closer to the single solution."
+      ],
+      "animations": [
+        "Display the text '1 BIT' in bold white (#FFFFFF) at the top of the screen.",
+        "Show 8 white (#FFFFFF) circles in a horizontal row.",
+        "Draw a vertical white (#FFFFFF) line splitting the row; turn the 4 right-side circles to dark gray (#404040).",
+        "Draw a white (#FFFFFF) binary tree starting from one root, branching 10 levels deep.",
+        "Trace a single path from root to leaf in yellow (#FFFF00), highlighting the chosen branch at each level."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Feedback Mechanics: 243 Possible Universes",
+      "lecture_lines": [
+        "Consider the word \"TRACE\" as our initial guess.",
+        "Five tiles and three colors create 243 possible patterns.",
+        "We can visualize these patterns as buckets for words.",
+        "The game sorts all potential solutions into these buckets.",
+        "A specific pattern narrows the search to one bucket."
+      ],
+      "animations": [
+        "Display 'TRACE' with letters in gray (#808080) boxes.",
+        "Show the calculation '3^5 = 243' in white (#FFFFFF) below the word.",
+        "Create a 15x17 grid (approx 255) of tiny white (#FFFFFF) empty squares representing buckets.",
+        "Animate a stream of white (#FFFFFF) text snippets (words) falling into various grid buckets.",
+        "Zoom into one bucket (Green-Gray-Yellow-Gray-Gray) and display 5 specific word labels inside it."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Defining Entropy: The Average Surprise",
+      "lecture_lines": [
+        "Entropy measures the average information gain for a guess.",
+        "High entropy words spread words evenly across many buckets.",
+        "Low entropy words leave most suspects in one pile."
+      ],
+      "animations": [
+        "Display two bar charts side-by-side: 'SALET' (left, 20 uniform bars) and 'MUMMY' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/mummy.svg] (right, 1 tall bar, 19 tiny bars).",
+        "Label the charts 'High Entropy' and 'Low Entropy' in white (#FFFFFF) below the bars.",
+        "Animate 100 white dots (words) falling: evenly across 'SALET' bars, and mostly into the tall 'MUMMY' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/mummy.svg] bar."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Math: Probability meets Information",
+      "lecture_lines": [
+        "Mathematics quantifies the surprise factor of each feedback pattern.",
+        "Rare patterns provide more information than common ones.",
+        "Entropy calculates the weighted average of these surprises."
+      ],
+      "animations": [
+        "Display the Entropy formula 'H = sum p(i) log2(1/p(i))' in white (#FFFFFF).",
+        "Highlight the log term as 'Surprise' in yellow (#FFFF00) and show its value increasing as probability p(i) decreases.",
+        "Show a green (#00FF00) horizontal line representing 'Average Bits' as the weighted balance of the different surprise heights."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "The Simulation: Why 'CRANE' Wins",
+      "lecture_lines": [
+        "Let's compare \"FUZZY\" against the top starter \"CRANE\".",
+        "Both start with over two thousand possible word candidates.",
+        "\"CRANE\" shatters the list, while \"FUZZY\" barely reduces it."
+      ],
+      "animations": [
+        "Split the screen vertically; display the crane icon [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/crane.svg] alongside 'CRANE' on the left and 'FUZZY' on the right in white (#FFFFFF).",
+        "Show a 'Suspects: 2,300' counter under both words in white (#FFFFFF).",
+        "Animate the 'CRANE' counter rapidly counting down to 60, while 'FUZZY' counts down only to 1,500."
+      ]
+    },
+    {
+      "id": "section_7",
+      "title": "Conclusion: Information as a Tool",
+      "lecture_lines": [
+        "Winning Wordle requires being an efficient information gatherer.",
+        "Repeat the cycle: guess, observe pattern, and calculate entropy.",
+        "Mastering information theory turns guessing into a precise science."
+      ],
+      "animations": [
+        "Display 'Guess', 'Observe', 'Calculate', 'Repeat' in a circular flow with white (#FFFFFF) arrows.",
+        "Show a Wordle grid [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/wordle.svg] quickly filling with colored tiles until the final row turns all green (#00FF00).",
+        "Display the concluding text 'Information = Efficiency' in large white (#FFFFFF) letters."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (max 10 words each) for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 codable animation steps for section_1. Alignment with lecture lines is pending ScriptWriter's input."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section 1 following the provided specifications, including the Wordle grid, word cloud, and magnifying glass search animation."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (max 10 words each) for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 codable animation steps for section_2. Alignment with lecture lines is pending ScriptWriter's input."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for Section 2 with 5-stage animation matching the script and grid requirements."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (max 10 words each) for Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 codable animation steps for section_3. Alignment with lecture lines is pending ScriptWriter's input."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented the 5 stages of animation for section 3 following the script and alignment instructions."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (max 10 words each) for Key Section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for section_4. Alignment with lecture lines is pending ScriptWriter's input."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Replaced by issue 27. Task complete."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (max 10 words each) for Key Section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for section_5. Alignment with lecture lines is pending ScriptWriter's input."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Fixed the TypeError by using '.animate.set_color()' instead of '.set_color()' within Scene.play() calls. Updated the script to match the 3-line version provided in the prompt and ensured all animations align with the grid system and visual requirements."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (max 10 words each) for Key Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for section_6. Alignment with lecture lines is pending ScriptWriter's input."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for Section 6 with 6x6 grid, side-by-side comparison of 'CRANE' and 'FUZZY', and counter animations."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (max 10 words each) for Section 7."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for section_7. Alignment with lecture lines is pending ScriptWriter's input."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Replaced by issue 30 for clarity and hold status."
+    },
+    {
+      "id": 22,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide concise lecture lines (max 10 words each) for all sections (1-7), following the 5-5-5-3-3-3-3 structure, aligned one-to-one with the newly defined animation steps.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated all lecture lines to follow the 5-5-5-3-3-3-3 structure across sections 1-7. Each line is under 10 words and aligned 1:1 with the defined animation stages."
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "AnimationPlanner",
+      "description": "Review the updated lecture lines from ScriptWriter (Issue #22) and ensure your animation steps for all sections (1-7) are perfectly synced 1-to-1. Final structure: 5-5-5-3-3-3-3 stages.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated animations for all sections to the required 5-5-5-3-3-3-3 structure. Syncing 1-to-1 is currently blocked by the ScriptWriter's lecture line counts (currently 3-3-3-5-5-5-3). Issued a request to ScriptWriter to align the lines."
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing. HOLD: Wait for final 1-to-1 alignment of script and animation steps (5 stages expected) before implementing. check summary for status.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented section 1 code with clear mapping between lecture lines and the 5 animation stages described (squares, cloud, magnifying glass, revealed pattern, and word reduction)."
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing. HOLD: Wait for final 1-to-1 alignment of script and animation steps (5 stages expected) before implementing. check summary for status.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented the 5 animation stages aligned with the lecture lines. Binary tree visualization includes 10 branching levels and 1,024 dots."
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing. HOLD: Wait for final 1-to-1 alignment of script and animation steps (5 stages expected) before implementing. check summary for status.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented the 5 stages of animation for section 3 following the script and alignment instructions."
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing. HOLD: Wait for final 1-to-1 alignment of script and animation steps (3 stages expected) before implementing. check summary for status.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated complete Manim code for Section 4 including grid-based layout, text-only labels, and the specified bar chart animations."
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing. HOLD: Wait for final 1-to-1 alignment of script and animation steps (3 stages expected) before implementing. check summary for status.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Resolved the alignment of script and animation. The scene now follows the 3-line lecture script precisely, with animations corresponding to each line (Formula, Surprise/Probability, and Average Bits/Entropy)."
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing. HOLD: Wait for final 1-to-1 alignment of script and animation steps (3 stages expected) before implementing. check summary for status.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Aligned script lines with animation stages and implemented visual comparison of search space reduction."
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing. HOLD: Wait for final 1-to-1 alignment of script and animation steps (3 stages expected) before implementing. check summary for status.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented animation stages 1-3 as requested. Circle of strategy, filling Wordle grid, and final efficiency message."
+    },
+    {
+      "id": 31,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "The current lecture lines follow a 3-3-3-5-5-5-3 structure, but Issue #23 requires a 5-5-5-3-3-3-3 structure. Please update the lecture lines for all sections to match this: Sections 1, 2, 3 must have 5 lines each. Sections 4, 5, 6, 7 must have 3 lines each. I have already prepared the animations to match this 5-5-5-3-3-3-3 structure.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Animate a detective [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/detective.svg] using a magnifying glass (white #FFFFFF circle and line) scanning across the word cloud.']",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Display two bar charts side-by-side: 'SALET' (left, 20 uniform bars) and 'MUMMY' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/mummy.svg] (right, 1 tall bar, 19 tiny bars).\", \"Animate 100 white dots (words) falling: evenly across 'SALET' bars, and mostly into the tall 'MUMMY' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/mummy.svg] bar.\"]",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Split the screen vertically; display the crane icon [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/crane.svg] alongside 'CRANE' on the left and 'FUZZY' on the right in white (#FFFFFF).\"]",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_7] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a Wordle grid [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/wordle.svg] quickly filling with colored tiles until the final row turns all green (#00FF00).']",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The Wordle board (squares) is positioned in the center (row C), causing significant overlap with the word cloud, and its 4-column span (C2-C5) is too narrow for five tiles. Fix: Line 62: self.place_in_area(squares, 'B1', 'B6', scale_factor=0.9) (line=62, object=squares)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The magnifying_glass starting at A1 is too close to the left-side lecture notes, making the composition feel cramped and unbalanced. Fix: Line 102: self.place_at_grid(magnifying_glass, 'A6', scale_factor=1.0) (line=102, object=magnifying_glass)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'bit_text' and 'circles' animations are positioned in the top-most rows (A and B), creating a top-heavy layout that leaves the majority of the grid space underutilized and poorly aligned with the lecture notes. Fix: Line 62: self.place_in_area(bit_text, 'B3', 'B4', scale_factor=1.2) (line=62, object=bit_text)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'bit_text' label and the 'circles' row are vertically too close to each other, reducing visual clarity and distinction between the unit definition and the visual example. Fix: Line 67: self.place_in_area(circles, 'D1', 'D6', scale_factor=1.0) (line=67, object=circles)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The row of circles spanning B1-B6 is positioned very close to the left-side lecture notes boundary, which may feel crowded as the divider line appears. Fix: Line 67: self.place_in_area(circles, 'D2', 'D5', scale_factor=0.9) (line=67, object=circles)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The zoom_group (positioned B1-E6) overlaps with the buckets grid (D1-F6) at rows D and E, causing the word list to clash visually with the top of the bucket pattern grid. Fix: Line 144: self.place_in_area(zoom_group, 'B1', 'D6', scale_factor=1.0) (line=144, object=zoom_group)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The buckets grid is positioned too high on the grid (starting at D1), which crowds the center of the screen when the zoomed pattern and words appear. Fix: Line 96: self.place_in_area(buckets, 'E1', 'F6', scale_factor=0.95) (line=96, object=buckets)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The trace_boxes and math_seq occupy the same vertical rows (B and C) as the later zoom_group, which can create visual continuity issues if not properly spaced. Fix: Line 70: self.place_in_area(trace_boxes, 'B1', 'B6', scale_factor=0.9) (line=70, object=trace_boxes)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 44,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The entropy formula is horizontally constrained and small (scale 1.0), making it visually weak for a key concept. Fix: Line 67: self.place_in_area(entropy_formula, 'A1', 'A6', scale_factor=1.2) (line=67, object=entropy_formula)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 45,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: SALET bar charts are vertically compressed, leaving rows E and F empty and reducing the clarity of the distribution. Fix: Line 92: self.place_in_area(salet_bars, 'C1', 'E3', scale_factor=1.0) (line=92, object=salet_bars)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 46,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: MUMMY bar charts are vertically compressed, causing the tall single-bucket bar to appear stunted relative to the labels. Fix: Line 116: self.place_in_area(mummy_bars, 'C4', 'E6', scale_factor=1.0) (line=116, object=mummy_bars)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 47,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The formula 'H = Σ...' is scaled too large at its current position, causing it to feel cramped against the title and limiting space for annotations below. Fix: Line 68: self.place_in_area(formula, 'A1', 'B6', scale_factor=0.8) (line=68, object=formula)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 48,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'group_common' bar at D2 is positioned too high, resulting in an overlap with the 'Average Bits (Entropy)' label that appears in the center. Fix: Line 89: self.place_at_grid(group_common, 'E2', scale_factor=1.0) (line=89, object=group_common)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 49,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'Surprise' label above the rare pattern bar at D5 obstructs the 'Average Bits' line and text, creating visual clutter. Fix: Line 96: self.place_at_grid(group_rare, 'E5', scale_factor=1.0) (line=96, object=group_rare)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 50,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The 'repeat_txt' label (C1-D2) is positioned too close to the lecture notes on the left, creating visual clutter. Fix: Line 73: self.place_in_area(repeat_txt, 'C2', 'D2', scale_factor=0.8) (line=73, object=repeat_txt)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 51,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The 'pattern_txt' label (C5-D6) is at the extreme right edge of the screen, risking being cut off or looking cramped. Fix: Line 71: self.place_in_area(pattern_txt, 'C5', 'D5', scale_factor=0.8) (line=71, object=pattern_txt)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 52,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The 'grid_vgroup' (Wordle tiles) is squeezed into a 4-column area (B2-E5) despite having a 5-column structure, and is too close to the lecture notes. Fix: Line 107: self.place_in_area(grid_vgroup, 'B2', 'E6') (line=107, object=grid_vgroup)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 53,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Layout and Crowding Fixes: \n1. Problem: Expanding candidate clusters for 'CRANE' overlap with left-side lecture notes. Fix: Line 70: self.place_at_grid(word_crane, 'A3', scale_factor=0.8).\n2. Problem: 'Suspects' count labels at 0.9 scale are too large, creating vertical crowding. Fix: Line 83: self.place_at_grid(group_crane_count, 'B3', scale_factor=0.7); Line 84: self.place_at_grid(group_fuzzy_count, 'B5', scale_factor=0.7).\n3. Problem: Grid violations/poor horizontal spacing; 'FUZZY' is isolated. Fix: Line 71: self.place_at_grid(word_fuzzy, 'A5', scale_factor=0.8).",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6",
+    "section_7": "Coder7"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5,
+    "section_7": 6
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_6/480p15/Section6Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_7/480p15/Section7Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 235650,
+        "video_mtime_ns": 1778565795259891766,
+        "code_sha1": "dce54db7d7595342924eb90cf4b47291cbc77811"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The Wordle board (squares) is positioned in the center (row C), causing significant overlap with the word cloud, and its 4-column span (C2-C5) is too narrow for five tiles.",
+              "solution": "Line 62: self.place_in_area(squares, 'B1', 'B6', scale_factor=0.9)",
+              "line_number": 62,
+              "object_affected": "squares"
+            },
+            {
+              "problem": "The magnifying_glass starting at A1 is too close to the left-side lecture notes, making the composition feel cramped and unbalanced.",
+              "solution": "Line 102: self.place_at_grid(magnifying_glass, 'A6', scale_factor=1.0)",
+              "line_number": 102,
+              "object_affected": "magnifying_glass"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        36,
+        37
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 404661,
+        "video_mtime_ns": 1778565784446581419,
+        "code_sha1": "93075d3aaa35f7760d92e7d61228ceeb1c250fbb"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'bit_text' and 'circles' animations are positioned in the top-most rows (A and B), creating a top-heavy layout that leaves the majority of the grid space underutilized and poorly aligned with the lecture notes.",
+              "solution": "Line 62: self.place_in_area(bit_text, 'B3', 'B4', scale_factor=1.2)",
+              "line_number": 62,
+              "object_affected": "bit_text"
+            },
+            {
+              "problem": "The 'bit_text' label and the 'circles' row are vertically too close to each other, reducing visual clarity and distinction between the unit definition and the visual example.",
+              "solution": "Line 67: self.place_in_area(circles, 'D1', 'D6', scale_factor=1.0)",
+              "line_number": 67,
+              "object_affected": "circles"
+            },
+            {
+              "problem": "The row of circles spanning B1-B6 is positioned very close to the left-side lecture notes boundary, which may feel crowded as the divider line appears.",
+              "solution": "Line 67: self.place_in_area(circles, 'D2', 'D5', scale_factor=0.9)",
+              "line_number": 67,
+              "object_affected": "circles"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        38,
+        39,
+        40
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 374354,
+        "video_mtime_ns": 1778565786701244719,
+        "code_sha1": "5310f7ba7d6c02bfd8b8acea3c1197bc9a871647"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The zoom_group (positioned B1-E6) overlaps with the buckets grid (D1-F6) at rows D and E, causing the word list to clash visually with the top of the bucket pattern grid.",
+              "solution": "Line 144: self.place_in_area(zoom_group, 'B1', 'D6', scale_factor=1.0)",
+              "line_number": 144,
+              "object_affected": "zoom_group"
+            },
+            {
+              "problem": "The buckets grid is positioned too high on the grid (starting at D1), which crowds the center of the screen when the zoomed pattern and words appear.",
+              "solution": "Line 96: self.place_in_area(buckets, 'E1', 'F6', scale_factor=0.95)",
+              "line_number": 96,
+              "object_affected": "buckets"
+            },
+            {
+              "problem": "The trace_boxes and math_seq occupy the same vertical rows (B and C) as the later zoom_group, which can create visual continuity issues if not properly spaced.",
+              "solution": "Line 70: self.place_in_area(trace_boxes, 'B1', 'B6', scale_factor=0.9)",
+              "line_number": 70,
+              "object_affected": "trace_boxes"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        41,
+        42,
+        43
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 434897,
+        "video_mtime_ns": 1778565791114709480,
+        "code_sha1": "ff285cd695744fe940c73f0a921a8ca6cc83b1d3"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The entropy formula is horizontally constrained and small (scale 1.0), making it visually weak for a key concept.",
+              "solution": "Line 67: self.place_in_area(entropy_formula, 'A1', 'A6', scale_factor=1.2)",
+              "line_number": 67,
+              "object_affected": "entropy_formula"
+            },
+            {
+              "problem": "SALET bar charts are vertically compressed, leaving rows E and F empty and reducing the clarity of the distribution.",
+              "solution": "Line 92: self.place_in_area(salet_bars, 'C1', 'E3', scale_factor=1.0)",
+              "line_number": 92,
+              "object_affected": "salet_bars"
+            },
+            {
+              "problem": "MUMMY bar charts are vertically compressed, causing the tall single-bucket bar to appear stunted relative to the labels.",
+              "solution": "Line 116: self.place_in_area(mummy_bars, 'C4', 'E6', scale_factor=1.0)",
+              "line_number": 116,
+              "object_affected": "mummy_bars"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        44,
+        45,
+        46
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 188433,
+        "video_mtime_ns": 1778565949851680130,
+        "code_sha1": "326240aac755675b29d4e33d839ed161cae1474e"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The formula 'H = Σ...' is scaled too large at its current position, causing it to feel cramped against the title and limiting space for annotations below.",
+              "solution": "Line 68: self.place_in_area(formula, 'A1', 'B6', scale_factor=0.8)",
+              "line_number": 68,
+              "object_affected": "formula"
+            },
+            {
+              "problem": "The 'group_common' bar at D2 is positioned too high, resulting in an overlap with the 'Average Bits (Entropy)' label that appears in the center.",
+              "solution": "Line 89: self.place_at_grid(group_common, 'E2', scale_factor=1.0)",
+              "line_number": 89,
+              "object_affected": "group_common"
+            },
+            {
+              "problem": "The 'Surprise' label above the rare pattern bar at D5 obstructs the 'Average Bits' line and text, creating visual clutter.",
+              "solution": "Line 96: self.place_at_grid(group_rare, 'E5', scale_factor=1.0)",
+              "line_number": 96,
+              "object_affected": "group_rare"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        47,
+        48,
+        49
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 406837,
+        "video_mtime_ns": 1778565894865122530,
+        "code_sha1": "28c6fabeb5496842190691459a1869b911f19701"
+      },
+      "analysis": {
+        "raw_response": "```json\n{\n    \"layout\": {\n        \"has_issues\": true,\n        \"improvements\": [\n            {\n                \"problem\": \"Obstruction: Expanding candidate clusters for 'CRANE' overlap with the left-side lecture notes due to proximity to the screen center.\",\n                \"solution\": \"Line 70: self.place_at_grid(word_crane, 'A3', scale_factor=0.8)\",\n                \"line_number\": 70,\n                \"object_affected\": \"word_crane\"\n            },\n            {\n                \"problem\": \"Overlap: The 'Suspects' count labels at 0.9 scale are too large, creating vertical crowding with the word titles and the animations below.\",\n                \"solution\": \"Line 83: self.place_at_grid(group_crane_count, 'B3', scale_factor=0.7); Line 84: self.place_at_grid(group_fuzzy_count, 'B5', scale_factor=0.7)\",\n                \"line_number\": 83,\n                \"object_affected\": \"group_crane_count\"\n            },\n            {\n                \"problem\": \"Grid violations: Poor horizontal spacing utilization; moving 'CRANE' leftward leaves 'FUZZY' isolated if not balanced.\",\n                \"solution\": \"Line 71: self.place_at_grid(word_fuzzy, 'A5', scale_factor=0.8); Line 84: self.place_at_grid(group_fuzzy_count, 'B5', scale_factor=0.7)\",\n                \"line_number\": 71,\n                \"object_affected\": \"word_fuzzy\"\n            }\n        ]\n    }\n"
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_7",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_7/480p15/Section7Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess/media/videos/section_7/480p15/Section7Scene.mp4",
+        "video_size": 215331,
+        "video_mtime_ns": 1778565778824643568,
+        "code_sha1": "9cbbe88bc00f71551ceb2b5a12f9d28de310acf8"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'repeat_txt' label (C1-D2) is positioned too close to the lecture notes on the left, creating visual clutter.",
+              "solution": "Line 73: self.place_in_area(repeat_txt, 'C2', 'D2', scale_factor=0.8)",
+              "line_number": 73,
+              "object_affected": "repeat_txt"
+            },
+            {
+              "problem": "The 'pattern_txt' label (C5-D6) is at the extreme right edge of the screen, risking being cut off or looking cramped.",
+              "solution": "Line 71: self.place_in_area(pattern_txt, 'C5', 'D5', scale_factor=0.8)",
+              "line_number": 71,
+              "object_affected": "pattern_txt"
+            },
+            {
+              "problem": "The 'grid_vgroup' (Wordle tiles) is squeezed into a 4-column area (B2-E5) despite having a 5-column structure, and is too close to the lecture notes.",
+              "solution": "Line 107: self.place_in_area(grid_vgroup, 'B2', 'E6')",
+              "line_number": 107,
+              "object_affected": "grid_vgroup"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        50,
+        51,
+        52
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/2-Cracking_Wordle_Using_Information_Theory_and_Entropy_to_Find_the_Perfect_Guess",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 211141,
+      "completion_tokens": 26650,
+      "total_tokens": 323470,
+      "call_count": 39
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 279,
+        "completion_tokens": 1008,
+        "total_tokens": 1901,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 12559,
+        "completion_tokens": 346,
+        "total_tokens": 13123,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 21078,
+        "completion_tokens": 623,
+        "total_tokens": 22020,
+        "call_count": 2
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 27726,
+        "completion_tokens": 625,
+        "total_tokens": 29131,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 6371,
+        "completion_tokens": 2301,
+        "total_tokens": 8781,
+        "call_count": 1
+      },
+      "agent:Coder7": {
+        "prompt_tokens": 6816,
+        "completion_tokens": 1912,
+        "total_tokens": 8858,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 9092,
+        "completion_tokens": 2201,
+        "total_tokens": 11454,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 12126,
+        "completion_tokens": 2488,
+        "total_tokens": 14971,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 11397,
+        "completion_tokens": 2245,
+        "total_tokens": 14607,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 9802,
+        "completion_tokens": 2097,
+        "total_tokens": 12386,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 34458,
+        "completion_tokens": 2600,
+        "total_tokens": 37288,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 5221,
+        "completion_tokens": 1170,
+        "total_tokens": 17498,
+        "call_count": 14
+      },
+      "scope_refine:section_1": {
+        "prompt_tokens": 7726,
+        "completion_tokens": 1944,
+        "total_tokens": 10094,
+        "call_count": 1
+      },
+      "scope_refine:section_6": {
+        "prompt_tokens": 25103,
+        "completion_tokens": 2675,
+        "total_tokens": 44359,
+        "call_count": 2
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2943,
+        "completion_tokens": 251,
+        "total_tokens": 12061,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2936,
+        "completion_tokens": 365,
+        "total_tokens": 12898,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3524,
+        "completion_tokens": 369,
+        "total_tokens": 9012,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3394,
+        "completion_tokens": 333,
+        "total_tokens": 11049,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2663,
+        "completion_tokens": 339,
+        "total_tokens": 7149,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 3113,
+        "completion_tokens": 397,
+        "total_tokens": 13109,
+        "call_count": 1
+      },
+      "video_review:section_7": {
+        "prompt_tokens": 2814,
+        "completion_tokens": 361,
+        "total_tokens": 11721,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 211141,
+        "completion_tokens": 26650,
+        "total_tokens": 323470,
+        "call_count": 39
+      }
+    }
+  }
+}

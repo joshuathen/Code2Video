@@ -1,0 +1,1236 @@
+{
+  "topic": "The Inscribed Square Problem: A Topological Journey",
+  "target_audience": "Undergraduate students or advanced high school students with an interest in geometry",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with mandatory lecture lines\n        lecture_lines_text = [\n            \"Imagine any simple, closed loop in a plane.\",\n            \"Place four points randomly along this wobbly boundary.\",\n            \"These points can form various four-sided shapes.\",\n            \"But can we always find a perfect square?\",\n            \"This unsolved mystery is the Toeplitz Conjecture.\"\n        ]\n        self.setup_layout(\"The Hook: The Pirate's Square Treasure\", lecture_lines_text)\n\n        # Colors\n        COLOR_CURVE = \"#ADD8E6\"\n        COLOR_QUAD = \"#FFFF00\"\n        COLOR_SQUARE = \"#00FF00\"\n        COLOR_TEXT = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(COLOR_CURVE))\n        \n        # Create an irregular Jordan curve that contains a potential square\n        sq_verts = [\n            np.array([1.2, 1.2, 0]), \n            np.array([-1.2, 1.2, 0]), \n            np.array([-1.2, -1.2, 0]), \n            np.array([1.2, -1.2, 0])\n        ]\n        \n        curve_pts = []\n        for i in range(4):\n            curve_pts.append(sq_verts[i])\n            mid = (sq_verts[i] + sq_verts[(i+1)%4]) / 2\n            offset = np.array([np.sin(i*2)*0.4, np.cos(i*3)*0.4, 0])\n            curve_pts.append(mid + offset)\n            \n        curve = VMobject()\n        curve.set_points_as_corners(curve_pts + [curve_pts[0]])\n        curve.make_smooth()\n        curve.set_color(COLOR_CURVE)\n        \n        # Issue 39: Fixing scale factor from 1.2 to 1.0 to avoid tight margins\n        self.place_in_area(curve, \"B2\", \"E5\", scale_factor=1.0)\n        \n        self.play(Create(curve))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(COLOR_QUAD))\n        \n        # Initial \"random\" positions for the dots\n        start_props = [0.1, 0.4, 0.6, 0.9]\n        dots = VGroup(*[Dot(curve.point_from_proportion(p), color=COLOR_QUAD) for p in start_props])\n        \n        self.play(FadeIn(dots))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(COLOR_QUAD))\n        \n        # Create quadrilateral connecting the dots\n        quad = VMobject(color=COLOR_QUAD, stroke_width=2)\n        def get_quad_points():\n            return [d.get_center() for d in dots]\n        quad.add_updater(lambda m: m.set_points_as_corners(get_quad_points() + [get_quad_points()[0]]))\n        \n        self.play(Create(quad))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.play(self.lecture[3].animate.set_color(COLOR_SQUARE))\n\n        # Target proportions for a square vertices on the curve\n        sq_props = [0.0, 0.25, 0.5, 0.75]\n        \n        animations = []\n        for i in range(4):\n            start_p = start_props[i]\n            end_p = sq_props[i]\n            \n            def get_subpath(s, e):\n                pts = []\n                steps = 10\n                for step in range(steps + 1):\n                    alpha = step / steps\n                    prop = s + (e - s) * alpha\n                    pts.append(curve.point_from_proportion(prop % 1.0))\n                return VMobject().set_points_as_corners(pts)\n\n            subpath = get_subpath(start_p, end_p)\n            animations.append(MoveAlongPath(dots[i], subpath))\n\n        self.play(*animations, run_time=2)\n        \n        # Transform to perfect green square\n        quad.clear_updaters()\n        final_square = Polygon(*[d.get_center() for d in dots], color=COLOR_SQUARE, stroke_width=4)\n        \n        self.play(\n            ReplacementTransform(quad, final_square),\n            dots.animate.set_color(COLOR_SQUARE)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.play(self.lecture[4].animate.set_color(COLOR_TEXT))\n        \n        conjecture_text = Text(\"Toeplitz Conjecture\", font_size=24, color=COLOR_TEXT)\n        # Issue 38: Place in area F3-F5 with scale 0.8\n        self.place_in_area(conjecture_text, \"F3\", \"F5\", scale_factor=0.8)\n        \n        self.play(FadeIn(conjecture_text))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with title and lecture lines\n        self.setup_layout(\n            \"Prerequisite: Defining the 'Jordan Curve'\", \n            [\n                \"A Jordan curve is a simple, non-self-intersecting loop.\", \n                \"It can be wobbly like a rubber band.\", \n                \"However, it can never cross over itself like this.\"\n            ]\n        )\n        \n        # === Animation for Lecture Line 1 ===\n        # Lecture line color matches animation\n        self.lecture[0].set_color(WHITE)\n        \n        # Visual: White circle and label\n        circle = Circle(radius=1.2, color=WHITE)\n        self.place_in_area(circle, \"B2\", \"C5\")\n        \n        label_jordan = Text(\"Jordan Curve\", font_size=20, color=WHITE)\n        # Issue 42: align with center of shape below (columns 2-5)\n        self.place_in_area(label_jordan, \"A2\", \"A5\", scale_factor=0.8)\n        \n        self.play(\n            Create(circle),\n            FadeIn(label_jordan)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(WHITE)\n        \n        # Visual: Deformation to wobbly shape (still non-self-intersecting)\n        wobbly_curve = ParametricFunction(\n            lambda t: (1.2 + 0.25 * np.sin(5 * t)) * np.array([np.cos(t), np.sin(t), 0]),\n            t_range=[0, TAU],\n            color=WHITE\n        )\n        # Using circle center to maintain position\n        wobbly_curve.move_to(circle.get_center())\n        \n        self.play(\n            Transform(circle, wobbly_curve),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Cross over example - Not a Jordan curve (color Red)\n        self.lecture[2].set_color(RED)\n        \n        # Visual: Red figure-eight\n        # Issue 41: reduce scale factor to 1.1 to avoid crowding/clipping\n        figure_eight = ParametricFunction(\n            lambda t: np.array([np.cos(t), np.sin(2 * t) / 2, 0]),\n            t_range=[0, TAU],\n            color=RED\n        )\n        self.place_in_area(figure_eight, \"E2\", \"F5\", scale_factor=1.1)\n        \n        # Red X mark\n        cross_line1 = Line(UL, DR, color=RED).scale(0.5)\n        cross_line2 = Line(UR, DL, color=RED).scale(0.5)\n        cross = VGroup(cross_line1, cross_line2)\n        # Align cross with the center of the area used for figure_eight\n        self.place_in_area(cross, \"E2\", \"F5\", scale_factor=0.5)\n        \n        label_not_jordan = Text(\"NOT a Jordan Curve\", font_size=20, color=RED)\n        # Issue 40: use place_in_area for multi-word label centering\n        self.place_in_area(label_not_jordan, \"D2\", \"D5\", scale_factor=0.8)\n        \n        self.play(\n            Create(figure_eight),\n            FadeIn(label_not_jordan)\n        )\n        self.play(\n            Create(cross)\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Setup the scene\n        title_text = \"The Stepping Stone: The Inscribed Rectangle\"\n        lines = [\n            \"Let's first look for rectangles instead of squares.\",\n            \"Any two points on the loop define a possible side.\",\n            \"We track the midpoint and distance between these points.\"\n        ]\n        self.setup_layout(title_text, lines)\n\n        # Colors\n        LOOP_COLOR = \"#ADD8E6\"\n        DOT_COLOR = \"#FFA500\"\n        \n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(LOOP_COLOR))\n\n        # Asset Integration (Issue 36)\n        loop = SVGMobject(\"/mmfs1/data/home/jthen/Code2Video/assets/icon/loop.svg\")\n        loop.set_color(LOOP_COLOR)\n        \n        # Fix loop position (Issue 43)\n        self.place_in_area(loop, 'A2', 'F6', scale_factor=0.8)\n        \n        # Alignment with grid midpoint (Issue 45 anchor)\n        loop.move_to(self.grid['C4'])\n        loop_center = loop.get_center()\n\n        # Geometry logic for points staying on the loop\n        def loop_geom_func(t):\n            # Centrally symmetric distortion to guarantee rectangles exist\n            r = 1.6 + 0.3 * np.cos(2 * t)\n            return np.array([\n                r * np.cos(t) * 1.3, \n                r * np.sin(t) * 1.0, \n                0\n            ])\n\n        def get_pt(t):\n            return loop_geom_func(t) + loop_center\n\n        self.play(FadeIn(loop))\n        \n        # Initial points A and B\n        t_init = 0.6\n        dot_a = Dot(get_pt(t_init), color=DOT_COLOR)\n        dot_b = Dot(get_pt(t_init + PI), color=DOT_COLOR)\n        label_a = Text(\"A\", font_size=20, color=WHITE).next_to(dot_a, UR, buff=0.1)\n        label_b = Text(\"B\", font_size=20, color=WHITE)\n        \n        # Fix label B position (Issue 44)\n        self.place_at_grid(label_b, 'B2', scale_factor=0.5)\n\n        self.play(FadeIn(dot_a, dot_b), Write(label_a), Write(label_b))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(DOT_COLOR))\n        \n        t_tracker = ValueTracker(t_init)\n\n        def get_rect_points(t):\n            # 4 points forming a rectangle on symmetric loop\n            return [get_pt(t), get_pt(-t), get_pt(t + PI), get_pt(-t + PI)]\n\n        rect = always_redraw(lambda: Polygon(*get_rect_points(t_tracker.get_value()), color=WHITE, stroke_width=2))\n        \n        # Dots C and D\n        dot_c = always_redraw(lambda: Dot(get_rect_points(t_tracker.get_value())[1], color=DOT_COLOR, radius=0.08))\n        dot_d = always_redraw(lambda: Dot(get_rect_points(t_tracker.get_value())[3], color=DOT_COLOR, radius=0.08))\n        label_c = Text(\"C\", font_size=20, color=WHITE)\n        label_d = Text(\"D\", font_size=20, color=WHITE)\n\n        # Updaters for A, C, D and labels (B stays fixed per Issue 44)\n        dot_a.add_updater(lambda m: m.move_to(get_rect_points(t_tracker.get_value())[0]))\n        dot_b.add_updater(lambda m: m.move_to(get_rect_points(t_tracker.get_value())[2]))\n        label_a.add_updater(lambda m: m.next_to(dot_a, UR, buff=0.1))\n        label_c.add_updater(lambda m: m.next_to(dot_c, DL, buff=0.1))\n        label_d.add_updater(lambda m: m.next_to(dot_d, DR, buff=0.1))\n\n        self.play(Create(rect), FadeIn(dot_c, dot_d, label_c, label_d))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(WHITE))\n\n        # Midpoint dot fixed to grid (Issue 45)\n        midpoint_dot = Dot(color=WHITE)\n        self.place_at_grid(midpoint_dot, 'C4', scale_factor=0.3)\n\n        # Visualizing diagonals\n        diagonals = always_redraw(lambda: VGroup(\n            Line(get_rect_points(t_tracker.get_value())[0], get_rect_points(t_tracker.get_value())[2], color=GRAY, stroke_opacity=0.6),\n            Line(get_rect_points(t_tracker.get_value())[1], get_rect_points(t_tracker.get_value())[3], color=GRAY, stroke_opacity=0.6)\n        ))\n\n        self.play(FadeIn(midpoint_dot, diagonals))\n        self.wait(1)\n\n        # The rectangle rotates and scales while vertices stay on the loop\n        self.play(t_tracker.animate.set_value(1.3), run_time=3, rate_func=there_and_back)\n        self.wait(2)\n\n        # Cleanup\n        dot_a.clear_updaters()\n        dot_b.clear_updaters()\n        label_a.clear_updaters()\n        label_c.clear_updaters()\n        label_d.clear_updaters()\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            'We map pairs of points into a 3D space.',\n            'Unordered pairs on a circle form a Möbius strip.',\n            \"The curve's points map to the strip's boundary edge.\",\n            'This topological transformation reveals hidden geometric connections.',\n            'Watch how the loop twists into a 3D surface.'\n        ]\n        self.setup_layout(\"The Topological Trick: The Möbius Strip Mapping\", lecture_lines)\n        \n        # Define shared colors\n        COLOR_SQUARE = \"#808080\"\n        COLOR_MOB_SURFACE = \"#DA70D6\"\n        COLOR_DIAGONAL = \"#FFFFFF\"\n        COLOR_TRANSFORM = \"#ADD8E6\"\n        COLOR_TWIST = \"#F0E68C\"\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(COLOR_SQUARE)\n        \n        # Define the square representing point pairs (A, B)\n        square = Rectangle(\n            height=3.8, width=3.8, \n            fill_opacity=0.3, \n            fill_color=COLOR_SQUARE, \n            stroke_color=COLOR_SQUARE\n        )\n        self.place_in_area(square, 'B2', 'E5')\n        \n        label_a = Text(\"Point A position\", font_size=16, color=COLOR_SQUARE)\n        label_b = Text(\"Point B position\", font_size=16, color=COLOR_SQUARE).rotate(PI/2)\n        \n        # Positioning labels using the grid area system\n        self.place_in_area(label_a, 'F3', 'F4', scale_factor=0.8)\n        self.place_in_area(label_b, 'B1', 'E1', scale_factor=0.8)\n\n        self.play(FadeIn(square), Write(label_a), Write(label_b))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(COLOR_MOB_SURFACE)\n        \n        arrow_left = Arrow(\n            start=square.get_corner(DL), end=square.get_corner(UL),\n            color=COLOR_MOB_SURFACE, buff=0, stroke_width=5\n        )\n        arrow_right = Arrow(\n            start=square.get_corner(UR), end=square.get_corner(DR),\n            color=COLOR_MOB_SURFACE, buff=0, stroke_width=5\n        )\n        \n        glue_note = Text(\"Identification with a Twist\", font_size=18, color=COLOR_MOB_SURFACE)\n        # Fix: Better alignment for glue note\n        self.place_in_area(glue_note, 'A3', 'A4', scale_factor=0.8)\n        \n        self.play(Create(arrow_left), Create(arrow_right), Write(glue_note))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(COLOR_DIAGONAL)\n        \n        diagonal = Line(square.get_corner(DL), square.get_corner(UR), color=COLOR_DIAGONAL, stroke_width=6)\n        diag_label = Text(\"Diagonal (A = B)\", font_size=16, color=COLOR_DIAGONAL)\n        diag_label.rotate(45 * DEGREES)\n        # Position label on the grid near the diagonal\n        self.place_at_grid(diag_label, 'C3', scale_factor=0.8)\n        \n        self.play(Create(diagonal), Write(diag_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(COLOR_TRANSFORM)\n        \n        def mobius_strip_boundary(t):\n            return np.array([\n                (2.0 + 0.6 * np.cos(t/2)) * np.cos(t),\n                (2.0 + 0.6 * np.cos(t/2)) * np.sin(t) * 0.5,\n                0\n            ])\n\n        mob_surface_rep = ParametricFunction(\n            mobius_strip_boundary, t_range=[0, 2*TAU], \n            color=COLOR_MOB_SURFACE\n        ).set_stroke(width=25, opacity=0.6)\n        \n        mob_edge_rep = mob_surface_rep.copy().set_color(COLOR_DIAGONAL).set_stroke(width=4, opacity=1.0)\n        \n        # Fix: Increased scale factor for visibility\n        self.place_in_area(mob_surface_rep, 'B2', 'E5', scale_factor=0.8)\n        self.place_in_area(mob_edge_rep, 'B2', 'E5', scale_factor=0.8)\n\n        self.play(\n            ReplacementTransform(square, mob_surface_rep),\n            ReplacementTransform(diagonal, mob_edge_rep),\n            FadeOut(label_a), FadeOut(label_b), \n            FadeOut(glue_note), FadeOut(diag_label),\n            FadeOut(arrow_left), FadeOut(arrow_right),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(COLOR_TWIST)\n        \n        boundary_info = Text(\"Single Boundary Edge\", font_size=20, color=COLOR_DIAGONAL)\n        self.place_at_grid(boundary_info, 'F4')\n        \n        self.play(\n            mob_edge_rep.animate.set_stroke(width=8),\n            Write(boundary_info),\n            run_time=1\n        )\n        \n        self.play(\n            mob_surface_rep.animate.rotate(20*DEGREES, axis=RIGHT),\n            mob_edge_rep.animate.rotate(20*DEGREES, axis=RIGHT),\n            run_time=1.5\n        )\n        self.play(\n            mob_surface_rep.animate.rotate(-40*DEGREES, axis=RIGHT),\n            mob_edge_rep.animate.rotate(-40*DEGREES, axis=RIGHT),\n            run_time=1.5\n        )\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Initialize Layout\n        title = \"The Core Logic: Why One Surface Must Intersect Another\"\n        lines = [\n            'Every surface spanning this boundary must intersect itself.', \n            'These intersection points represent two pairs sharing properties.', \n            \"If the properties match, we've found our rectangle.\", \n            'The twist in the Möbius strip forces this overlap.', \n            'Topology guarantees these specific points must exist.'\n        ]\n        self.setup_layout(title, lines)\n\n        # Define Colors\n        ORCHID = \"#DA70D6\"\n        WHITE = \"#FFFFFF\"\n        ORANGE = \"#FFA500\"\n        GREEN = \"#00FF00\"\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(ORCHID)\n        \n        # Representing a Mobius strip in 2D with a 'twist'\n        # Top half\n        mobius_top = CubicBezier(\n            np.array([-1.5, 0, 0]), np.array([-1.5, 1, 0]), \n            np.array([1.5, 1, 0]), np.array([1.5, 0, 0]),\n            color=ORCHID\n        )\n        # Bottom half with a visual twist (break in middle)\n        mobius_bot_1 = CubicBezier(\n            np.array([1.5, 0, 0]), np.array([1.5, -1, 0]), \n            np.array([0.2, -0.8, 0]), np.array([0, -0.2, 0]),\n            color=ORCHID\n        )\n        mobius_bot_2 = CubicBezier(\n            np.array([0, 0.2, 0]), np.array([-0.2, 0.8, 0]), \n            np.array([-1.5, -1, 0]), np.array([-1.5, 0, 0]),\n            color=ORCHID\n        )\n        mobius_strip = VGroup(mobius_top, mobius_bot_1, mobius_bot_2)\n        \n        # Horizontal Plane (schematic)\n        plane = Rectangle(width=4, height=0.2, fill_opacity=0.3, fill_color=WHITE, stroke_width=1)\n        \n        # Place them in the grid - Resolved Issues #46 and #47\n        self.place_in_area(mobius_strip, \"C3\", \"E6\", scale_factor=0.8)\n        self.place_in_area(plane, \"F3\", \"F6\", scale_factor=1.0)\n        \n        self.play(Create(mobius_strip), FadeIn(plane))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(WHITE)\n        \n        # Intersection points\n        intersect_pt1 = Dot(mobius_strip.get_center() + RIGHT*0.5, color=WHITE)\n        intersect_pt2 = Dot(mobius_strip.get_center() + LEFT*0.5, color=WHITE)\n        \n        self.play(FadeIn(intersect_pt1), FadeIn(intersect_pt2))\n        self.play(Flash(intersect_pt1, color=WHITE), Flash(intersect_pt2, color=WHITE))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(ORANGE)\n        \n        # Original Loop (the curve)\n        loop = Circle(radius=1.0, color=ORCHID).set_points_smoothly([\n            [1, 0, 0], [0.7, 0.7, 0], [0, 1.2, 0], [-0.8, 0.6, 0],\n            [-1.1, 0, 0], [-0.7, -0.7, 0], [0, -1.1, 0], [0.8, -0.6, 0], [1, 0, 0]\n        ])\n        # Resolved Issue #48\n        self.place_in_area(loop, \"A3\", \"B6\", scale_factor=0.8)\n        \n        # Rectangle points on loop\n        p1 = loop.point_from_proportion(0.1)\n        p2 = loop.point_from_proportion(0.35)\n        p3 = loop.point_from_proportion(0.6)\n        p4 = loop.point_from_proportion(0.85)\n        \n        rect_points = [p1, p2, p3, p4]\n        rectangle = Polygon(*rect_points, color=ORANGE, stroke_width=4)\n        \n        # Arrow mapping intersection to the loop area\n        mapping_arrow = Arrow(\n            start=intersect_pt1.get_center(), \n            end=loop.get_center() + RIGHT*0.5, \n            buff=0.1, color=ORANGE\n        )\n        \n        self.play(Create(loop))\n        self.play(GrowArrow(mapping_arrow))\n        self.play(Create(rectangle))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(ORCHID)\n        \n        # Emphasize the twist by pulsing the mobius strip\n        self.play(mobius_strip.animate.set_stroke(width=8), run_time=0.5)\n        self.play(mobius_strip.animate.set_stroke(width=4), run_time=0.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(GREEN)\n        \n        # Flash the rectangle green\n        self.play(rectangle.animate.set_color(GREEN))\n        self.play(Flash(rectangle, color=GREEN))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Setup layout with title and lecture lines\n        # Using lines from TEACHING CONTENT block\n        self.setup_layout(\n            \"The Final Mystery: Square vs. Rectangle\", \n            [\n                'Rectangles always exist, but what about perfect squares?', \n                'For smooth curves, the answer is a proven yes.', \n                'But for jagged fractals, the mystery remains unsolved.'\n            ]\n        )\n\n        # --- Object Definitions ---\n        # Blue loop and rectangle/square for Line 1\n        blue_loop = Ellipse(width=3.5, height=2.5, color=\"#ADD8E6\")\n        orange_rect = Rectangle(width=2.5, height=1.5, color=\"#FFA500\")\n        # Calculated inscribed square for ellipse (approx side length 2.0)\n        yellow_square = Square(side_length=2.0, color=\"#FFFF00\")\n        \n        # Smooth green shape for Line 2\n        # Circle with radius 1.41 to fit square with side 2.0 perfectly\n        smooth_green = Circle(radius=1.414, color=\"#00FF00\")\n        \n        # Jagged red-orange fractal for Line 3\n        np.random.seed(42)\n        points = []\n        num_points = 120\n        for i in range(num_points):\n            theta = (i / num_points) * 2 * np.pi\n            r = 1.3 + 0.15 * np.sin(15 * theta) + 0.1 * np.cos(35 * theta) + 0.05 * np.random.rand()\n            points.append([r * np.cos(theta), r * np.sin(theta), 0])\n        jagged_fractal = Polygon(*points, color=\"#FF4500\")\n\n        # Question mark asset (Issue 37)\n        question_mark = SVGMobject(\"/mmfs1/data/home/jthen/Code2Video/assets/icon/question.svg\")\n        question_mark.set_color(WHITE)\n\n        # Positioning (Issues 50, 51)\n        # We pre-position these so they are ready for transforms\n        self.place_in_area(blue_loop, \"B2\", \"E6\")\n        self.place_in_area(orange_rect, \"B2\", \"E6\")\n        self.place_in_area(yellow_square, \"B2\", \"E6\")\n        self.place_in_area(smooth_green, \"B2\", \"E6\")\n        self.place_in_area(jagged_fractal, \"B2\", \"E6\")\n        \n        # Position question mark (Issue 49)\n        self.place_at_grid(question_mark, \"C4\", scale_factor=0.8)\n\n        # === Animation for Lecture Line 1 ===\n        # Rectangles always exist, but what about perfect squares?\n        self.play(self.lecture[0].animate.set_color(\"#ADD8E6\"))\n        self.play(Create(blue_loop))\n        self.play(Create(orange_rect))\n        self.wait(0.5)\n        # Shift rectangle into square\n        self.play(ReplacementTransform(orange_rect, yellow_square))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # For smooth curves, the answer is a proven yes.\n        self.play(self.lecture[1].animate.set_color(\"#00FF00\"))\n        self.play(\n            ReplacementTransform(blue_loop, smooth_green),\n            yellow_square.animate.set_color(\"#FFFF00\") # Ensure visibility\n        )\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 3 ===\n        # But for jagged fractals, the mystery remains unsolved.\n        self.play(self.lecture[2].animate.set_color(\"#FF4500\"))\n        self.play(\n            ReplacementTransform(smooth_green, jagged_fractal),\n            FadeOut(yellow_square)\n        )\n        \n        # Flash multiple potential yellow squares briefly\n        flash_sq1 = Square(side_length=0.4, color=\"#FFFF00\")\n        flash_sq2 = Square(side_length=0.3, color=\"#FFFF00\").rotate(PI/4)\n        flash_sq3 = Square(side_length=0.5, color=\"#FFFF00\").rotate(-PI/6)\n        \n        # Position flashes relative to grid\n        self.place_at_grid(flash_sq1, \"C3\", scale_factor=1.0)\n        self.place_at_grid(flash_sq2, \"D5\", scale_factor=1.0)\n        self.place_at_grid(flash_sq3, \"B4\", scale_factor=1.0)\n        \n        for sq in [flash_sq1, flash_sq2, flash_sq3]:\n            self.play(FadeIn(sq, run_time=0.2), FadeOut(sq, run_time=0.2))\n\n        # Question mark fades in over the center\n        self.play(FadeIn(question_mark))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section7Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with specific conclusion text\n        self.setup_layout(\n            \"Conclusion: The Power of Topology\", \n            [\n                \"Topology lets us solve 2D puzzles using higher dimensions.\", \n                \"Higher surfaces reveal answers hidden in simple planes.\", \n                \"Some geometric secrets are still waiting to be discovered.\"\n            ]\n        )\n        \n        # === Animation for Lecture Line 1 ===\n        # Return of the loop and green square\n        self.play(self.lecture[0].animate.set_color(\"#00FF00\"))\n        \n        # Create a stylized loop (blob)\n        loop_points = [\n            [1.5, 0, 0], [1.2, 1.2, 0], [0, 1.5, 0], [-1.2, 1.2, 0],\n            [-1.5, 0, 0], [-1.2, -1.2, 0], [0, -1.5, 0], [1.2, -1.2, 0]\n        ]\n        loop = VMobject(color=WHITE).set_points_as_corners([*loop_points, loop_points[0]]).set_sheen(-0.2, direction=DR)\n        loop.make_smooth()\n        \n        # Create the inscribed square in green\n        inscribed_square = Square(side_length=1.4, color=\"#00FF00\", stroke_width=4)\n        inscribed_square.rotate(PI/8) # Stylized tilt\n        \n        section1_elements = VGroup(loop, inscribed_square)\n        # Fix for issue 53: Position elements to avoid central overlap\n        self.place_in_area(section1_elements, 'A2', 'B5', scale_factor=0.8)\n        \n        self.play(FadeIn(loop), Create(inscribed_square))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Möbius strip representation pulses slowly\n        self.play(self.lecture[1].animate.set_color(\"#00FFFF\"))\n        \n        # Create a stylized 2D Möbius strip (infinity/twisted loop look)\n        mobius_strip = VGroup()\n        # Top part\n        strip_part1 = ParametricFunction(\n            lambda t: np.array([2 * np.cos(t), 0.8 * np.sin(2 * t), 0]),\n            t_range=[0, TAU],\n            color=\"#00FFFF\"\n        )\n        # Shift and thicken to look like a band\n        strip_part2 = strip_part1.copy().shift(UP * 0.1)\n        mobius_strip.add(strip_part1, strip_part2)\n        \n        # Fix for issue 52: Reduce scale and adjust area to avoid overlap\n        self.place_in_area(mobius_strip, 'C2', 'D5', scale_factor=0.8)\n        \n        # Transition from 2D loop to Möbius representation\n        self.play(\n            FadeOut(section1_elements),\n            FadeIn(mobius_strip)\n        )\n        \n        # Pulsing effect\n        self.play(\n            mobius_strip.animate.scale(1.1),\n            run_time=1.5,\n            rate_func=there_and_back\n        )\n        self.play(\n            mobius_strip.animate.scale(1.1),\n            run_time=1.5,\n            rate_func=there_and_back\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Final text fades in centrally\n        self.play(self.lecture[2].animate.set_color(\"#FFFFFF\"))\n        \n        final_message = Text(\"The Power of Topology\", color=\"#FFFFFF\", font_size=36)\n        # Fix for issue 54: Position in lower grid area for a balanced layout\n        self.place_in_area(final_message, 'E2', 'F5', scale_factor=0.9)\n        \n        self.play(\n            FadeOut(mobius_strip),\n            FadeIn(final_message)\n        )\n        \n        # Subtle emphasis on the final message\n        self.play(final_message.animate.scale(1.05), run_time=1, rate_func=there_and_back)\n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "The Inscribed Square Problem: A Topological Journey",
+    "target_audience": "Undergraduate students or advanced high school students with an interest in geometry",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Hook: The Pirate's Square Treasure",
+        "content": "Introduce the central question: For any simple, closed loop (Jordan curve), can we always find four points on that loop that form the vertices of a perfect square? This is known as the Toeplitz Conjecture.",
+        "example": "An explorer finds a wobbly, irregular island coastline. He wants to place four observation towers at the corners of a perfect square along the shore. No matter how jagged the coast is, can he always do it?"
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: Defining the 'Jordan Curve'",
+        "content": "Explain what a Jordan curve is: a non-self-intersecting continuous loop in a plane. Use visual animations to show the difference between a simple loop (like a rubber band) and a complex one (like a figure-eight, which is not a Jordan curve).",
+        "example": "Visualizing a 'wobbly circle' that can be stretched and pulled like dough, but never torn or crossed over itself."
+      },
+      {
+        "id": "section_3",
+        "title": "The Stepping Stone: The Inscribed Rectangle",
+        "content": "Before tackling the square, we look at the rectangle. This is a proven theorem. We introduce the concept of 'Pairs of Points'. Any two points on the curve define a potential side or diagonal.",
+        "example": "An ant and a beetle crawl along the loop. We track their positions and the distance between them to find symmetry."
+      },
+      {
+        "id": "section_4",
+        "title": "The Topological Trick: The Möbius Strip Mapping",
+        "content": "Introduce the brilliant proof for rectangles. We map every pair of points $(A, B)$ on the curve to a point in 3D space. The set of all unordered pairs of points on a circle topologically forms a Möbius Strip. We show how the 'boundary' of the curve maps to the edge of the strip.",
+        "example": "An animation showing a flat loop being transformed into a 3D Möbius strip. When this strip is dipped into a plane, the intersections represent the vertices of our rectangle."
+      },
+      {
+        "id": "section_5",
+        "title": "The Core Logic: Why One Surface Must Intersect Another",
+        "content": "Explain that because a Möbius strip has a boundary that maps to the curve itself, any surface spanning that boundary must intersect itself or a specific plane. This intersection point in the abstract 'space of pairs' corresponds to a set of points that form a rectangle in the real world.",
+        "example": "Imagine trying to flatten a crumpled piece of paper (the Möbius strip) onto a table. Because of its twist, it is forced to overlap itself; those overlaps are the secret locations of our rectangle corners."
+      },
+      {
+        "id": "section_6",
+        "title": "The Final Mystery: Square vs. Rectangle",
+        "content": "Discuss the current status of the problem. While rectangles are guaranteed for all Jordan curves, the 'Square' version is proven for smooth curves (like those drawn with a pen) but remains one of topology's famous unsolved problems for 'fractal' or extremely jagged curves.",
+        "example": "A comparison between a smooth 'potato' shape (where a square is easily found) and a snowflake-like fractal coastline where mathematicians are still searching for the definitive proof."
+      },
+      {
+        "id": "section_7",
+        "title": "Conclusion: The Power of Topology",
+        "content": "Summarize how looking at a problem from a higher dimension (moving from 2D curves to 3D surfaces like the Möbius strip) can solve puzzles that seem impossible in the original space.",
+        "example": "The explorer from Section 1 realizes that by looking at the 'map' of all possible pairs, the solution to his tower placement was hidden in the geometry of the paper itself."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Hook: The Pirate's Square Treasure",
+      "lecture_lines": [
+        "Imagine any simple, closed loop in a plane.",
+        "Place four points randomly along this wobbly boundary.",
+        "These points can form various four-sided shapes.",
+        "But can we always find a perfect square?",
+        "This unsolved mystery is the Toeplitz Conjecture."
+      ],
+      "animations": [
+        "A light blue (#ADD8E6) irregular loop appears with four yellow (#FFFF00) dots forming a random quadrilateral.",
+        "The text 'Toeplitz Conjecture' fades in below the curve in white (#FFFFFF).",
+        "The dots slide along the loop until they form a perfect green (#00FF00) square."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: Defining the 'Jordan Curve'",
+      "lecture_lines": [
+        "A Jordan curve is a simple, non-self-intersecting loop.",
+        "It can be wobbly like a rubber band.",
+        "However, it can never cross over itself like this."
+      ],
+      "animations": [
+        "A simple white (#FFFFFF) circle appears; label 'Jordan Curve' fades in.",
+        "The circle smoothly deforms into a wobbly shape without self-intersecting.",
+        "A red (#FF0000) figure-eight appears with a red 'X' to show it is NOT a Jordan curve."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Stepping Stone: The Inscribed Rectangle",
+      "lecture_lines": [
+        "Let's first look for rectangles instead of squares.",
+        "Any two points on the loop define a possible side.",
+        "We track the midpoint and distance between these points."
+      ],
+      "animations": [
+        "An irregular light blue (#ADD8E6) loop [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/loop.svg] is shown with two orange (#FFA500) dots A and B.",
+        "Two more orange dots C and D appear, forming a rectangle ABCD on the curve.",
+        "The rectangle rotates and scales while all four vertices stay on the loop."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Topological Trick: The Möbius Strip Mapping",
+      "lecture_lines": [
+        "We map pairs of points into a 3D space.",
+        "Unordered pairs on a circle form a Möbius strip.",
+        "The curve's points map to the strip's boundary edge.",
+        "This topological transformation reveals hidden geometric connections.",
+        "Watch how the loop twists into a 3D surface."
+      ],
+      "animations": [
+        "A gray (#808080) square represents the space of all point pairs (A, B).",
+        "The diagonal (A=B) is highlighted in white (#FFFFFF) as the curve itself.",
+        "Arrows appear on the square's edges showing identification with a twist.",
+        "The square morphs into a 2D representation of a Möbius strip (#DA70D6).",
+        "The boundary of the Möbius strip is highlighted in bright white (#FFFFFF)."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Core Logic: Why One Surface Must Intersect Another",
+      "lecture_lines": [
+        "Every surface spanning this boundary must intersect itself.",
+        "These intersection points represent two pairs sharing properties.",
+        "If the properties match, we've found our rectangle.",
+        "The twist in the Möbius strip forces this overlap.",
+        "Topology guarantees these specific points must exist."
+      ],
+      "animations": [
+        "The orchid (#DA70D6) Möbius strip is shown overlapping a horizontal plane.",
+        "Bright white (#FFFFFF) intersection points appear where the strip meets the plane.",
+        "An intersection point is highlighted, mapping back to four points on the curve.",
+        "These four points on the original loop connect to form an orange (#FFA500) rectangle.",
+        "The rectangle flashes green (#00FF00) to signify a valid solution."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "The Final Mystery: Square vs. Rectangle",
+      "lecture_lines": [
+        "Rectangles always exist, but what about perfect squares?",
+        "For smooth curves, the answer is a proven yes.",
+        "But for jagged fractals, the mystery remains unsolved."
+      ],
+      "animations": [
+        "A light blue (#ADD8E6) loop appears with an orange (#FFA500) rectangle shifting into a yellow (#FFFF00) square.",
+        "The curve transforms into a smooth green (#00FF00) shape; the yellow (#FFFF00) square fits perfectly.",
+        "The smooth green curve morphs into a jagged red-orange (#FF4500) fractal loop.",
+        "Multiple potential yellow (#FFFF00) squares flash briefly around the fractal curve.",
+        "A large white (#FFFFFF) question mark [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/question.svg] fades in over the center of the fractal curve."
+      ]
+    },
+    {
+      "id": "section_7",
+      "title": "Conclusion: The Power of Topology",
+      "lecture_lines": [
+        "Topology lets us solve 2D puzzles using higher dimensions.",
+        "Higher surfaces reveal answers hidden in simple planes.",
+        "Some geometric secrets are still waiting to be discovered."
+      ],
+      "animations": [
+        "The original loop and its green (#00FF00) square from section 1 return.",
+        "The Möbius strip representation pulses slowly in the background.",
+        "Final text 'The Power of Topology' fades in centrally in white (#FFFFFF)."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated section_1 lecture lines to 5 concise points to match the 5 animation stages. Also reduced section_6 lecture lines to 3 points to match its 3 animation stages and comply with the rule of max 3 sections having 5 lines."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for section_1. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated high-quality Manim code for Section 1, including the irregular Jordan curve, sliding dot animation for the Toeplitz Conjecture, and strict adherence to the 6x6 grid layout and color constraints."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for section_2. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_2 following the grid-based TeachingScene template. Included animations for Jordan curve (circle), deformation (wobbly loop), and non-Jordan curve (figure-eight with cross), with appropriate color-coded lecture lines."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for section_3. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated the complete Manim code for Section 3, featuring an irregular loop, a dynamic inscribed rectangle that rotates and scales, and synchronized lecture line highlighting. Used a centrally symmetric loop construction to ensure the rectangle vertices stay on the curve while moving."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for section_4. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 4, including the square to Möbius strip transformation, identification arrows, and boundary highlighting. Ensured adherence to the 6x6 grid system and avoid Tex usage."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for section_5. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "The code for section_5 has been generated, addressing the topological journey of the Möbius strip and its intersection points mapping back to a rectangle on a curve. All constraints, including the grid system and specific colors, have been followed."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Expanded the animation plan for Section 6 from 3 steps to 5 steps to ensure a one-to-one mapping with the 5 lecture lines provided by the ScriptWriter."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Section6Scene with smooth curve, fractal curve, and question mark animations using the mandatory grid system and constraints."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 7."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for section_7. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "The script and animation plan for section_7 are finalized. Generated Manim code using the grid system and mandated constraints."
+    },
+    {
+      "id": 22,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_1 are ready. Please design 3 corresponding animation stages that visually represent the Toeplitz Conjecture and the tower analogy.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_2 are ready. Please design 3 corresponding animation stages showing a simple loop, a wobbly loop, and a self-intersecting loop (figure-eight).",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_3 are ready. Please design 3 corresponding animation stages tracking midpoints and distances of point pairs on a loop.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_4 are ready. Please design 5 corresponding animation stages showing the transformation of point pairs on a circle into a 3D Möbius strip.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_5 are ready. Please design 5 corresponding animation stages illustrating the self-intersection of the Möbius strip surface to find the rectangle.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_6 are ready. Please design 5 corresponding animation stages comparing smooth curves (with squares) and jagged/fractal curves (the mystery).",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_7 are ready. Please design 3 corresponding animation stages summarizing the power of topological perspective.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Please provide 5 lecture lines (max 10 words each) that align one-to-one with the planned animations.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Please provide 3 lecture lines (max 10 words each) that align one-to-one with the planned animations.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Please provide 3 lecture lines (max 10 words each) that align one-to-one with the planned animations.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Please provide 5 lecture lines (max 10 words each) that align one-to-one with the planned animations.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Please provide 5 lecture lines (max 10 words each) that align one-to-one with the planned animations.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Please provide 3 lecture lines (max 10 words each) that align one-to-one with the planned animations.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Please provide 3 lecture lines (max 10 words each) that align one-to-one with the planned animations.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['An irregular light blue (#ADD8E6) loop [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/loop.svg] is shown with two orange (#FFA500) dots A and B.']",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated the irregular loop SVG asset from the provided path, colored it #ADD8E6, and used it as the visual basis for the inscribed rectangle animation."
+    },
+    {
+      "id": 37,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['A large white (#FFFFFF) question mark [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/question.svg] fades in over the center of the fractal curve.']",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Replaced Text('?') with SVGMobject using the specified asset path. Set color to WHITE."
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The multi-word label 'conjecture_text' is placed at a single grid point (F4), which can lead to horizontal alignment issues and makes the text appear too close to the bottom edge. Fix: Line 116: self.place_in_area(conjecture_text, 'F3', 'F5', scale_factor=0.8) (line=116, object=conjecture_text)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Changed the placement of 'conjecture_text' from a single grid point (F4) to the area 'F3' to 'F5' with a scale factor of 0.8 to improve horizontal alignment and spacing."
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'curve' scale of 1.2 within the B2-E5 area creates tight vertical margins, especially when the loop transforms and expands, nearly touching the conjecture text. Fix: Line 90: self.place_in_area(curve, 'B2', 'E5', scale_factor=1.0) (line=90, object=curve)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced the scale factor of the curve from 1.2 to 1.0 within the B2-E5 area to ensure better vertical margins and prevent overlap with the conjecture text."
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The label 'NOT a Jordan Curve' contains four words and is currently placed at a single grid point (D3), violating the rule to use place_in_area for multi-word labels and causing poor horizontal centering. Fix: Line 112: self.place_in_area(label_not_jordan, 'D2', 'D5', scale_factor=0.8) (line=112, object=label_not_jordan)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated the placement of 'NOT a Jordan Curve' label from a single grid point (D3) to an area (D2-D5) for better horizontal centering, as requested."
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The figure_eight object has a scale factor of 1.4 in a two-row area (E2-F5), which crowds the red label above and risks clipping at the bottom screen edge (#FF0000). Fix: Line 104: self.place_in_area(figure_eight, 'E2', 'F5', scale_factor=1.1) (line=104, object=figure_eight)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced the scale factor of the figure-eight object from 1.4 to 1.1 to prevent crowding and potential clipping at the bottom of the screen."
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The label 'Jordan Curve' at point A3 is horizontally misaligned with the center of the shape below (spanning columns 2-5), creating a jagged visual flow. Fix: Line 67: self.place_in_area(label_jordan, 'A2', 'A5', scale_factor=0.8) (line=67, object=label_jordan)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Changed the placement of the 'Jordan Curve' label from point A3 to the area A2-A5 to align it horizontally with the shape below."
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The loop is positioned too far to the left, causing labels B and C to crowd the lecture notes area. Fix: Line 73: self.place_in_area(loop, 'A2', 'F6', scale_factor=0.8) (line=73, object=loop)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Relocated the loop to the area A2-F6 with a scale factor of 0.8 as requested by the VideoCritic."
+    },
+    {
+      "id": 44,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: Label 'B' is positioned too close to the invisible vertical divider between lecture notes and the animation area. Fix: Line 82: self.place_at_grid(label_B, 'B2', scale_factor=0.5) (line=82, object=label_B)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Positioned label 'B' at grid anchor 'B2' with a scale factor of 0.5 to prevent crowding with the lecture notes area."
+    },
+    {
+      "id": 45,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The midpoint dot appears without a fixed grid anchor, leading to inconsistent spatial relationships with the loop. Fix: Line 95: self.place_at_grid(midpoint_dot, 'C4', scale_factor=0.3) (line=95, object=midpoint_dot)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Anchored the midpoint dot to grid position 'C4' with a scale factor of 0.3 to ensure consistent spatial relationships."
+    },
+    {
+      "id": 46,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'plane' (grey base) currently overlaps the 'mobius_strip' projection, as row D is used by both, causing the base line to cut through the center of the shape. Fix: Line 93: self.place_in_area(plane, 'F3', 'F6', scale_factor=1.0) (line=93, object=plane)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved the plane to row F ('F3', 'F6') to avoid overlap with the mobius_strip which occupies the rows above it."
+    },
+    {
+      "id": 47,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'mobius_strip' and the 'loop' elements overlap on row B, which creates visual clutter and leaves little room for the connection arrow that appears later. Fix: Line 92: self.place_in_area(mobius_strip, 'C3', 'E6', scale_factor=0.8) (line=92, object=mobius_strip)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved the mobius_strip down to rows C-E ('C3', 'E6') to separate it from the loop at the top and the plane at the bottom."
+    },
+    {
+      "id": 48,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'loop' at the top has a small scale (0.6), making the internal rectangle and intersection points difficult to see clearly as they emerge. Fix: Line 117: self.place_in_area(loop, 'A3', 'B6', scale_factor=0.8) (line=117, object=loop)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Increased loop scale to 0.8 and adjusted area to 'A3', 'B6' for better visibility of the internal rectangle."
+    },
+    {
+      "id": 49,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The question_mark at C3 overlaps with the jagged_curve boundary, causing poor visibility and visual clutter. Fix: Line 113: self.place_at_grid(question_mark, 'C4', scale_factor=0.8) (line=113, object=question_mark)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved question_mark to grid position 'C4' and set scale_factor to 0.8 as requested to avoid overlap and clutter."
+    },
+    {
+      "id": 50,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The smooth_curve and inscribed_square occupy the B1-E6 area, which is too close to the left-side lecture notes. Fix: Line 89: self.place_in_area(smooth_curve, 'B2', 'E6'); Line 96: self.place_in_area(inscribed_square, 'B2', 'E6') (line=89, object=smooth_curve, inscribed_square)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved smooth_curve and inscribed_square positioning area from 'B1'-'E6' to 'B2'-'E6' to prevent proximity issues with lecture text."
+    },
+    {
+      "id": 51,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The jagged_curve at B1-E6 creates a cramped layout due to its proximity to the lecture text in column 1. Fix: Line 103: self.place_in_area(jagged_curve, 'B2', 'E6') (line=103, object=jagged_curve)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved jagged_curve positioning area from 'B1'-'E6' to 'B2'-'E6' to avoid cramped layout."
+    },
+    {
+      "id": 52,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The mobius_strip at scale 1.2 is too large and overlaps with section1_elements during the transition at frame 00:04, potentially crowding the left-side lecture notes. Fix: Line 96: self.place_in_area(mobius_strip, 'C2', 'D5', scale_factor=0.8) (line=96, object=mobius_strip)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted mobius_strip placement to 'C2'-'D5' and reduced scale to 0.8 to prevent overlap as requested."
+    },
+    {
+      "id": 53,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: section1_elements occupies the central right-side grid, which leads to visual overlap when the larger mobius_strip begins its animation. Fix: Line 75: self.place_in_area(section1_elements, 'A2', 'B5', scale_factor=0.8) (line=75, object=section1_elements)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted section1_elements placement to 'A2'-'B5' and scale to 0.8 to prevent overlap with subsequent animations."
+    },
+    {
+      "id": 54,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: final_message is positioned in the upper-middle grid (C2-D5), failing to utilize the available vertical space for a balanced concluding layout. Fix: Line 123: self.place_in_area(final_message, 'E2', 'F5', scale_factor=0.9) (line=123, object=final_message)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted final_message placement to 'E2'-'F5' and scale to 0.9 for a better vertical balance."
+    },
+    {
+      "id": 55,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Layout improvements: \n1. The label 'label_a' (Point A position) is off-center relative to the square and sits too close to the bottom edge. Fix: Line 80: self.place_in_area(label_a, 'F3', 'F4', scale_factor=0.8).\n2. The 'glue_note' (Identification with a Twist) is a long label that appears off-center above the main square. Fix: Line 100: self.place_in_area(glue_note, 'A3', 'A4', scale_factor=0.8).\n3. The Möbius strip components (mob_surface_rep and mob_edge_rep) are scaled too small (0.6). Fix: Line 132: self.place_in_area(mob_surface_rep, 'B2', 'E5', scale_factor=0.8); Line 133: self.place_in_area(mob_edge_rep, 'B2', 'E5', scale_factor=0.8).",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "1. Repositioned 'label_a' using self.place_in_area('F3', 'F4') and removed .next_to() call. Also repositioned 'label_b' to grid column 1.\n2. Repositioned 'glue_note' using self.place_in_area('A3', 'A4').\n3. Increased scale_factor of Möbius strip components (mob_surface_rep, mob_edge_rep) from 0.6 to 0.8.\n4. Cleaned up remaining manual positioning (diag_label) to use the grid system."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6",
+    "section_7": "Coder7"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5,
+    "section_7": 6
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_6/480p15/Section6Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_7/480p15/Section7Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 235959,
+        "video_mtime_ns": 1778595140956998383,
+        "code_sha1": "3d859d6316ee3e9e264c40cbf3633744aa1ffdc0"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The multi-word label 'conjecture_text' is placed at a single grid point (F4), which can lead to horizontal alignment issues and makes the text appear too close to the bottom edge.",
+              "solution": "Line 116: self.place_in_area(conjecture_text, 'F3', 'F5', scale_factor=0.8)",
+              "line_number": 116,
+              "object_affected": "conjecture_text"
+            },
+            {
+              "problem": "The 'curve' scale of 1.2 within the B2-E5 area creates tight vertical margins, especially when the loop transforms and expands, nearly touching the conjecture text.",
+              "solution": "Line 90: self.place_in_area(curve, 'B2', 'E5', scale_factor=1.0)",
+              "line_number": 90,
+              "object_affected": "curve"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        38,
+        39
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 120899,
+        "video_mtime_ns": 1778595136407253371,
+        "code_sha1": "2c514a54b2d2935eee09095cabfaeee9c61ada45"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The label 'NOT a Jordan Curve' contains four words and is currently placed at a single grid point (D3), violating the rule to use place_in_area for multi-word labels and causing poor horizontal centering.",
+              "solution": "Line 112: self.place_in_area(label_not_jordan, 'D2', 'D5', scale_factor=0.8)",
+              "line_number": 112,
+              "object_affected": "label_not_jordan"
+            },
+            {
+              "problem": "The figure_eight object has a scale factor of 1.4 in a two-row area (E2-F5), which crowds the red label above and risks clipping at the bottom screen edge (#FF0000).",
+              "solution": "Line 104: self.place_in_area(figure_eight, 'E2', 'F5', scale_factor=1.1)",
+              "line_number": 104,
+              "object_affected": "figure_eight"
+            },
+            {
+              "problem": "The label 'Jordan Curve' at point A3 is horizontally misaligned with the center of the shape below (spanning columns 2-5), creating a jagged visual flow.",
+              "solution": "Line 67: self.place_in_area(label_jordan, 'A2', 'A5', scale_factor=0.8)",
+              "line_number": 67,
+              "object_affected": "label_jordan"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        40,
+        41,
+        42
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 282300,
+        "video_mtime_ns": 1778595142210225682,
+        "code_sha1": "618c90812500512bdd0d4cc667df649669bd952d"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The loop is positioned too far to the left, causing labels B and C to crowd the lecture notes area.",
+              "solution": "Line 73: self.place_in_area(loop, 'A2', 'F6', scale_factor=0.8)",
+              "line_number": 73,
+              "object_affected": "loop"
+            },
+            {
+              "problem": "Label 'B' is positioned too close to the invisible vertical divider between lecture notes and the animation area.",
+              "solution": "Line 82: self.place_at_grid(label_B, 'B2', scale_factor=0.5)",
+              "line_number": 82,
+              "object_affected": "label_B"
+            },
+            {
+              "problem": "The midpoint dot appears without a fixed grid anchor, leading to inconsistent spatial relationships with the loop.",
+              "solution": "Line 95: self.place_at_grid(midpoint_dot, 'C4', scale_factor=0.3)",
+              "line_number": 95,
+              "object_affected": "midpoint_dot"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        43,
+        44,
+        45
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 316381,
+        "video_mtime_ns": 1778595170362448657,
+        "code_sha1": "a8d7e32d387fc01c77efe4d9d948825dd22dce27"
+      },
+      "analysis": {
+        "raw_response": "```json\n{\n    \"layout\": {\n        \"has_issues\": true,\n        \"improvements\": [\n            {\n                \"problem\": \"The label 'label_a' (Point A position) is off-center relative to the square and sits too close to the bottom edge of the screen at a single grid point.\",\n                \"solution\": \"Line 80: self.place_in_area(label_a, 'F3', 'F4', scale_factor=0.8)\",\n                \"line_number\": 80,\n                \"object_affected\": \"label_a\"\n            },\n            {\n                \"problem\": \"The 'glue_note' (Identification with a Twist) is a long label that appears off-center above the main square visualization area.\",\n                \"solution\": \"Line 100: self.place_in_area(glue_note, 'A3', 'A4', scale_factor=0.8)\",\n                \"line_number\": 100,\n                \"object_affected\": \"glue_note\"\n            },\n            {\n                \"problem\": \"The Möbius strip components (mob_surface_rep and mob_edge_rep) are scaled to 0.6, leaving excessive empty space within the designated B2-E5 grid area.\",\n                \"solution\": \"Line 132: self.place_in_area(mob_surface_rep, 'B2', 'E5', scale_factor=0.8); Line 133: self.place_in_area(mob_edge_rep, 'B2', 'E5', scale_factor=0.8)\",\n                \"line_number\": 132,\n                \"object_affected\": \"mob_surface_rep\"\n            }\n        ]\n"
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 347892,
+        "video_mtime_ns": 1778595142374975762,
+        "code_sha1": "5dfb45e3cbd5e34f6be5c0eca4393e34a077390d"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'plane' (grey base) currently overlaps the 'mobius_strip' projection, as row D is used by both, causing the base line to cut through the center of the shape.",
+              "solution": "Line 93: self.place_in_area(plane, 'F3', 'F6', scale_factor=1.0)",
+              "line_number": 93,
+              "object_affected": "plane"
+            },
+            {
+              "problem": "The 'mobius_strip' and the 'loop' elements overlap on row B, which creates visual clutter and leaves little room for the connection arrow that appears later.",
+              "solution": "Line 92: self.place_in_area(mobius_strip, 'C3', 'E6', scale_factor=0.8)",
+              "line_number": 92,
+              "object_affected": "mobius_strip"
+            },
+            {
+              "problem": "The 'loop' at the top has a small scale (0.6), making the internal rectangle and intersection points difficult to see clearly as they emerge.",
+              "solution": "Line 117: self.place_in_area(loop, 'A3', 'B6', scale_factor=0.8)",
+              "line_number": 117,
+              "object_affected": "loop"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        46,
+        47,
+        48
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 373000,
+        "video_mtime_ns": 1778595146397892972,
+        "code_sha1": "714d84305b10f126299355a74cfd8eb47ad6d6af"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The question_mark at C3 overlaps with the jagged_curve boundary, causing poor visibility and visual clutter.",
+              "solution": "Line 113: self.place_at_grid(question_mark, 'C4', scale_factor=0.8)",
+              "line_number": 113,
+              "object_affected": "question_mark"
+            },
+            {
+              "problem": "The smooth_curve and inscribed_square occupy the B1-E6 area, which is too close to the left-side lecture notes.",
+              "solution": "Line 89: self.place_in_area(smooth_curve, 'B2', 'E6'); Line 96: self.place_in_area(inscribed_square, 'B2', 'E6')",
+              "line_number": 89,
+              "object_affected": "smooth_curve, inscribed_square"
+            },
+            {
+              "problem": "The jagged_curve at B1-E6 creates a cramped layout due to its proximity to the lecture text in column 1.",
+              "solution": "Line 103: self.place_in_area(jagged_curve, 'B2', 'E6')",
+              "line_number": 103,
+              "object_affected": "jagged_curve"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        49,
+        50,
+        51
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_7",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_7/480p15/Section7Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey/media/videos/section_7/480p15/Section7Scene.mp4",
+        "video_size": 278088,
+        "video_mtime_ns": 1778595141259996745,
+        "code_sha1": "df370206e9b83975656e88829dd441bf63619a75"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The mobius_strip at scale 1.2 is too large and overlaps with section1_elements during the transition at frame 00:04, potentially crowding the left-side lecture notes.",
+              "solution": "Line 96: self.place_in_area(mobius_strip, 'C2', 'D5', scale_factor=0.8)",
+              "line_number": 96,
+              "object_affected": "mobius_strip"
+            },
+            {
+              "problem": "section1_elements occupies the central right-side grid, which leads to visual overlap when the larger mobius_strip begins its animation.",
+              "solution": "Line 75: self.place_in_area(section1_elements, 'A2', 'B5', scale_factor=0.8)",
+              "line_number": 75,
+              "object_affected": "section1_elements"
+            },
+            {
+              "problem": "final_message is positioned in the upper-middle grid (C2-D5), failing to utilize the available vertical space for a balanced concluding layout.",
+              "solution": "Line 123: self.place_in_area(final_message, 'E2', 'F5', scale_factor=0.9)",
+              "line_number": 123,
+              "object_affected": "final_message"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        52,
+        53,
+        54
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/5-The_Inscribed_Square_Problem_A_Topological_Journey",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 227317,
+      "completion_tokens": 37626,
+      "total_tokens": 324645,
+      "call_count": 44
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 279,
+        "completion_tokens": 949,
+        "total_tokens": 1869,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 11336,
+        "completion_tokens": 524,
+        "total_tokens": 12317,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 16800,
+        "completion_tokens": 425,
+        "total_tokens": 17378,
+        "call_count": 2
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 22918,
+        "completion_tokens": 542,
+        "total_tokens": 23934,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 19085,
+        "completion_tokens": 3727,
+        "total_tokens": 23417,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 15858,
+        "completion_tokens": 4364,
+        "total_tokens": 20402,
+        "call_count": 2
+      },
+      "agent:Coder7": {
+        "prompt_tokens": 12993,
+        "completion_tokens": 3184,
+        "total_tokens": 17528,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 18587,
+        "completion_tokens": 2969,
+        "total_tokens": 22013,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 16624,
+        "completion_tokens": 4243,
+        "total_tokens": 21202,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 30316,
+        "completion_tokens": 4546,
+        "total_tokens": 35273,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 25118,
+        "completion_tokens": 4797,
+        "total_tokens": 30147,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 4799,
+        "completion_tokens": 737,
+        "total_tokens": 17236,
+        "call_count": 14
+      },
+      "scope_refine:section_4": {
+        "prompt_tokens": 12419,
+        "completion_tokens": 4183,
+        "total_tokens": 18871,
+        "call_count": 2
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2870,
+        "completion_tokens": 261,
+        "total_tokens": 7930,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2506,
+        "completion_tokens": 398,
+        "total_tokens": 10549,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2962,
+        "completion_tokens": 304,
+        "total_tokens": 6465,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3037,
+        "completion_tokens": 400,
+        "total_tokens": 13033,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2897,
+        "completion_tokens": 358,
+        "total_tokens": 8352,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 3033,
+        "completion_tokens": 351,
+        "total_tokens": 7529,
+        "call_count": 1
+      },
+      "video_review:section_7": {
+        "prompt_tokens": 2880,
+        "completion_tokens": 364,
+        "total_tokens": 9200,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 227317,
+        "completion_tokens": 37626,
+        "total_tokens": 324645,
+        "call_count": 44
+      }
+    }
+  }
+}

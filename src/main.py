@@ -871,7 +871,7 @@ def run_mas_generation_and_evaluation_pipeline(
     top_general_beliefs: int = 10,
     top_specialized_beliefs: int = 10,
     contextual_belief_selection: bool = True,
-    belief_usefulness_threshold: float = 0.60,
+    belief_usefulness_threshold: float = 0.0,
     belief_candidate_limit: int = 20,
     bbn_parameters_path: Optional[str] = None,
     belief_embedding_model: Optional[str] = None,
@@ -1118,8 +1118,11 @@ def build_and_parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--belief_usefulness_threshold",
         type=float,
-        default=0.60,
-        help="Minimum BBN applicability × posterior effectiveness required for injection.",
+        default=0.0,
+        help=(
+            "Optional minimum BBN applicability × posterior effectiveness. "
+            "The default 0 disables filtering and selects the top-k beliefs."
+        ),
     )
     parser.add_argument(
         "--belief_candidate_limit",

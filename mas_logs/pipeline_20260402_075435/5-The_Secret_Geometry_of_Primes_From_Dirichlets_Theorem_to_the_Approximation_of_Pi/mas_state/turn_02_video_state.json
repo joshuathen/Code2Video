@@ -1,0 +1,528 @@
+{
+  "topic": "The Secret Geometry of Primes: From Dirichlet's Theorem to the Approximation of Pi",
+  "target_audience": "Undergraduate students or advanced high school mathematics enthusiasts",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with provided text\n        title_text = \"The Prime Atoms and the Number Line\"\n        lines = [\n            \"Prime numbers are the indivisible atoms of our universe.\",\n            \"They appear like unpredictable sparks along the number line.\",\n            \"We seek the hidden patterns within their random distribution.\"\n        ]\n        self.setup_layout(title_text, lines)\n        \n        # Colors\n        GOLD = \"#FFD700\"\n        GRAY = \"#808080\"\n        WHITE_COLOR = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        # \"Prime numbers are the indivisible atoms of our universe.\"\n        self.lecture[0].set_color(GOLD)\n        \n        # Create a white horizontal line with tick marks from 1 to 10.\n        # Fixed: Added label_constructor=Text to avoid FileNotFoundError when LaTeX is not installed.\n        number_line = NumberLine(\n            x_range=[1, 10, 1],\n            length=5,\n            include_numbers=True,\n            font_size=24,\n            color=WHITE_COLOR,\n            stroke_width=2,\n            label_constructor=Text\n        )\n        self.place_in_area(number_line, \"C1\", \"C6\")\n        \n        self.play(Create(number_line), run_time=1.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"They appear like unpredictable sparks along the number line.\"\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(GOLD)\n\n        # A golden dot (#FFD700) representing the 'Prime Scout' appears at 1 and begins moving right.\n        scout = Dot(color=GOLD, radius=0.12)\n        scout.move_to(number_line.n2p(1))\n        self.add(scout)\n        \n        # Prepare labels for interaction\n        # Manim NumberLine labels are stored in .numbers\n        numbers_dict = {}\n        for decimal in number_line.numbers:\n            val = int(round(decimal.get_value()))\n            numbers_dict[val] = decimal\n\n        primes = [2, 3, 5, 7]\n        composites = [4, 6, 8, 9]\n        \n        tracker = ValueTracker(1)\n        scout.add_updater(lambda m: m.move_to(number_line.n2p(tracker.get_value())))\n\n        # Animation sequence along the line\n        for target_val in range(2, 11):\n            # Move scout to the next integer\n            self.play(tracker.animate.set_value(target_val), run_time=0.4, rate_func=linear)\n            \n            if target_val in primes:\n                # Flash gold (#FFD700) and grow larger\n                self.play(\n                    Flash(number_line.n2p(target_val), color=GOLD, flash_radius=0.4),\n                    numbers_dict[target_val].animate.set_color(GOLD).scale(1.4),\n                    run_time=0.4\n                )\n            elif target_val in composites:\n                # Composite numbers like 4, 6, 8, and 9 fade to a dim gray (#808080).\n                self.play(\n                    numbers_dict[target_val].animate.set_color(GRAY),\n                    run_time=0.3\n                )\n            else:\n                # Value 1 or 10 - just a brief pause\n                self.wait(0.2)\n        \n        scout.remove_updater(scout.updaters[0])\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"We seek the hidden patterns within their random distribution.\"\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(GOLD)\n\n        # Zoom out and pan right to reveal a dense trail of golden sparks across the line.\n        # We simulate this by creating a much longer line and scaling it down.\n        \n        extended_line = NumberLine(\n            x_range=[1, 100, 1],\n            length=30,\n            include_numbers=False,\n            color=WHITE_COLOR,\n            stroke_width=1\n        )\n        \n        # Utility for primality\n        def is_prime(n):\n            if n < 2: return False\n            for i in range(2, int(n**0.5) + 1):\n                if n % i == 0: return False\n            return True\n\n        # Generate many sparks for the reveal\n        sparks = VGroup()\n        for i in range(1, 101):\n            if is_prime(i):\n                spark = Dot(color=GOLD, radius=0.04).move_to(extended_line.n2p(i))\n                sparks.add(spark)\n        \n        # Group everything for the transformation\n        # Position extended_line such that its '1' matches original line's '1'\n        extended_line.move_to(number_line.n2p(1), aligned_edge=LEFT)\n        \n        # Reveal group\n        reveal_group = VGroup(extended_line, sparks)\n        \n        # Hide the previous objects\n        self.remove(number_line, scout)\n        for val in numbers_dict:\n            self.remove(numbers_dict[val])\n            \n        self.add(reveal_group)\n        \n        # Zoom out/Pan right simulation: Scale down and shift left\n        # Shift left moves 'right' through the number line\n        self.play(\n            reveal_group.animate.scale(0.18).move_to(self.grid[\"D3\"]).shift(LEFT * 1.5),\n            run_time=3,\n            rate_func=slow_into\n        )\n        \n        self.wait(2)\n        self.lecture[2].set_color(WHITE)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Initialize Scene\n        title = \"Prerequisite: Building Arithmetic Progressions\"\n        lines = [\n            \"Arithmetic progressions follow the rule: a times n plus b.\",\n            \"We sort numbers into lanes based on their remainders.\",\n            \"Primes populate these parallel tracks in fascinating ways.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        COLOR_BLUE = \"#ADD8E6\"\n        COLOR_ORANGE = \"#FFCC99\"\n        COLOR_GOLD = \"#FFD700\"\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight Line 1\n        self.play(self.lecture[0].animate.set_color(WHITE), run_time=0.5)\n\n        # Display an + b formula\n        formula = Text(\"an + b\", font_size=90)\n        self.place_in_area(formula, \"B2\", \"E5\")\n        \n        self.play(Write(formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Transition Line Highlight\n        self.play(\n            self.lecture[0].animate.set_color(GRAY),\n            self.lecture[1].animate.set_color(COLOR_BLUE),\n            run_time=0.5\n        )\n\n        # Clear formula to make space for sorting\n        self.play(FadeOut(formula))\n\n        # Initial numbers 1-16\n        nums = VGroup(*[Text(str(i), font_size=36) for i in range(1, 17)])\n        # Position them in a temporary central grid (area C2:F5)\n        for i, num in enumerate(nums):\n            r_idx = i // 4\n            c_idx = i % 4\n            r = [\"C\", \"D\", \"E\", \"F\"][r_idx]\n            c = [\"2\", \"3\", \"4\", \"5\"][c_idx]\n            self.place_at_grid(num, f\"{r}{c}\")\n        \n        self.play(FadeIn(nums))\n        self.wait(0.5)\n\n        # Define Lanes\n        lane_a_label = Text(\"4n + 1\", font_size=28, color=COLOR_BLUE)\n        lane_b_label = Text(\"4n + 3\", font_size=28, color=COLOR_ORANGE)\n        self.place_at_grid(lane_a_label, \"B2\")\n        self.place_at_grid(lane_b_label, \"B5\")\n\n        # Sort numbers into lanes\n        lane_a_indices = [0, 4, 8, 12]\n        lane_b_indices = [2, 6, 10, 14]\n        other_indices = [i for i in range(16) if i not in (lane_a_indices + lane_b_indices)]\n\n        # Move targets\n        move_animations = []\n        for i, idx in enumerate(lane_a_indices):\n            target_pos = self.grid[f\"{['C', 'D', 'E', 'F'][i]}2\"]\n            move_animations.append(nums[idx].animate.move_to(target_pos).set_color(COLOR_BLUE))\n        \n        for i, idx in enumerate(lane_b_indices):\n            target_pos = self.grid[f\"{['C', 'D', 'E', 'F'][i]}5\"]\n            move_animations.append(nums[idx].animate.move_to(target_pos).set_color(COLOR_ORANGE))\n\n        self.play(\n            FadeIn(lane_a_label),\n            FadeIn(lane_b_label),\n            *move_animations,\n            *[FadeOut(nums[idx]) for idx in other_indices],\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Transition Line Highlight\n        self.play(\n            self.lecture[1].animate.set_color(GRAY),\n            self.lecture[2].animate.set_color(COLOR_GOLD),\n            run_time=0.5\n        )\n\n        # Primes highlight: 5, 13 (A) and 3, 7, 11 (B)\n        # indices in nums: 4, 12 and 2, 6, 10\n        prime_indices = [4, 12, 2, 6, 10]\n        boxes = VGroup()\n        for idx in prime_indices:\n            box = SurroundingRectangle(nums[idx], color=COLOR_GOLD, buff=0.1)\n            boxes.add(box)\n\n        self.play(Create(boxes))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\nimport random\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Section 3: Dirichlet’s Theorem: The Infinite Paths\n        title = \"Dirichlet’s Theorem: The Infinite Paths\"\n        lines = [\n            \"Dirichlet proved certain paths contain infinite primes.\",\n            \"If a and b share no factors, primes never stop.\",\n            \"No matter how far we travel, the sparks continue.\",\n            \"Primes are distributed fairly across all valid lanes.\",\n            \"This infinite supply ensures a balanced number universe.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        COLOR_BLUE = \"#ADD8E6\"\n        COLOR_ORANGE = \"#FFCC99\"\n        COLOR_GOLD = \"#FFD700\"\n        COLOR_WHITE = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(COLOR_BLUE)\n        \n        # Display the formula 'an + b' with 'gcd(a, b) = 1'\n        # Fixed: Replaced MathTex with Text to avoid FileNotFoundError: 'latex'\n        formula = Text(\"an + b\", color=COLOR_WHITE)\n        condition = Text(\"gcd(a, b) = 1\", color=COLOR_WHITE)\n        formula_group = VGroup(formula, condition).arrange(DOWN, buff=0.2)\n        self.place_in_area(formula_group, \"A2\", \"A5\", scale_factor=0.8)\n        \n        self.play(Write(formula_group))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(COLOR_ORANGE)\n        \n        # Vanishing point near bottom right area\n        v_point = self.grid[\"F6\"] + RIGHT*1.5 + DOWN*0.5\n        \n        # Starting points for two parallel paths (in perspective)\n        # Path 1 (Blue)\n        p1_top_left = self.grid[\"B1\"] + LEFT*0.5\n        p1_top_right = self.grid[\"B2\"] + LEFT*0.2\n        path1 = Polygon(p1_top_left, p1_top_right, v_point, v_point, \n                        fill_opacity=0.3, fill_color=COLOR_BLUE, stroke_width=1, stroke_color=COLOR_BLUE)\n        \n        # Path 2 (Orange)\n        p2_top_left = self.grid[\"B4\"] + RIGHT*0.2\n        p2_top_right = self.grid[\"B5\"] + RIGHT*0.5\n        path2 = Polygon(p2_top_left, p2_top_right, v_point, v_point, \n                        fill_opacity=0.3, fill_color=COLOR_ORANGE, stroke_width=1, stroke_color=COLOR_ORANGE)\n\n        self.play(Create(path1), Create(path2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(COLOR_GOLD)\n        \n        # Many small golden sparks appear randomly along both paths\n        sparks = VGroup()\n        for _ in range(40):\n            # Blue path sparks\n            alpha = random.random()\n            side = random.uniform(0, 1)\n            # Linear interpolation towards vanishing point\n            start_l = p1_top_left\n            start_r = p1_top_right\n            pos_l = start_l * (1-alpha) + v_point * alpha\n            pos_r = start_r * (1-alpha) + v_point * alpha\n            pos = pos_l * (1-side) + pos_r * side\n            spark = Dot(pos, radius=0.03, color=COLOR_GOLD)\n            sparks.add(spark)\n            \n            # Orange path sparks\n            alpha2 = random.random()\n            side2 = random.uniform(0, 1)\n            start_l2 = p2_top_left\n            start_r2 = p2_top_right\n            pos_l2 = start_l2 * (1-alpha2) + v_point * alpha2\n            pos_r2 = start_r2 * (1-alpha2) + v_point * alpha2\n            pos2 = pos_l2 * (1-side2) + pos_r2 * side2\n            spark2 = Dot(pos2, radius=0.03, color=COLOR_GOLD)\n            sparks.add(spark2)\n\n        self.play(FadeIn(sparks, lag_ratio=0.1))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(COLOR_BLUE)\n        \n        # Prime Scout zooms at high speed down the blue path\n        scout = Dot(p1_top_left * 0.5 + p1_top_right * 0.5, radius=0.1, color=COLOR_GOLD)\n        scout.add_updater(lambda m, dt: m.set_opacity(random.uniform(0.6, 1.0))) # Sparkle effect\n        \n        self.add(scout)\n        self.play(\n            scout.animate.move_to(v_point).set_scale(0.1),\n            run_time=2,\n            rate_func=exponential_decay\n        )\n        self.remove(scout)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(COLOR_WHITE)\n        \n        # 'Infinitely Many Primes' in glowing white\n        inf_text = Text(\"Infinitely Many Primes\", font_size=32, color=COLOR_WHITE)\n        self.place_in_area(inf_text, \"C2\", \"D5\")\n        \n        glow = inf_text.copy().set_stroke(COLOR_WHITE, 8).set_opacity(0.3)\n        inf_group = VGroup(glow, inf_text)\n        \n        self.play(FadeIn(inf_group, scale=1.2))\n        self.play(inf_group.animate.scale(1.1), rate_func=there_and_back, run_time=2)\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Setup the standard layout\n        lecture_lines = [\n            \"Subtle biases exist between different prime lanes.\",\n            \"The Leibniz formula links these lanes to geometry.\",\n            \"Alternating between lanes creates an unexpected balance.\",\n            \"Summing and subtracting these fractions leads to Pi.\",\n            \"Discrete prime patterns reveal a hidden circular nature.\"\n        ]\n        self.setup_layout(\"The Prime Race and the Bridge to Pi\", lecture_lines)\n\n        # Pre-define colors\n        SILVER = \"#C0C0C0\"\n        GREEN = \"#00FF00\"\n        HIGHLIGHT = YELLOW\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(HIGHLIGHT)\n        \n        # Create scale components\n        pivot = Triangle(color=SILVER).scale(0.3)\n        self.place_in_area(pivot, \"F3\", \"F4\")\n        \n        beam = Line(LEFT*2.5, RIGHT*2.5, color=SILVER, stroke_width=6)\n        self.place_in_area(beam, \"D2\", \"D5\")\n        \n        # Pans\n        left_pan = VGroup(\n            Line(ORIGIN, DOWN*0.8, color=SILVER),\n            Arc(radius=0.8, start_angle=PI, angle=PI, color=SILVER)\n        ).shift(beam.get_left())\n        \n        right_pan = VGroup(\n            Line(ORIGIN, DOWN*0.8, color=SILVER),\n            Arc(radius=0.8, start_angle=PI, angle=PI, color=SILVER)\n        ).shift(beam.get_right())\n        \n        scale_group = VGroup(pivot, beam, left_pan, right_pan)\n        self.play(Create(scale_group), run_time=1.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(HIGHLIGHT)\n        \n        # Leibniz formula above the scale - Replaced MathTex with Text due to environment missing LaTeX\n        formula = Text(\"π/4 = 1 - 1/3 + 1/5 - 1/7 + ...\", color=WHITE, font_size=28)\n        self.place_in_area(formula, \"A2\", \"B5\", scale_factor=0.9)\n        \n        self.play(Write(formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(HIGHLIGHT)\n        \n        # Term dropping - Batch 1 - Replaced MathTex with Text\n        term_1 = Text(\"1\", font_size=36)\n        term_1_3 = Text(\"1/3\", font_size=36)\n        \n        self.place_in_area(term_1, \"B1\", \"B2\")\n        self.place_in_area(term_1_3, \"B5\", \"B6\")\n        \n        # Drop to pans\n        pan_l_pos = left_pan.get_center() + DOWN*0.2\n        pan_r_pos = right_pan.get_center() + DOWN*0.2\n        \n        self.play(\n            term_1.animate.move_to(pan_l_pos),\n            term_1_3.animate.move_to(pan_r_pos),\n            run_time=1\n        )\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(HIGHLIGHT)\n        \n        # Term dropping - Batch 2 - Replaced MathTex with Text\n        term_1_5 = Text(\"1/5\", font_size=32)\n        term_1_9 = Text(\"1/9\", font_size=32)\n        term_1_7 = Text(\"1/7\", font_size=32)\n        term_1_11 = Text(\"1/11\", font_size=32)\n        \n        # Initial positions above pans\n        self.place_in_area(term_1_5, \"B1\", \"B2\")\n        self.place_in_area(term_1_9, \"C1\", \"C2\")\n        self.place_in_area(term_1_7, \"B5\", \"B6\")\n        self.place_in_area(term_1_11, \"C5\", \"C6\")\n        \n        # Drop them sequentially but quickly\n        self.play(\n            term_1_5.animate.move_to(pan_l_pos + UP*0.2),\n            term_1_7.animate.move_to(pan_r_pos + UP*0.2),\n            run_time=0.8\n        )\n        self.play(\n            term_1_9.animate.move_to(pan_l_pos + UP*0.4),\n            term_1_11.animate.move_to(pan_r_pos + UP*0.4),\n            run_time=0.8\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(HIGHLIGHT)\n        \n        # Final result label\n        result_label = Text(\"Result: π/4\", color=GREEN, font_size=24)\n        self.place_at_grid(result_label, \"F4\", scale_factor=0.8)\n        result_label.shift(UP * 0.3 + RIGHT * 0.5) # Fine tune near pivot\n        \n        # Gentle bounce of the scale to indicate balancing\n        self.play(\n            beam.animate.rotate(0.05, about_point=pivot.get_top()),\n            VGroup(left_pan, term_1, term_1_5, term_1_9).animate.shift(UP*0.1),\n            VGroup(right_pan, term_1_3, term_1_7, term_1_11).animate.shift(DOWN*0.1),\n            run_time=0.5, rate_func=wiggle\n        )\n        \n        self.play(FadeIn(result_label))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Setup layout\n        title = \"Visual Synthesis: Primes Constructing a Circle\"\n        lines = [\n            \"Straight lanes bend to form a perfect unit circle.\",\n            \"Prime frequencies dictate the radius of this geometry.\",\n            \"Pi emerges as the architect of prime distribution.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Define common positions\n        center_area = self.place_in_area(Dot(radius=0), \"A1\", \"F6\").get_center()\n\n        # === Animation for Lecture Line 1 ===\n        # Straight lanes bend to form a perfect unit circle.\n        self.lecture[0].set_color(YELLOW)\n        \n        # Create two horizontal lines (representing Dirichlet's lanes)\n        lane_top = Line(center_area + LEFT * 2 + UP * 0.5, center_area + RIGHT * 2 + UP * 0.5, color=WHITE)\n        lane_bottom = Line(center_area + LEFT * 2 + DOWN * 0.5, center_area + RIGHT * 2 + DOWN * 0.5, color=WHITE)\n        \n        self.play(Create(lane_top), Create(lane_bottom))\n        self.wait(1)\n\n        # Arcs representing the bending paths\n        arc_top = Arc(radius=1.5, start_angle=0, angle=PI, color=WHITE).move_to(center_area)\n        arc_bottom = Arc(radius=1.5, start_angle=PI, angle=PI, color=WHITE).move_to(center_area)\n        \n        # Transition from straight lanes to arcs\n        self.play(\n            ReplacementTransform(lane_top, arc_top),\n            ReplacementTransform(lane_bottom, arc_bottom),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Prime frequencies dictate the radius of this geometry.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n\n        # Full circle (Paths join)\n        full_circle = Circle(radius=1.5, color=WHITE).move_to(center_area)\n        self.add(full_circle)\n        self.remove(arc_top, arc_bottom)\n\n        # Radius vector\n        radius_vector = Line(center_area, center_area + RIGHT * 1.5, color=\"#FF0000\", stroke_width=4)\n        # Using Text instead of MathTex to avoid FileNotFoundError: 'latex'\n        radius_label = Text(\"r\", color=\"#FF0000\", slant=ITALIC).scale(0.8)\n        \n        # Helper to update label position based on vector\n        def update_label(label):\n            label.move_to(radius_vector.get_end() + radius_vector.get_unit_vector() * 0.3)\n\n        radius_label.add_updater(update_label)\n\n        self.play(Create(radius_vector), Write(radius_label))\n        \n        # Sweep radius vector\n        angle_tracker = ValueTracker(0)\n        radius_vector.add_updater(lambda m: m.set_angle(angle_tracker.get_value()))\n        \n        self.play(angle_tracker.animate.set_value(2 * PI), run_time=3, rate_func=linear)\n        self.wait(1)\n        radius_label.remove_updater(update_label)\n\n        # === Animation for Lecture Line 3 ===\n        # Pi emerges as the architect of prime distribution.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n\n        # Flash text \"Primes Construct Pi\"\n        flash_text = Text(\"Primes Construct Pi\", font_size=32, color=WHITE)\n        self.place_in_area(flash_text, \"C2\", \"D5\")\n        \n        self.play(FadeIn(flash_text))\n        self.play(Indicate(flash_text, color=WHITE, scale_factor=1.1))\n        self.wait(1)\n        self.play(FadeOut(flash_text))\n\n        # Golden Pi symbol - Using Text with Unicode to avoid LaTeX dependency\n        pi_symbol = Text(\"π\", color=\"#FFD700\").scale(4)\n        self.place_in_area(pi_symbol, \"B2\", \"E5\")\n        \n        # Glowing effect simulated with a faint outer Pi\n        pi_glow = Text(\"π\", color=\"#FFD700\").scale(4.2).set_opacity(0.3)\n        self.place_in_area(pi_glow, \"B2\", \"E5\")\n\n        self.play(\n            FadeOut(full_circle),\n            FadeOut(radius_vector),\n            FadeOut(radius_label),\n            FadeIn(pi_symbol),\n            FadeIn(pi_glow),\n            run_time=2\n        )\n        \n        # Final subtle scaling/pulse for the Pi symbol\n        self.play(\n            pi_symbol.animate.scale(1.1),\n            pi_glow.animate.scale(1.2).set_opacity(0.1),\n            rate_func=there_and_back,\n            run_time=2\n        )\n        \n        self.wait(2)\n"
+  ],
+  "outline": {
+    "topic": "The Secret Geometry of Primes: From Dirichlet's Theorem to the Approximation of Pi",
+    "target_audience": "Undergraduate students or advanced high school mathematics enthusiasts",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Prime Atoms and the Number Line",
+        "content": "Introduce primes as the indivisible 'atoms' of the number system. Visualize the number line as a long digital highway where prime numbers light up like neon signs. This sets the stage for searching for patterns in their seemingly random distribution.",
+        "example": "A 'Prime Scout' robot travels along a glowing 3D number line, tagging numbers like 2, 3, 5, and 7 with golden sparks, while composite numbers remain dim."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: Building Arithmetic Progressions",
+        "content": "Explain the concept of arithmetic progressions (sequences with a constant difference) of the form 'an + b'. Use a graphical 'sieve' to show how numbers can be sorted into different 'lanes' or tracks based on their remainders when divided by a fixed number.",
+        "example": "Visualize two parallel conveyor belts: Lane A (4n + 1) containing 1, 5, 9, 13... and Lane B (4n + 3) containing 3, 7, 11, 15... Show that primes appear in both lanes."
+      },
+      {
+        "id": "section_3",
+        "title": "Dirichlet’s Theorem: The Infinite Paths",
+        "content": "Introduce Dirichlet’s Theorem on Arithmetic Progressions. State the core idea: if 'a' and 'b' have no common factors, the sequence 'an + b' contains infinitely many primes. Graphically represent this as the 'Prime Scout' finding an endless supply of golden sparks no matter which valid lane it chooses.",
+        "example": "Compare the 4n+1 lane and 4n+3 lane. Dirichlet proves that even if we travel to infinity, both lanes will never run out of prime 'sparks,' ensuring a fair distribution across the number universe."
+      },
+      {
+        "id": "section_4",
+        "title": "The Prime Race and the Bridge to Pi",
+        "content": "Explore the 'bias' in prime distribution. While both lanes are infinite, there is a subtle relationship between them. Introduce the Leibniz formula for Pi (1 - 1/3 + 1/5 - 1/7...) which connects the alternating count of numbers in these two prime-rich lanes to the geometry of a circle.",
+        "example": "Show a scale balance. On one side, we place '1' and '1/5' (from the 4n+1 lane); on the other, we subtract '1/3' and '1/7' (from the 4n+3 lane). As the calculation continues, the balance point settles exactly at π/4."
+      },
+      {
+        "id": "section_5",
+        "title": "Visual Synthesis: Primes Constructing a Circle",
+        "content": "Summarize how the discrete, 'jagged' world of prime patterns (Dirichlet's lanes) unexpectedly constructs the smooth, perfect curve of Pi. Use a final animation showing the alternating sums of these prime-based sequences transforming into a rotating unit circle.",
+        "example": "The 'Prime Scout' robot finishes its journey by bending the two straight conveyor belts into a circle. The frequency of primes found in Dirichlet's lanes dictates the radius, revealing Pi as the hidden architect of prime distribution."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Prime Atoms and the Number Line",
+      "lecture_lines": [
+        "Imagine the number line as a digital highway.",
+        "Our Prime Scout travels this road searching for atoms.",
+        "Primes like 2, 3, and 5 ignite like gold.",
+        "Non-primes fade away, leaving only the fundamental building blocks.",
+        "Zooming out reveals a vast field of prime sparks."
+      ],
+      "animations": [
+        "Create a white (#FFFFFF) horizontal line with tick marks from 1 to 10.",
+        "A golden dot (#FFD700) representing the 'Prime Scout' appears at 1 and begins moving right.",
+        "As the Scout hits 2, 3, 5, and 7, these numbers flash gold (#FFD700) and grow larger.",
+        "Composite numbers like 4, 6, 8, and 9 fade to a dim gray (#808080).",
+        "Zoom out and pan right to reveal a dense trail of golden sparks across the line."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: Building Arithmetic Progressions",
+      "lecture_lines": [
+        "We sort numbers into lanes based on their remainders.",
+        "Compare the 4n plus 1 and 4n plus 3 tracks.",
+        "Primes appear in both lanes following distinct arithmetic paths."
+      ],
+      "animations": [
+        "Sort the numbers 1 through 16 into two vertical columns.",
+        "Color the 4n+1 column light blue (#ADD8E6) and 4n+3 column light orange (#FFCC99).",
+        "Highlight primes 5, 13 in blue and 3, 7, 11 in orange with gold boxes (#FFD700)."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "Dirichlet’s Theorem: The Infinite Paths",
+      "lecture_lines": [
+        "Dirichlet’s formula identifies paths where primes never end.",
+        "These lanes stretch infinitely into the number universe.",
+        "Both tracks are populated by an endless supply of sparks.",
+        "No matter how far we travel, primes remain abundant.",
+        "These arithmetic paths contain infinitely many primes."
+      ],
+      "animations": [
+        "Display the formula 'an + b' with 'gcd(a, b) = 1' in white (#FFFFFF) at the top.",
+        "Draw two parallel paths (#ADD8E6 and #FFCC99) stretching toward a distant vanishing point.",
+        "Many small golden sparks (#FFD700) appear randomly along both paths to the horizon.",
+        "The Prime Scout [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/scout.svg] (#FFD700) zooms at high speed down the blue path into the distance.",
+        "The words 'Infinitely Many Primes' appear in glowing white (#FFFFFF) in the center."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Prime Race and the Bridge to Pi",
+      "lecture_lines": [
+        "A subtle balance exists between these two prime lanes.",
+        "Alternating fractions from each track create a harmonic sum.",
+        "This series converges exactly to Pi over four."
+      ],
+      "animations": [
+        "Show a silver (#C0C0C0) balance scale with the Leibniz formula appearing above it.",
+        "Drop terms 1, 1/5, 1/9 onto the left pan and 1/3, 1/7, 1/11 onto the right pan.",
+        "The scale balances and a label 'Result: π/4' appears in green (#00FF00) at the pivot."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Visual Synthesis: Primes Constructing a Circle",
+      "lecture_lines": [
+        "The straight lanes of arithmetic now bend and curve.",
+        "They join to form the perfect geometry of a circle.",
+        "A sweeping radius measures this newfound circular unity.",
+        "Pi emerges as the hidden architect of prime distribution.",
+        "Discrete numbers finally reveal their smooth, eternal nature."
+      ],
+      "animations": [
+        "The two straight paths from before start curving toward each other.",
+        "The paths join to form a perfect white (#FFFFFF) unit circle.",
+        "A red radius vector (#FF0000) sweeps around the interior of the circle.",
+        "Text 'Primes Construct Pi' flashes in the center in white (#FFFFFF).",
+        "The circle fades, leaving a large, glowing golden (#FFD700) π symbol."
+      ]
+    }
+  ],
+  "turns_run": 1,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 5 animation steps for the key section and requested matching lines from ScriptWriter."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated the Manim code for Section 1, including the Prime Scout animation, prime flashing, and the zoom-out effect to reveal more primes. Adhered to the grid system and color constraints."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 3 animation steps and requested matching lines from ScriptWriter."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Content for Section 2 (Arithmetic Progressions) is ready. Implementing 3-step animation: formula display, number sorting into 4n+1 and 4n+3 lanes, and prime highlighting with gold boxes. Using designated grid system and hex colors (#ADD8E6, #FFCC99, #FFD700)."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section_3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 5 animation steps for the key section and requested matching lines from ScriptWriter."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Section 3 code completed. Implemented perspective paths, random golden sparks, and the Prime Scout animation. Formula and final text positioned using the grid system. All lecture lines are color-synced."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section_4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 3 animation steps and requested matching lines from ScriptWriter."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated full Manim code for Section 4, implementing the balance scale animation with the Leibniz formula and alternating prime lanes terms as requested. Used the mandated grid system and TeachingScene base class."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 5 animation steps for the key section and requested matching lines from ScriptWriter."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented Section 5 with all lecture lines, grid-based positioning, and specified animations including the lane-to-circle transformation, radius sweep, and final golden Pi symbol transition."
+    },
+    {
+      "id": 16,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines have been generated for all sections. Please design animation steps that closely correspond to each lecture point, ensuring one animation stage per lecture line. Section 3 and 4 have 5 stages; others have 3.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "AnimationPlanner has provided specific stage requirements for each section in issues 17-21."
+    },
+    {
+      "id": 17,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Please write 5 concise lecture lines (max 10 words each) that align with the animation stages: 1. Number line setup, 2. Prime Scout movement, 3. Primes lighting up, 4. Composite numbers dimming, 5. Infinite field of sparks.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated section_1 lecture lines to align with the 5 requested animation stages. Each line is under 10 words."
+    },
+    {
+      "id": 18,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Please write 3 concise lecture lines (max 10 words each) that align with the animation stages: 1. Numbers sorting into lanes, 2. Lanes labeled 4n+1 and 4n+3, 3. Primes highlighted in both lanes.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated section_2 lecture lines to align with the 3 requested animation stages. Each line is under 10 words."
+    },
+    {
+      "id": 19,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Please write 5 concise lecture lines (max 10 words each) that align with the animation stages: 1. Dirichlet formula, 2. Parallel lanes to infinity, 3. Sparks populating lanes, 4. Scout zooming, 5. Infinite primes message.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated section_3 lecture lines to align with the 5 requested animation stages. Each line is under 10 words."
+    },
+    {
+      "id": 20,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Please write 3 concise lecture lines (max 10 words each) that align with the animation stages: 1. Balance scale and formula, 2. Alternating terms as weights, 3. Resulting value pi/4.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated section_4 lecture lines to align with the 3 requested animation stages. Each line is under 10 words."
+    },
+    {
+      "id": 21,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Please write 5 concise lecture lines (max 10 words each) that align with the animation stages: 1. Lanes bending, 2. Circle formation, 3. Radius vector, 4. Pi revealed as architect, 5. Closing gold Pi symbol.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated section_5 lecture lines to align with the 5 requested animation stages. Each line is under 10 words."
+    },
+    {
+      "id": 22,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['The Prime Scout [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/scout.svg] (#FFD700) zooms at high speed down the blue path into the distance.']",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260402_075435/5-The_Secret_Geometry_of_Primes_From_Dirichlets_Theorem_to_the_Approximation_of_Pi/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260402_075435/5-The_Secret_Geometry_of_Primes_From_Dirichlets_Theorem_to_the_Approximation_of_Pi/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260402_075435/5-The_Secret_Geometry_of_Primes_From_Dirichlets_Theorem_to_the_Approximation_of_Pi/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260402_075435/5-The_Secret_Geometry_of_Primes_From_Dirichlets_Theorem_to_the_Approximation_of_Pi/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260402_075435/5-The_Secret_Geometry_of_Primes_From_Dirichlets_Theorem_to_the_Approximation_of_Pi/media/videos/section_5/480p15/Section5Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "run_output_dir": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260402_075435/5-The_Secret_Geometry_of_Primes_From_Dirichlets_Theorem_to_the_Approximation_of_Pi",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 140837,
+      "completion_tokens": 23623,
+      "total_tokens": 216852,
+      "call_count": 27
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 282,
+        "completion_tokens": 826,
+        "total_tokens": 1915,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 10522,
+        "completion_tokens": 434,
+        "total_tokens": 11144,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 7863,
+        "completion_tokens": 328,
+        "total_tokens": 8434,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 6869,
+        "completion_tokens": 299,
+        "total_tokens": 7497,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 6658,
+        "completion_tokens": 2113,
+        "total_tokens": 8834,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 6159,
+        "completion_tokens": 2042,
+        "total_tokens": 8472,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 6816,
+        "completion_tokens": 2268,
+        "total_tokens": 9537,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 9788,
+        "completion_tokens": 1999,
+        "total_tokens": 12329,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 9126,
+        "completion_tokens": 2221,
+        "total_tokens": 11482,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 3614,
+        "completion_tokens": 515,
+        "total_tokens": 13092,
+        "call_count": 10
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 9864,
+        "completion_tokens": 1705,
+        "total_tokens": 15245,
+        "call_count": 1
+      },
+      "scope_refine:section_1": {
+        "prompt_tokens": 13701,
+        "completion_tokens": 2021,
+        "total_tokens": 20679,
+        "call_count": 1
+      },
+      "scope_refine:section_3": {
+        "prompt_tokens": 9915,
+        "completion_tokens": 2079,
+        "total_tokens": 18270,
+        "call_count": 1
+      },
+      "scope_refine:section_5": {
+        "prompt_tokens": 19577,
+        "completion_tokens": 2245,
+        "total_tokens": 34501,
+        "call_count": 2
+      },
+      "scope_refine:section_4": {
+        "prompt_tokens": 20083,
+        "completion_tokens": 2528,
+        "total_tokens": 35421,
+        "call_count": 2
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 140837,
+        "completion_tokens": 23623,
+        "total_tokens": 216852,
+        "call_count": 27
+      }
+    }
+  }
+}

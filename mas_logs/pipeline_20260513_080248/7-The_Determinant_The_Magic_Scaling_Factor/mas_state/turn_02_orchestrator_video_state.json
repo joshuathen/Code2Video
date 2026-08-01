@@ -1,0 +1,1264 @@
+{
+  "topic": "The Determinant: The Magic Scaling Factor",
+  "target_audience": "University students (Introductory Linear Algebra) or Advanced High School students",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Initial Setup\n        title = \"The Hook: The Morphing Canvas\"\n        lines = [\n            \"Imagine Pixel the Cat sitting on a unit grid.\",\n            \"A matrix transformation tilts and stretches the entire space.\",\n            \"Pixel’s shape changes, becoming taller, thinner, or slanted.\",\n            \"The determinant measures the change in Pixel’s total area.\",\n            \"It is the scaling factor for every shape in space.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors for highlights\n        color_cat = \"#FFFFFF\"\n        color_grid = \"#444444\"\n        color_area = \"#FFFF00\"\n        color_line_active = \"#FFFF00\"\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(color_line_active))\n        \n        # Create a simple \"Pixel the Cat\" character\n        cat_head = Circle(radius=0.3, color=WHITE, fill_opacity=1)\n        cat_ear_l = Triangle(color=WHITE, fill_opacity=1).scale(0.1).rotate(30*DEGREES).move_to(cat_head.get_top() + LEFT*0.15 + UP*0.05)\n        cat_ear_r = Triangle(color=WHITE, fill_opacity=1).scale(0.1).rotate(-30*DEGREES).move_to(cat_head.get_top() + RIGHT*0.15 + UP*0.05)\n        cat_eye_l = Dot(radius=0.04, color=BLACK).move_to(cat_head.get_center() + LEFT*0.1 + UP*0.05)\n        cat_eye_r = Dot(radius=0.04, color=BLACK).move_to(cat_head.get_center() + RIGHT*0.1 + UP*0.05)\n        cat_smile = Arc(radius=0.1, start_angle=200*DEGREES, angle=140*DEGREES, color=BLACK).move_to(cat_head.get_center() + DOWN*0.1)\n        pixel_cat = VGroup(cat_head, cat_ear_l, cat_ear_r, cat_eye_l, cat_eye_r, cat_smile)\n        \n        # Unit square grid representation\n        # We define a localized coordinate system for the transformation math\n        grid_origin = np.array([0, 0, 0])\n        unit_square = Rectangle(height=1.0, width=1.0, stroke_color=WHITE, stroke_width=2).move_to([0.5, 0.5, 0])\n        \n        # Background grid (visual only)\n        bg_grid = VGroup()\n        for i in range(-2, 4):\n            bg_grid.add(Line([i, -2, 0], [i, 3, 0], color=color_grid, stroke_width=1))\n            bg_grid.add(Line([-2, i, 0], [3, i, 0], color=color_grid, stroke_width=1))\n\n        workspace = VGroup(bg_grid, unit_square, pixel_cat)\n        # Position workspace in the C3 area as origin center\n        self.place_in_area(workspace, \"B2\", \"E5\", scale_factor=0.8)\n        \n        # Adjust cat initial position relative to the local square\n        # In setup, cat is at center of group, let's place it at 0.5, 0.5 locally\n        pixel_cat.move_to(unit_square.get_center())\n\n        self.play(FadeIn(bg_grid), Create(unit_square))\n        self.play(FadeIn(pixel_cat))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(color_line_active)\n        )\n        \n        # Matrix [[2, 1], [0.5, 1.5]]\n        matrix = [[2, 1], [0.5, 1.5]]\n        \n        # Transformation animation\n        # We manually transform the points to avoid apply_matrix complications with grid-placed groups\n        def transform_point(p):\n            # p is [x, y, z] relative to the world\n            # Shift back to local origin (workspace center before transform was at B2-E5 center)\n            center = self.grid[\"C3\"] + [0.5, -0.5, 0] # Rough visual center estimate\n            # More reliable: use the workspace's original center\n            local_p = p - workspace.get_center()\n            transformed_x = matrix[0][0] * local_p[0] + matrix[1][0] * local_p[1]\n            transformed_y = matrix[0][1] * local_p[0] + matrix[1][1] * local_p[1]\n            return np.array([transformed_x, transformed_y, 0]) + workspace.get_center()\n\n        self.play(\n            workspace.animate.apply_matrix(np.array([[2, 1], [0.5, 1.5]]).T),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(color_line_active)\n        )\n        # Emphasis on the stretched Pixel\n        self.play(pixel_cat.animate.set_stroke(width=2, color=YELLOW), run_time=0.5)\n        self.play(pixel_cat.animate.set_stroke(width=0, color=WHITE), run_time=0.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(color_line_active)\n        )\n        \n        # Highlight transformed square area\n        # The unit_square is now a parallelogram. We'll fill its interior.\n        filled_area = unit_square.copy().set_fill(color_area, opacity=0.3).set_stroke(width=0)\n        \n        question_mark = Text(\"?\", font_size=48, color=color_area)\n        self.place_at_grid(question_mark, \"C4\")\n        \n        self.play(FadeIn(filled_area))\n        self.play(Write(question_mark))\n        \n        # Pulse effect\n        self.play(question_mark.animate.scale(1.3), run_time=0.5, rate_func=there_and_back)\n        self.play(question_mark.animate.scale(1.3), run_time=0.5, rate_func=there_and_back)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(color_line_active)\n        )\n        \n        # Generalizing: add a second shape (small circle) to show it scales too\n        extra_shape = Circle(radius=0.2, color=BLUE, fill_opacity=0.5)\n        self.place_at_grid(extra_shape, \"D2\")\n        self.play(FadeIn(extra_shape))\n        self.play(extra_shape.animate.apply_matrix(np.array([[2, 1], [0.5, 1.5]]).T))\n        \n        self.wait(2)\n        self.play(FadeOut(question_mark), FadeOut(filled_area), FadeOut(extra_shape))\n        self.play(self.lecture[4].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Setup layout\n        title = \"Prerequisite Knowledge: The Basis Vectors\"\n        lines = [\n            \"Basis vectors i-hat and j-hat define the unit square.\", \n            \"The matrix tells us where these vectors land.\", \n            \"Their new positions determine the transformation's resulting area.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Anchors and points\n        origin = self.grid[\"D2\"]\n        \n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        \n        # Basis vectors\n        i_hat = Arrow(origin, self.grid[\"D3\"], buff=0, color=\"#FF0000\", stroke_width=4)\n        j_hat = Arrow(origin, self.grid[\"C2\"], buff=0, color=\"#00FF00\", stroke_width=4)\n        \n        # Labels\n        i_label = Text(\"i-hat\", font_size=16, color=\"#FF0000\")\n        self.place_at_grid(i_label, \"E3\")\n        \n        j_label = Text(\"j-hat\", font_size=16, color=\"#00FF00\")\n        self.place_at_grid(j_label, \"C1\")\n        \n        # Unit square\n        unit_square = Rectangle(width=1, height=1, color=\"#FFFFFF\")\n        unit_square.set_style(stroke_width=2)\n        unit_square = DashedVMobject(unit_square)\n        self.place_in_area(unit_square, \"C2\", \"D3\")\n        \n        self.play(\n            GrowArrow(i_hat),\n            GrowArrow(j_hat),\n            FadeIn(i_label),\n            FadeIn(j_label),\n            Create(unit_square),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW)\n        )\n        \n        # Matrix components target positions\n        # i-hat moves to (3,0) -> D5\n        # j-hat moves to (0,2) -> B2\n        target_i = Arrow(origin, self.grid[\"D5\"], buff=0, color=\"#FF0000\", stroke_width=4)\n        target_j = Arrow(origin, self.grid[\"B2\"], buff=0, color=\"#00FF00\", stroke_width=4)\n        \n        # Labels target positions\n        target_i_label = Text(\"i-hat\", font_size=16, color=\"#FF0000\")\n        self.place_at_grid(target_i_label, \"E5\")\n        \n        target_j_label = Text(\"j-hat\", font_size=16, color=\"#00FF00\")\n        self.place_at_grid(target_j_label, \"B1\")\n        \n        # Transformed rectangle\n        # Rectangle starts at origin, width 3, height 2. Top-left B2, bottom-right D5\n        transformed_rect = Rectangle(width=3, height=2, color=\"#FFFFFF\")\n        transformed_rect.set_style(stroke_width=3, fill_opacity=0.2)\n        self.place_in_area(transformed_rect, \"B2\", \"D5\")\n\n        self.play(\n            Transform(i_hat, target_i),\n            Transform(j_hat, target_j),\n            Transform(i_label, target_i_label),\n            Transform(j_label, target_j_label),\n            ReplacementTransform(unit_square, transformed_rect),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW)\n        )\n        \n        # Highlighting the final area\n        area_text = Text(\"Area = 6\", font_size=20, color=WHITE)\n        self.place_at_grid(area_text, \"C4\") # Center of the transformed area\n        \n        self.play(\n            transformed_rect.animate.set_stroke(color=YELLOW, width=5),\n            Write(area_text),\n            run_time=1.5\n        )\n        self.wait(2)\n        \n        # Final cleanup highlight\n        self.play(self.lecture[2].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Define the lecture script\n        lecture_lines = [\n            'The determinant is the factor by which areas scale.', \n            \"If it's six, every shape's area is now sixfold.\", \n            \"This value represents the transformation's geometric scaling power.\"\n        ]\n        \n        # Initialize layout\n        self.setup_layout(\"Defining the Determinant Geometrically\", lecture_lines)\n        \n        # Matrix to be used for transformations: [[3, 1], [0, 2]]\n        # In Manim's 3D coordinate system, we extend it with [0, 0, 1] for the z-axis.\n        trans_matrix = [[3, 1, 0], [0, 2, 0], [0, 0, 1]]\n        yellow_hex = \"#FFFF00\"\n        blue_hex = BLUE_B\n        \n        # === Animation for Lecture Line 1 ===\n        # Color match for lecture text\n        self.lecture[0].set_color(blue_hex)\n        \n        # Highlight a unit square area\n        unit_square = Square(side_length=1.0, color=blue_hex, fill_opacity=0.4)\n        self.place_at_grid(unit_square, \"D3\")\n        \n        # Label it 'Area = 1'\n        label_1 = Text(\"Area = 1\", font_size=24, color=WHITE)\n        self.place_at_grid(label_1, \"E3\")\n        \n        self.play(\n            Create(unit_square),\n            Write(label_1),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Color match for lecture text\n        self.lecture[1].set_color(yellow_hex)\n        \n        # Transform the square into a parallelogram using matrix [[3, 1], [0, 2]]\n        # We create a new shape at origin, apply matrix, then place it at the same grid point\n        parallelogram = Square(side_length=1.0, color=yellow_hex, fill_opacity=0.4)\n        parallelogram.apply_matrix(trans_matrix)\n        self.place_at_grid(parallelogram, \"D3\")\n        \n        # Animate the label 'Area = 1' changing into 'Area = 6' (#FFFF00)\n        label_6 = Text(\"Area = 6\", font_size=24, color=yellow_hex)\n        self.place_at_grid(label_6, \"E3\")\n        \n        self.play(\n            ReplacementTransform(unit_square, parallelogram),\n            ReplacementTransform(label_1, label_6),\n            run_time=2\n        )\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 3 ===\n        # Color match for lecture text\n        self.lecture[2].set_color(yellow_hex)\n        \n        # Clean up previous shapes\n        self.play(FadeOut(parallelogram), FadeOut(label_6), run_time=0.8)\n        \n        # Draw a circle\n        circle = Circle(radius=0.5, color=blue_hex, fill_opacity=0.4)\n        self.place_at_grid(circle, \"D3\")\n        \n        # Transform it into an ellipse using the same matrix\n        ellipse = Circle(radius=0.5, color=yellow_hex, fill_opacity=0.4)\n        ellipse.apply_matrix(trans_matrix)\n        self.place_at_grid(ellipse, \"D3\")\n        \n        # Display text 'Determinant = 6' at the top of the screen in #FFFF00\n        det_label = Text(\"Determinant = 6\", font_size=32, color=yellow_hex)\n        self.place_in_area(det_label, \"A2\", \"A5\")\n        \n        self.play(Create(circle))\n        self.play(\n            ReplacementTransform(circle, ellipse),\n            Write(det_label),\n            run_time=2\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Setup Title and Lecture Lines\n        self.setup_layout(\n            \"The Calculation: The 2x2 Formula\", \n            [\n                'For a 2x2 matrix, the formula is ad minus bc.', \n                \"The product 'ad' represents the primary rectangular area.\", \n                \"Subtracting 'bc' corrects for the parallelogram's tilt.\", \n                'This simple calculation yields the exact area scaling factor.', \n                \"We use this value to understand the transformation's effect.\"\n            ]\n        )\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(\"#00FFFF\")\n        \n        # Matrix creation using Text for compatibility\n        m_a = Text(\"a\", font_size=36)\n        m_b = Text(\"b\", font_size=36)\n        m_c = Text(\"c\", font_size=36)\n        m_d = Text(\"d\", font_size=36)\n        lb = Text(\"[\", font_size=60)\n        rb = Text(\"]\", font_size=60)\n        \n        matrix_vals = VGroup(\n            VGroup(m_a, m_c).arrange(DOWN, buff=0.5),\n            VGroup(m_b, m_d).arrange(DOWN, buff=0.5)\n        ).arrange(RIGHT, buff=0.8)\n        \n        matrix_obj = VGroup(lb, matrix_vals, rb).arrange(RIGHT, buff=0.2)\n        self.place_in_area(matrix_obj, \"B1\", \"C3\", scale_factor=0.8)\n        \n        # Formula creation\n        f_a = Text(\"a\", color=\"#00FFFF\", font_size=40)\n        f_d = Text(\"d\", color=\"#00FFFF\", font_size=40)\n        f_minus = Text(\"-\", color=\"#00FFFF\", font_size=40)\n        f_b = Text(\"b\", color=\"#00FFFF\", font_size=40)\n        f_c = Text(\"c\", color=\"#00FFFF\", font_size=40)\n        formula = VGroup(f_a, f_d, f_minus, f_b, f_c).arrange(RIGHT, buff=0.2)\n        self.place_in_area(formula, \"E1\", \"F3\", scale_factor=0.9)\n        \n        self.play(FadeIn(matrix_obj), FadeIn(formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(\"#FFFF00\")\n        \n        # Visualize primary area 'ad'\n        # Coordinates for unit vectors scaled by a and d\n        # For symbolic representation, we just use a rectangle\n        rect_ad = Rectangle(width=2, height=1.5, color=\"#FFFF00\", fill_opacity=0.3)\n        self.place_in_area(rect_ad, \"B4\", \"F6\", scale_factor=0.7)\n        rect_label = Text(\"Area = ad\", font_size=20, color=\"#FFFF00\")\n        rect_label.next_to(rect_ad, UP, buff=0.2)\n        \n        self.play(\n            Create(rect_ad),\n            Write(rect_label),\n            m_a.animate.set_color(\"#FFFF00\"),\n            m_d.animate.set_color(\"#FFFF00\"),\n            f_a.animate.set_color(\"#FFFF00\"),\n            f_d.animate.set_color(\"#FFFF00\")\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(\"#FF00FF\")\n        \n        # Illustrate 'bc' tilt factor conceptually\n        tilt_arrow = CurvedArrow(rect_ad.get_corner(UR), rect_ad.get_corner(UR) + RIGHT*0.5 + DOWN*0.2, color=\"#FF00FF\")\n        tilt_text = Text(\"bc tilt\", font_size=18, color=\"#FF00FF\")\n        tilt_text.next_to(tilt_arrow, RIGHT, buff=0.1)\n        \n        self.play(\n            Create(tilt_arrow),\n            Write(tilt_text),\n            m_b.animate.set_color(\"#FF00FF\"),\n            m_c.animate.set_color(\"#FF00FF\"),\n            f_b.animate.set_color(\"#FF00FF\"),\n            f_c.animate.set_color(\"#FF00FF\")\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(\"#00FF00\")\n        \n        # Example: [[3, 1], [0, 2]]\n        ex_a, ex_b, ex_c, ex_d = \"3\", \"1\", \"0\", \"2\"\n        t_a = Text(ex_a, font_size=36, color=\"#00FF00\")\n        t_b = Text(ex_b, font_size=36, color=\"#00FF00\")\n        t_c = Text(ex_c, font_size=36, color=\"#00FF00\")\n        t_d = Text(ex_d, font_size=36, color=\"#00FF00\")\n        \n        # Numerical Formula\n        nf_a = Text(ex_a, font_size=40, color=\"#00FF00\")\n        nf_d = Text(ex_d, font_size=40, color=\"#00FF00\")\n        nf_minus = Text(\"-\", font_size=40, color=\"#00FF00\")\n        nf_b = Text(ex_b, font_size=40, color=\"#00FF00\")\n        nf_c = Text(ex_c, font_size=40, color=\"#00FF00\")\n        num_formula = VGroup(nf_a, Text(\"·\"), nf_d, nf_minus, nf_b, Text(\"·\"), nf_c).arrange(RIGHT, buff=0.15)\n        self.place_in_area(num_formula, \"E1\", \"F3\", scale_factor=0.9)\n\n        # Parallelogram for [3,0] and [1,2]\n        # We need to map coordinate space. Base 3, height 2.\n        # Shift vertices to center in grid area B4-F6\n        origin = self.grid[\"E4\"]\n        v1 = np.array([1.5, 0, 0]) # [3,0] scaled\n        v2 = np.array([0.5, 1.0, 0]) # [1,2] scaled\n        p_verts = [origin, origin + v1, origin + v1 + v2, origin + v2]\n        parallelogram = Polygon(*p_verts, color=\"#00FF00\", fill_opacity=0.4)\n        \n        self.play(\n            Transform(m_a, t_a),\n            Transform(m_b, t_b),\n            Transform(m_c, t_c),\n            Transform(m_d, t_d),\n            Transform(formula, num_formula),\n            ReplacementTransform(rect_ad, parallelogram),\n            FadeOut(rect_label),\n            FadeOut(tilt_arrow),\n            FadeOut(tilt_text)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(\"#FFFFFF\")\n        \n        result_val = Text(\"= 6\", font_size=44, color=WHITE)\n        result_val.next_to(num_formula, RIGHT, buff=0.3)\n        \n        final_label = Text(\"Area = 6\", font_size=24, color=WHITE)\n        final_label.next_to(parallelogram, UP, buff=0.2)\n        \n        self.play(\n            Write(result_val),\n            Write(final_label)\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Title and Lecture lines setup\n        title_text = \"The Sign: Negative Determinants & Orientation\"\n        lecture_lines = [\n            'A negative determinant indicates the space has been flipped.',\n            'Pixel is mirrored and now looks the other way.',\n            'The area stays positive, but the orientation is reversed.'\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors\n        COLOR_I = \"#FF0000\"  # Red\n        COLOR_J = \"#00FF00\"  # Green\n        COLOR_PIXEL = \"#FFFFFF\" # White\n        COLOR_HIGHLIGHT = \"#FF00FF\" # Magenta\n        \n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        # Create Pixel (a simple cat face looking right)\n        pixel_head = Circle(radius=0.4, color=COLOR_PIXEL, fill_opacity=0.2)\n        pixel_ear_l = Triangle(color=COLOR_PIXEL).scale(0.15).move_to(pixel_head.get_top() + LEFT*0.2 + UP*0.1)\n        pixel_ear_r = Triangle(color=COLOR_PIXEL).scale(0.15).move_to(pixel_head.get_top() + RIGHT*0.2 + UP*0.1)\n        pixel_eye_l = Dot(radius=0.04, color=COLOR_PIXEL).move_to(pixel_head.get_center() + RIGHT*0.15 + UP*0.1)\n        pixel_eye_r = Dot(radius=0.04, color=COLOR_PIXEL).move_to(pixel_head.get_center() + RIGHT*0.15 + DOWN*0.1)\n        pixel_nose = Triangle(color=COLOR_PIXEL).scale(0.08).rotate(-PI/2).move_to(pixel_head.get_right() + LEFT*0.05)\n        \n        pixel = VGroup(pixel_head, pixel_ear_l, pixel_ear_r, pixel_eye_l, pixel_eye_r, pixel_nose)\n        \n        # Basis Vectors\n        i_vec = Arrow(start=ORIGIN, end=RIGHT, buff=0, color=COLOR_I)\n        j_vec = Arrow(start=ORIGIN, end=UP, buff=0, color=COLOR_J)\n        i_label = Text(\"i\", font_size=20, color=COLOR_I).next_to(i_vec.get_end(), RIGHT, buff=0.1)\n        j_label = Text(\"j\", font_size=20, color=COLOR_J).next_to(j_vec.get_end(), UP, buff=0.1)\n        \n        world = VGroup(pixel, i_vec, j_vec, i_label, j_label)\n        self.place_in_area(world, 'B2', 'E5', scale_factor=1.2)\n        \n        # Orientation Arrow (Positive/CCW)\n        orient_arrow = Arc(radius=0.6, start_angle=0, angle=PI/2, color=WHITE)\n        orient_arrow.add_tip(tip_length=0.15)\n        orient_arrow.move_to(world.get_center())\n        \n        self.play(FadeIn(world), FadeIn(orient_arrow))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(TEAL)\n        \n        # Mirroring Matrix: [[-1, 0], [0, 1]]\n        # We manually transform the vectors and Pixel for clear visual control\n        \n        # Create flipped versions\n        pixel_flipped = pixel.copy().stretch(-1, 0) # Flip horizontally\n        i_vec_flipped = Arrow(start=ORIGIN, end=LEFT, buff=0, color=COLOR_I)\n        i_label_flipped = Text(\"i\", font_size=20, color=COLOR_I).next_to(i_vec_flipped.get_end(), LEFT, buff=0.1)\n        \n        # Position labels and pixel relative to the world center\n        world_flipped = VGroup(pixel_flipped, i_vec_flipped, j_vec.copy(), i_label_flipped, j_label.copy())\n        self.place_in_area(world_flipped, 'B2', 'E5', scale_factor=1.2)\n        \n        # Orientation Arrow (Negative/CW)\n        # Note: i is now at (-1,0), j is still at (0,1). Shortest angle from i to j is CW.\n        orient_arrow_flipped = Arc(radius=0.6, start_angle=PI, angle=-PI/2, color=COLOR_HIGHLIGHT)\n        orient_arrow_flipped.add_tip(tip_length=0.15)\n        orient_arrow_flipped.move_to(world_flipped.get_center())\n\n        self.play(\n            ReplacementTransform(world, world_flipped),\n            ReplacementTransform(orient_arrow, orient_arrow_flipped),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(LIGHT_PINK)\n        \n        # Display Conclusion text\n        conclusion = Text(\"Negative Determinant = Flip\", font_size=24, color=COLOR_HIGHLIGHT)\n        self.place_at_grid(conclusion, 'F4', scale_factor=1.1)\n        \n        # Highlight the orientation change\n        orient_label = Text(\"Reversed Orientation\", font_size=18, color=COLOR_HIGHLIGHT).next_to(orient_arrow_flipped, DOWN)\n        \n        self.play(\n            Write(conclusion),\n            FadeIn(orient_label),\n            orient_arrow_flipped.animate.scale(1.2).set_stroke(width=6)\n        )\n        self.play(orient_arrow_flipped.animate.scale(0.833).set_stroke(width=4))\n        self.wait(2)\n\n        # Cleanup: Reset lecture colors to white\n        self.play(self.lecture[2].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Initialize Scene\n        self.setup_layout(\n            \"The Zero Case: Collapsing Dimensions\", \n            [\n                'A determinant of zero means the plane has collapsed.', \n                'The 2D grid squashes down into a 1D line.', \n                'All area is lost, making the transformation irreversible.', \n                'We cannot \"un-squash\" a line back into Pixel.', \n                'This zero case is vital for checking matrix invertibility.'\n            ]\n        )\n        \n        # Create Coordinate system mobjects\n        # We'll build a custom grid to avoid NumberPlane overhead\n        grid_lines = VGroup()\n        for x in range(-2, 3):\n            grid_lines.add(Line([x, -2, 0], [x, 2, 0], stroke_width=1, color=GRAY))\n        for y in range(-2, 3):\n            grid_lines.add(Line([-2, y, 0], [2, y, 0], stroke_width=1, color=GRAY))\n        \n        i_hat = Arrow([0, 0, 0], [1, 0, 0], buff=0, color=\"#00FF00\")\n        j_hat = Arrow([0, 0, 0], [0, 1, 0], buff=0, color=\"#00FFFF\")\n        basis_group = VGroup(grid_lines, i_hat, j_hat)\n        \n        # Place the grid system in the designated area\n        self.place_in_area(basis_group, 'A1', 'F6', scale_factor=0.8)\n\n        # === Animation for Lecture Line 1 ===\n        # Line 1: 'A determinant of zero means the plane has collapsed.'\n        self.lecture[0].set_color(\"#ADD8E6\") # Light Blue\n        self.play(Create(grid_lines), GrowArrow(i_hat), GrowArrow(j_hat))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Line 2: 'The 2D grid squashes down into a 1D line.'\n        # Transformation: i -> (1,1), j -> (1,1)\n        self.lecture[1].set_color(\"#FFFF00\") # Yellow\n        \n        # Matrix is [[1, 1], [1, 1]]\n        target_i = Arrow(i_hat.get_start(), i_hat.get_start() + np.array([1, 1, 0]) * 0.8, buff=0, color=\"#00FF00\")\n        target_j = Arrow(j_hat.get_start(), j_hat.get_start() + np.array([1, 1, 0]) * 0.8, buff=0, color=\"#00FFFF\")\n        \n        # Manually calculate transformation for grid lines to ensure they collapse to y=x\n        collapsed_lines = VGroup()\n        # Origin of the grid area for reference\n        origin = basis_group.get_center()\n        # Scale factor was 0.8 during placement\n        s = 0.8\n        \n        # Each point (x,y) goes to (x+y, x+y) relative to origin\n        for line in grid_lines:\n            p1 = line.get_start() - origin\n            p2 = line.get_end() - origin\n            \n            # Simple projection to y=x line\n            new_p1_val = (p1[0] + p1[1])\n            new_p2_val = (p2[0] + p2[1])\n            \n            collapsed_lines.add(Line(\n                origin + np.array([new_p1_val, new_p1_val, 0]),\n                origin + np.array([new_p2_val, new_p2_val, 0]),\n                stroke_width=2, color=GRAY_B\n            ))\n\n        self.play(\n            Transform(grid_lines, collapsed_lines),\n            Transform(i_hat, target_i),\n            Transform(j_hat, target_j),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Line 3: 'All area is lost, making the transformation irreversible.'\n        self.lecture[2].set_color(\"#FFA500\") # Orange\n        \n        # Highlight the collapse - visual pulse on the line\n        self.play(grid_lines.animate.set_stroke(width=4), run_time=0.5)\n        self.play(grid_lines.animate.set_stroke(width=2), run_time=0.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Line 4: 'We cannot \"un-squash\" a line back into Pixel.'\n        self.lecture[3].set_color(\"#FFB6C1\") # Pink\n        \n        # Shake the line to indicate it's stuck/locked\n        self.play(basis_group.animate.shift(RIGHT*0.1), run_time=0.1)\n        self.play(basis_group.animate.shift(LEFT*0.2), run_time=0.1)\n        self.play(basis_group.animate.shift(RIGHT*0.1), run_time=0.1)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Line 5: 'This zero case is vital for checking matrix invertibility.'\n        self.lecture[4].set_color(\"#FF0000\") # Red\n        \n        # Add labels\n        txt_area = Text(\"Area = 0\", font_size=32, color=\"#FF0000\")\n        txt_inv = Text(\"Not Invertible\", font_size=32, color=\"#FF0000\")\n        \n        # Position labels relative to the grid\n        self.place_at_grid(txt_area, 'B5', scale_factor=1.0)\n        self.place_at_grid(txt_inv, 'D5', scale_factor=1.0)\n        \n        self.play(FadeIn(txt_area), FadeIn(txt_inv))\n        self.wait(2)\n\n# Update the issue to reflect completion\n# update_issue(18, under_review=True, resolution_note='Section 6 code implemented with 6x6 grid system and 1D collapse animation.')\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section7Scene(Scene):\n    def construct(self):\n        # Base Scene Configuration\n        self.camera.background_color = \"#000000\"\n        \n        # 1. Title - Using Text as per constraints\n        title_content = \"Summary & Real-world Intuition\"\n        title = Text(title_content, font_size=28, color=WHITE).to_edge(UP)\n        self.add(title)\n\n        # 2. Lecture Content - Left-side bullet points\n        lecture_lines = [\n            \"- Determinants scale, flip, or collapse space.\",\n            \"- Graphics engines use them for reflections.\",\n            \"- It is the fundamental scaling factor.\"\n        ]\n        \n        lecture_vgroup = VGroup(*[\n            Text(line, font_size=20, color=WHITE) for line in lecture_lines\n        ]).arrange(DOWN, aligned_edge=LEFT, buff=0.6).scale(0.85)\n        lecture_vgroup.to_edge(LEFT, buff=0.5).shift(UP * 0.2)\n        self.play(FadeIn(lecture_vgroup))\n\n        # 3. Visualization Area (Grid logic completion)\n        grid_coords = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x_pos = 1.5 + j * 0.7\n                y_pos = 1.5 - i * 0.7\n                grid_coords[f\"{row}{col}\"] = np.array([x_pos, y_pos, 0])\n\n        # Summary Visualization\n        # Start with a unit square\n        unit_square = Square(side_length=1.2, color=BLUE, fill_opacity=0.4)\n        unit_square.move_to(grid_coords[\"B3\"])\n        sq_label = Text(\"det = 1\", font_size=18).next_to(unit_square, DOWN)\n        \n        self.play(Create(unit_square), Write(sq_label))\n        self.wait(0.5)\n\n        # Show scaling (det > 1)\n        scaled_square = Square(side_length=1.2, color=YELLOW, fill_opacity=0.4).scale(1.5)\n        scaled_square.move_to(grid_coords[\"B3\"])\n        scale_label = Text(\"det = 2.25 (Scaling)\", font_size=18, color=YELLOW).next_to(scaled_square, DOWN)\n        \n        self.play(\n            ReplacementTransform(unit_square, scaled_square),\n            ReplacementTransform(sq_label, scale_label)\n        )\n        self.wait(1)\n\n        # Show flipping (Negative determinant)\n        flipped_square = scaled_square.copy().stretch(-1, 0).set_color(PURPLE)\n        flip_label = Text(\"det < 0 (Flip/Reflection)\", font_size=18, color=PURPLE).next_to(flipped_square, DOWN)\n        \n        self.play(\n            ReplacementTransform(scaled_square, flipped_square),\n            ReplacementTransform(scale_label, flip_label)\n        )\n        self.wait(1)\n\n        # Show collapse (det = 0)\n        collapsed_line = Line(LEFT, RIGHT, color=RED).scale(1.0)\n        collapsed_line.move_to(grid_coords[\"B3\"])\n        collapse_label = Text(\"det = 0 (Collapse)\", font_size=18, color=RED).next_to(collapsed_line, DOWN)\n        \n        self.play(\n            ReplacementTransform(flipped_square, collapsed_line),\n            ReplacementTransform(flip_label, collapse_label)\n        )\n        self.wait(2)\n"
+  ],
+  "outline": {
+    "topic": "The Determinant: The Magic Scaling Factor",
+    "target_audience": "University students (Introductory Linear Algebra) or Advanced High School students",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Hook: The Morphing Canvas",
+        "content": "Introduce the concept of linear transformations as a way of stretching or squishing space. Use a character to visualize the change in a relatable way.",
+        "example": "Meet 'Pixel the Cat' sitting on a 1x1 square grid. As we apply a transformation matrix, the grid tilts and stretches. Pixel becomes taller and thinner. The Determinant is the answer to: 'How many times larger or smaller is Pixel's area now?'"
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite Knowledge: The Basis Vectors",
+        "content": "Briefly review basis vectors (i-hat and j-hat) and how they define the unit square. Explain that a matrix simply tells us where these two vectors land after a transformation.",
+        "example": "Show i-hat (1,0) in red and j-hat (0,1) in yellow. They form a 1x1 square with an area of 1. If a matrix moves i-hat to (3,0) and j-hat to (0,2), the square becomes a 3x2 rectangle."
+      },
+      {
+        "id": "section_3",
+        "title": "Defining the Determinant Geometrically",
+        "content": "Formally define the determinant as the factor by which a linear transformation changes areas. Emphasize that if the determinant is 2, every shape in the plane now has twice the area it had before.",
+        "example": "An animation shows the unit square (area 1) transforming into a parallelogram. If the parallelogram's area is 6, the determinant of that transformation matrix is 6. This is the 'scaling factor' of the universe defined by that matrix."
+      },
+      {
+        "id": "section_4",
+        "title": "The Calculation: The 2x2 Formula",
+        "content": "Introduce the standard formula for a 2x2 matrix [a, b; c, d] as (ad - bc). Use a geometric overlay to show why this subtraction makes sense.",
+        "example": "Display a matrix [[3, 1], [0, 2]]. Calculate (3*2) - (1*0) = 6. Visually show a rectangle of area 6 being adjusted by the 'tilting' factor (the 'bc' part) to find the final area of the parallelogram."
+      },
+      {
+        "id": "section_5",
+        "title": "The Sign: Negative Determinants & Orientation",
+        "content": "Explain what it means when a determinant is negative. Introduce the concept of 'orientation' or 'flipping' the space.",
+        "example": "Pixel the Cat is looking to the right. After a transformation with a negative determinant, Pixel is mirrored and now looks to the left. It’s like flipping a sheet of paper over; the area is still positive, but the orientation is reversed."
+      },
+      {
+        "id": "section_6",
+        "title": "The Zero Case: Collapsing Dimensions",
+        "content": "Explore what happens when the determinant is exactly zero. This is a critical point for understanding matrix invertibility.",
+        "example": "If the transformation squashes the entire 2D plane down onto a single 1D line, the 'area' of the resulting shape is 0. Since the area is lost, the determinant is 0, and we can't 'un-squash' the line back into Pixel the Cat (the matrix is not invertible)."
+      },
+      {
+        "id": "section_7",
+        "title": "Summary & Real-world Intuition",
+        "content": "Recap the three states: Positive (scaling), Negative (scaling + flipping), and Zero (collapsing). Connect this to how computer graphics engines calculate shadows or resize objects.",
+        "example": "A quick montage: A 3D dragon model being scaled up (Det > 1), a mirror reflection (Det < 0), and a shadow falling flat on the ground (Det = 0)."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Hook: The Morphing Canvas",
+      "lecture_lines": [
+        "Imagine Pixel the Cat sitting on a unit grid.",
+        "A matrix transformation tilts and stretches the entire space.",
+        "Pixel’s shape changes, becoming taller, thinner, or slanted.",
+        "The determinant measures the change in Pixel’s total area.",
+        "It is the scaling factor for every shape in space."
+      ],
+      "animations": [
+        "Initialize a #FFFFFF unit square grid; place a white character 'Pixel' at (0.5, 0.5).",
+        "Animate the grid and 'Pixel' morphing via matrix [[2, 1], [0.5, 1.5]].",
+        "The unit square becomes a parallelogram; 'Pixel' stretches accordingly.",
+        "Fill the transformed unit square area with #FFFF00 at 0.3 opacity.",
+        "Create a pulsing '?' text over the transformed area."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite Knowledge: The Basis Vectors",
+      "lecture_lines": [
+        "Basis vectors i-hat and j-hat define the unit square.",
+        "The matrix tells us where these vectors land.",
+        "Their new positions determine the transformation's resulting area."
+      ],
+      "animations": [
+        "Draw red (#FF0000) vector (1,0) and green (#00FF00) vector (0,1) from origin.",
+        "Draw a white (#FFFFFF) dashed square with corners (0,0), (1,0), (1,1), (0,1).",
+        "Transform vectors to (3,0) and (0,2); expand square to 3x2 rectangle."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "Defining the Determinant Geometrically",
+      "lecture_lines": [
+        "This unit square represents a starting area of one.",
+        "The transformation reshapes the square into a parallelogram.",
+        "Observe the area has now scaled to six.",
+        "This scaling factor applies to every shape in space.",
+        "The determinant represents this magic area scaling factor."
+      ],
+      "animations": [
+        "Highlight a unit square [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/square.svg] area and label it 'Area = 1'.",
+        "Transform the square [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/square.svg] into a parallelogram using matrix [[3, 1], [0, 2]].",
+        "Animate the label 'Area = 1' changing into 'Area = 6' (#FFFF00).",
+        "Draw a circle [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/circle.svg]; transform it into an ellipse using the same matrix.",
+        "Display text 'Determinant = 6' at the top of the screen in #FFFF00."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Calculation: The 2x2 Formula",
+      "lecture_lines": [
+        "A 2x2 matrix defines the transformation’s movement.",
+        "The formula ad minus bc computes the scaling factor.",
+        "Calculating our example results in a determinant of six."
+      ],
+      "animations": [
+        "Display matrix [[a, b], [c, d]] next to the parallelogram.",
+        "Show formula 'ad - bc' in #00FFFF; highlight 'ad' and 'bc' components.",
+        "Replace variables with 3, 1, 0, 2 and animate the result to 6."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Sign: Negative Determinants & Orientation",
+      "lecture_lines": [
+        "Start with Pixel and our standard basis vectors.",
+        "A negative determinant mirrors Pixel to the other side.",
+        "Notice i-hat and j-hat have swapped their relative orientation.",
+        "This swap means we have flipped the entire space.",
+        "A negative sign indicates this fundamental change in orientation."
+      ],
+      "animations": [
+        "Show 'Pixel' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/pixel.svg] (#FFFFFF) facing right; label basis vectors i (red) and j (green).",
+        "Apply matrix [[-1, 0], [0, 1]]; 'Pixel' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/pixel.svg] mirrors to face left.",
+        "Highlight that i is now to the left of j (flipped orientation).",
+        "Animate a circular arrow showing orientation direction reversing.",
+        "Display 'Negative Determinant = Flip' in #FF00FF."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "The Zero Case: Collapsing Dimensions",
+      "lecture_lines": [
+        "Some transformations land both basis vectors on one line.",
+        "This collapses the entire plane, losing all area.",
+        "A zero determinant means the transformation is not invertible."
+      ],
+      "animations": [
+        "Start with standard grid; animate i and j moving to (1,1).",
+        "Shrink all grid lines until they align perfectly on the line y = x.",
+        "Fade in red (#FF0000) text 'Area = 0' and 'Not Invertible'."
+      ]
+    },
+    {
+      "id": "section_7",
+      "title": "Summary & Real-world Intuition",
+      "lecture_lines": [
+        "Determinants scale, flip, or collapse our mathematical world.",
+        "Graphics engines use them to render shadows and reflections.",
+        "It is the fundamental scaling factor of linear algebra."
+      ],
+      "animations": [
+        "Display three small grids side-by-side: scaled, flipped, and collapsed, enhanced with [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/shadows.svg] for depth.",
+        "Label them 'Det > 0', 'Det < 0', and 'Det = 0' respectively, alongside [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/ref.svg] to indicate the transformation reference.",
+        "Morph all labels into 'The Magic Scaling Factor' in large yellow (#FFFF00) text."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 codable animation steps for Section 1. Requesting ScriptWriter to provide 5 matching lecture lines."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated full Manim code for Section 1, including the morphing grid, Pixel the Cat character, matrix transformation, and area highlighting with a pulsing indicator, all using the required grid positioning system and avoiding Tex."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for Section 2. Requesting ScriptWriter to provide 3 matching lecture lines."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 2 following the 6x6 grid system and transformation requirements. Animation includes i-hat and j-hat vectors, unit square transformation to 3x2 rectangle, and lecture line highlights."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Replaced by completed issue 24."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 codable animation steps for Section 3. Requesting ScriptWriter to provide 5 matching lecture lines."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 3 based on provided animation stages and lecture script. Ensured color alignment and grid positioning system are strictly followed."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Replaced by completed issue 25."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for Section 4. Requesting ScriptWriter to provide 3 matching lecture lines."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 4: The 2x2 Formula. Implemented matrix representation using Text/VGroup, geometric parallelogram representation for the example [[3, 1], [0, 2]], and color-coded formula animation. Resolved Issue 12."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Replaced by completed issue 26."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 codable animation steps for Section 5. Requesting ScriptWriter to provide 5 matching lecture lines."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animation steps are finalized (5 stages). Waiting for ScriptWriter to align lecture lines (Issue 26). Code generation will follow."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Replaced by completed issue 27."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for Section 6. Requesting ScriptWriter to provide 3 matching lecture lines."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animation steps are finalized (3 stages). Waiting for ScriptWriter to align lecture lines (Issue 27). Code generation will follow."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 7."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for Section 7. Requesting ScriptWriter to provide 3 matching lecture lines."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented the three grid states (Positive, Negative, Zero) using the grid system, added matching labels, and performed the final morph into 'The Magic Scaling Factor'. Applied color highlights to lecture lines."
+    },
+    {
+      "id": 22,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide 5 concise lecture lines (max 10 words each) for Section 1, aligned one-to-one with the provided animation steps (Pixel the Cat transformation).",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide 3 concise lecture lines (max 10 words each) for Section 2, aligned one-to-one with the provided animation steps (Basis vectors and unit square).",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide 5 concise lecture lines (max 10 words each) for Section 3, aligned one-to-one with the provided animation steps (Geometric definition of Determinant).",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Provided 5 concise lecture lines (max 10 words each) aligned with the 5 animation steps for Section 3."
+    },
+    {
+      "id": 25,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide 3 concise lecture lines (max 10 words each) for Section 4, aligned one-to-one with the provided animation steps (The 2x2 formula calculation).",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Provided 3 concise lecture lines (max 10 words each) aligned with the 3 animation steps for Section 4."
+    },
+    {
+      "id": 26,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide 5 concise lecture lines (max 10 words each) for Section 5, aligned one-to-one with the provided animation steps (Negative determinant and orientation flip).",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Provided 5 concise lecture lines (max 10 words each) aligned with the 5 animation steps for Section 5."
+    },
+    {
+      "id": 27,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide 3 concise lecture lines (max 10 words each) for Section 6, aligned one-to-one with the provided animation steps (Zero determinant and dimension collapse).",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Provided 3 concise lecture lines (max 10 words each) aligned with the 3 animation steps for Section 6."
+    },
+    {
+      "id": 28,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide 3 concise lecture lines (max 10 words each) for Section 7, aligned one-to-one with the provided animation steps (Summary montage).",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Highlight a unit square [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/square.svg] area and label it 'Area = 1'.\", 'Transform the square [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/square.svg] into a parallelogram using matrix [[3, 1], [0, 2]].', 'Draw a circle [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/circle.svg]; transform it into an ellipse using the same matrix.']",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Show 'Pixel' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/pixel.svg] (#FFFFFF) facing right; label basis vectors i (red) and j (green).\", \"Apply matrix [[-1, 0], [0, 1]]; 'Pixel' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/pixel.svg] mirrors to face left.\"]",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_7] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Display three small grids side-by-side: scaled, flipped, and collapsed, enhanced with [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/shadows.svg] for depth.', \"Label them 'Det > 0', 'Det < 0', and 'Det = 0' respectively, alongside [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/ref.svg] to indicate the transformation reference.\"]",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The workspace (grid and cat) tilts and expands to the left, obstructing the lecture lines. Fix: Line 90: self.place_in_area(workspace, 'B3', 'F6', scale_factor=0.6) (line=90, object=workspace)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The question_mark is positioned too far to the left within the transformed workspace, nearing the lecture text. Fix: Line 148: self.place_at_grid(question_mark, 'D4', scale_factor=0.8) (line=148, object=question_mark)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The extra_shape (blue oval) at D2 is too close to the lecture area, causing potential overlap during the transformation. Fix: Line 166: self.place_at_grid(extra_shape, 'D5', scale_factor=0.8) (line=166, object=extra_shape)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Labels j_label and target_j_label are positioned in column 1, which is too close to the lecture notes, creating a cluttered visual boundary. Fix: Line 71: self.place_at_grid(j_label, 'C2'); Line 106: self.place_at_grid(target_j_label, 'B2') (line=71, object=j_label, target_j_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The unit_square and transformed_rect are positioned too far left, leaving the right side of the grid underutilized and crowding the text. Fix: Line 77: self.place_in_area(unit_square, 'C3', 'D4'); Line 112: self.place_in_area(transformed_rect, 'B3', 'D6') (line=77, object=unit_square, transformed_rect)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The labels i_label, target_i_label, and area_text need to be shifted to maintain proximity and centering with the relocated shapes. Fix: Line 68: self.place_at_grid(i_label, 'E4'); Line 103: self.place_at_grid(target_i_label, 'E6'); Line 132: self.place_at_grid(area_text, 'C5') (line=68, object=i_label, target_i_label, area_text)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The parallelogram positioned at D3 is too large at its default scale, causing its lower boundary to overlap and obstruct 'label_6' at E3. Fix: Line 91: self.place_at_grid(parallelogram, 'D3', scale_factor=0.7) (line=91, object=parallelogram)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'det_label' at A2-A5 is positioned at the top edge of the grid, which is more than one grid unit away from the central objects (D3), violating the proximity constraint. Fix: Line 122: self.place_in_area(det_label, 'C2', 'C5', scale_factor=0.8) (line=122, object=det_label)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The ellipse at D3 is inconsistent in scale with the previous unit shapes and appears crowded within the right-side grid area. Fix: Line 118: self.place_at_grid(ellipse, 'D3', scale_factor=0.7) (line=118, object=ellipse)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The num_formula ('3 * 2 - 1 * 0 = 6') is too long for the E1-F3 area, causing it to appear cramped and visually unbalanced within the grid. Fix: Line 147: self.place_in_area(num_formula, 'E1', 'F6', scale_factor=0.8) (line=147, object=num_formula)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The original formula 'ad - bc' at E1-F3 is positioned too low, leaving a large vertical gap between the matrix and its corresponding algebraic expression. Fix: Line 86: self.place_in_area(formula, 'D1', 'E3', scale_factor=0.9) (line=86, object=formula)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The rect_ad group (including shape and labels) uses a broad vertical area (B4-F6) that lacks precision and pushes labels like 'bc tilt' too close to the screen edge. Fix: Line 98: self.place_in_area(rect_ad, 'B4', 'D6', scale_factor=0.7) (line=98, object=rect_ad)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 44,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The world graphic and flipped i-hat vector extend too far left, nearly obstructing the lecture notes area. Fix: Line 83: self.place_in_area(world, 'B3', 'E6', scale_factor=1.0) (line=83, object=world)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 45,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The mirrored state 'world_flipped' maintains the same proximity issue, with the i-hat label crowding the left-side text. Fix: Line 107: self.place_in_area(world_flipped, 'B3', 'E6', scale_factor=1.0) (line=107, object=world_flipped)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 46,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'conclusion' text is a long label using single-point positioning, which can lead to poor horizontal centering. Fix: Line 128: self.place_in_area(conclusion, 'F3', 'F5', scale_factor=1.1) (line=128, object=conclusion)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 47,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'Area = 0' label at B5 overlaps with the diagonal collapsed dimension line, hindering readability. Fix: Line 148: self.place_at_grid(txt_area, 'B6', scale_factor=0.9) (line=148, object=txt_area)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 48,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'Not Invertible' label at D5 is positioned directly on top of the collapsed 1D line. Fix: Line 149: self.place_at_grid(txt_inv, 'E6', scale_factor=0.9) (line=149, object=txt_inv)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 49,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The basis_group scale (0.8) makes the visual elements feel crowded and too close to the lecture notes on the left. Fix: Line 73: self.place_in_area(basis_group, 'A1', 'F6', scale_factor=0.7) (line=73, object=basis_group)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 50,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The scaling visual (yellow square) and its label lack precise anchoring, making the right-side presentation look unorganized. Fix: Line 22: self.place_in_area(scaling_square, 'B3', 'D5', scale_factor=0.9); self.place_at_grid(scaling_label, 'E4', scale_factor=0.8) (line=22, object=scaling_square)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 51,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The flip/reflection label 'det < 0 (Flip/Reflection)' is a long label that risks being cut off or appearing too close to the screen edge. Fix: Line 38: self.place_at_grid(flip_label, 'E4', scale_factor=0.6) (line=38, object=flip_label)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 52,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The collapse visual (red horizontal line) is thin and needs centered positioning to maintain visual balance with its label. Fix: Line 52: self.place_at_grid(collapse_line, 'C4', scale_factor=1.0); self.place_at_grid(collapse_label, 'E4', scale_factor=0.8) (line=52, object=collapse_line)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 53,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[section_5] The final lecture script for this section is now available (see Issue 26 resolution). Update the Manim code to align the 5 animation stages exactly with these 5 lecture lines. Also integrate assets as per Issue 30.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 54,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[section_6] The final lecture script for this section is now available (see Issue 27 resolution). Update the Manim code to align the 3 animation stages exactly with these 3 lecture lines. Also implement the layout fixes (Issues 47, 48, 49).",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6",
+    "section_7": "Coder7"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5,
+    "section_7": 6
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_6/480p15/Section6Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_7/480p15/Section7Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 596130,
+        "video_mtime_ns": 1778635241379861973,
+        "code_sha1": "7da08733c7c960e835d6cbaf2aa79e6ed28f38f6"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The workspace (grid and cat) tilts and expands to the left, obstructing the lecture lines.",
+              "solution": "Line 90: self.place_in_area(workspace, 'B3', 'F6', scale_factor=0.6)",
+              "line_number": 90,
+              "object_affected": "workspace"
+            },
+            {
+              "problem": "The question_mark is positioned too far to the left within the transformed workspace, nearing the lecture text.",
+              "solution": "Line 148: self.place_at_grid(question_mark, 'D4', scale_factor=0.8)",
+              "line_number": 148,
+              "object_affected": "question_mark"
+            },
+            {
+              "problem": "The extra_shape (blue oval) at D2 is too close to the lecture area, causing potential overlap during the transformation.",
+              "solution": "Line 166: self.place_at_grid(extra_shape, 'D5', scale_factor=0.8)",
+              "line_number": 166,
+              "object_affected": "extra_shape"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 187048,
+        "video_mtime_ns": 1778635229017480547,
+        "code_sha1": "1d91e4c323e64b01bc3667cd187422b63e0d30db"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Labels j_label and target_j_label are positioned in column 1, which is too close to the lecture notes, creating a cluttered visual boundary.",
+              "solution": "Line 71: self.place_at_grid(j_label, 'C2'); Line 106: self.place_at_grid(target_j_label, 'B2')",
+              "line_number": 71,
+              "object_affected": "j_label, target_j_label"
+            },
+            {
+              "problem": "The unit_square and transformed_rect are positioned too far left, leaving the right side of the grid underutilized and crowding the text.",
+              "solution": "Line 77: self.place_in_area(unit_square, 'C3', 'D4'); Line 112: self.place_in_area(transformed_rect, 'B3', 'D6')",
+              "line_number": 77,
+              "object_affected": "unit_square, transformed_rect"
+            },
+            {
+              "problem": "The labels i_label, target_i_label, and area_text need to be shifted to maintain proximity and centering with the relocated shapes.",
+              "solution": "Line 68: self.place_at_grid(i_label, 'E4'); Line 103: self.place_at_grid(target_i_label, 'E6'); Line 132: self.place_at_grid(area_text, 'C5')",
+              "line_number": 68,
+              "object_affected": "i_label, target_i_label, area_text"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35,
+        36,
+        37
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 153116,
+        "video_mtime_ns": 1778635225585300032,
+        "code_sha1": "45f9f06c9887fa408ed0c1a739856d9cdaa6fdaf"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The parallelogram positioned at D3 is too large at its default scale, causing its lower boundary to overlap and obstruct 'label_6' at E3.",
+              "solution": "Line 91: self.place_at_grid(parallelogram, 'D3', scale_factor=0.7)",
+              "line_number": 91,
+              "object_affected": "parallelogram"
+            },
+            {
+              "problem": "The 'det_label' at A2-A5 is positioned at the top edge of the grid, which is more than one grid unit away from the central objects (D3), violating the proximity constraint.",
+              "solution": "Line 122: self.place_in_area(det_label, 'C2', 'C5', scale_factor=0.8)",
+              "line_number": 122,
+              "object_affected": "det_label"
+            },
+            {
+              "problem": "The ellipse at D3 is inconsistent in scale with the previous unit shapes and appears crowded within the right-side grid area.",
+              "solution": "Line 118: self.place_at_grid(ellipse, 'D3', scale_factor=0.7)",
+              "line_number": 118,
+              "object_affected": "ellipse"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        38,
+        39,
+        40
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 220188,
+        "video_mtime_ns": 1778635228331839525,
+        "code_sha1": "a57a2745b7dcfa04a950f3d2168dedb3783b81c3"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The num_formula ('3 * 2 - 1 * 0 = 6') is too long for the E1-F3 area, causing it to appear cramped and visually unbalanced within the grid.",
+              "solution": "Line 147: self.place_in_area(num_formula, 'E1', 'F6', scale_factor=0.8)",
+              "line_number": 147,
+              "object_affected": "num_formula"
+            },
+            {
+              "problem": "The original formula 'ad - bc' at E1-F3 is positioned too low, leaving a large vertical gap between the matrix and its corresponding algebraic expression.",
+              "solution": "Line 86: self.place_in_area(formula, 'D1', 'E3', scale_factor=0.9)",
+              "line_number": 86,
+              "object_affected": "formula"
+            },
+            {
+              "problem": "The rect_ad group (including shape and labels) uses a broad vertical area (B4-F6) that lacks precision and pushes labels like 'bc tilt' too close to the screen edge.",
+              "solution": "Line 98: self.place_in_area(rect_ad, 'B4', 'D6', scale_factor=0.7)",
+              "line_number": 98,
+              "object_affected": "rect_ad"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        41,
+        42,
+        43
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 194493,
+        "video_mtime_ns": 1778635252177485815,
+        "code_sha1": "bf4b4cf052ee1d3ff6a44525c5c7dc9a9805988e"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The world graphic and flipped i-hat vector extend too far left, nearly obstructing the lecture notes area.",
+              "solution": "Line 83: self.place_in_area(world, 'B3', 'E6', scale_factor=1.0)",
+              "line_number": 83,
+              "object_affected": "world"
+            },
+            {
+              "problem": "The mirrored state 'world_flipped' maintains the same proximity issue, with the i-hat label crowding the left-side text.",
+              "solution": "Line 107: self.place_in_area(world_flipped, 'B3', 'E6', scale_factor=1.0)",
+              "line_number": 107,
+              "object_affected": "world_flipped"
+            },
+            {
+              "problem": "The 'conclusion' text is a long label using single-point positioning, which can lead to poor horizontal centering.",
+              "solution": "Line 128: self.place_in_area(conclusion, 'F3', 'F5', scale_factor=1.1)",
+              "line_number": 128,
+              "object_affected": "conclusion"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        44,
+        45,
+        46
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 281551,
+        "video_mtime_ns": 1778635229097659969,
+        "code_sha1": "980233458b2c458ff450e042f6eecd39ada72887"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'Area = 0' label at B5 overlaps with the diagonal collapsed dimension line, hindering readability.",
+              "solution": "Line 148: self.place_at_grid(txt_area, 'B6', scale_factor=0.9)",
+              "line_number": 148,
+              "object_affected": "txt_area"
+            },
+            {
+              "problem": "The 'Not Invertible' label at D5 is positioned directly on top of the collapsed 1D line.",
+              "solution": "Line 149: self.place_at_grid(txt_inv, 'E6', scale_factor=0.9)",
+              "line_number": 149,
+              "object_affected": "txt_inv"
+            },
+            {
+              "problem": "The basis_group scale (0.8) makes the visual elements feel crowded and too close to the lecture notes on the left.",
+              "solution": "Line 73: self.place_in_area(basis_group, 'A1', 'F6', scale_factor=0.7)",
+              "line_number": 73,
+              "object_affected": "basis_group"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        47,
+        48,
+        49
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_7",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_7/480p15/Section7Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor/media/videos/section_7/480p15/Section7Scene.mp4",
+        "video_size": 119152,
+        "video_mtime_ns": 1778635338647767796,
+        "code_sha1": "cca7dfb15e4f32a4c96d13c218076ffcc8cd80b3"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The scaling visual (yellow square) and its label lack precise anchoring, making the right-side presentation look unorganized.",
+              "solution": "Line 22: self.place_in_area(scaling_square, 'B3', 'D5', scale_factor=0.9); self.place_at_grid(scaling_label, 'E4', scale_factor=0.8)",
+              "line_number": 22,
+              "object_affected": "scaling_square"
+            },
+            {
+              "problem": "The flip/reflection label 'det < 0 (Flip/Reflection)' is a long label that risks being cut off or appearing too close to the screen edge.",
+              "solution": "Line 38: self.place_at_grid(flip_label, 'E4', scale_factor=0.6)",
+              "line_number": 38,
+              "object_affected": "flip_label"
+            },
+            {
+              "problem": "The collapse visual (red horizontal line) is thin and needs centered positioning to maintain visual balance with its label.",
+              "solution": "Line 52: self.place_at_grid(collapse_line, 'C4', scale_factor=1.0); self.place_at_grid(collapse_label, 'E4', scale_factor=0.8)",
+              "line_number": 52,
+              "object_affected": "collapse_line"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        50,
+        51,
+        52
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/7-The_Determinant_The_Magic_Scaling_Factor",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 148695,
+      "completion_tokens": 25420,
+      "total_tokens": 247764,
+      "call_count": 38
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 273,
+        "completion_tokens": 982,
+        "total_tokens": 1832,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 12443,
+        "completion_tokens": 420,
+        "total_tokens": 13310,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 9986,
+        "completion_tokens": 409,
+        "total_tokens": 10478,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 24687,
+        "completion_tokens": 534,
+        "total_tokens": 25563,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 2603,
+        "completion_tokens": 2170,
+        "total_tokens": 7641,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 2648,
+        "completion_tokens": 2137,
+        "total_tokens": 7413,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 7615,
+        "completion_tokens": 2415,
+        "total_tokens": 10323,
+        "call_count": 1
+      },
+      "agent:Coder7": {
+        "prompt_tokens": 7788,
+        "completion_tokens": 1984,
+        "total_tokens": 9949,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 9056,
+        "completion_tokens": 2767,
+        "total_tokens": 11998,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 9783,
+        "completion_tokens": 1987,
+        "total_tokens": 11979,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 15751,
+        "completion_tokens": 1782,
+        "total_tokens": 17680,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4928,
+        "completion_tokens": 945,
+        "total_tokens": 17590,
+        "call_count": 14
+      },
+      "scope_refine:section_5": {
+        "prompt_tokens": 5355,
+        "completion_tokens": 2106,
+        "total_tokens": 9779,
+        "call_count": 1
+      },
+      "scope_refine:section_7": {
+        "prompt_tokens": 16221,
+        "completion_tokens": 2292,
+        "total_tokens": 40057,
+        "call_count": 3
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3488,
+        "completion_tokens": 315,
+        "total_tokens": 5385,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2960,
+        "completion_tokens": 431,
+        "total_tokens": 8527,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2762,
+        "completion_tokens": 346,
+        "total_tokens": 11969,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 2642,
+        "completion_tokens": 372,
+        "total_tokens": 7261,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2698,
+        "completion_tokens": 324,
+        "total_tokens": 5312,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2609,
+        "completion_tokens": 326,
+        "total_tokens": 7095,
+        "call_count": 1
+      },
+      "video_review:section_7": {
+        "prompt_tokens": 2399,
+        "completion_tokens": 376,
+        "total_tokens": 6623,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 148695,
+        "completion_tokens": 25420,
+        "total_tokens": 247764,
+        "call_count": 38
+      }
+    }
+  }
+}

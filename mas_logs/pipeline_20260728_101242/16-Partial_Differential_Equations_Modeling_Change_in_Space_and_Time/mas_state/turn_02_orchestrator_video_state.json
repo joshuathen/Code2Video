@@ -1,0 +1,1093 @@
+{
+  "topic": "Partial Differential Equations: Modeling Change in Space and Time",
+  "target_audience": "Undergraduate STEM students (Physics, Engineering, Math)",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"ODEs track changes over one variable, like time.\",\n            \"But reality often involves multiple variables, like position.\",\n            \"PDEs describe how systems evolve in space and time.\"\n        ]\n        self.setup_layout(\"From One to Many: The PDE Intuition\", lecture_lines)\n        \n        # === Animation for Lecture Line 1 ===\n        # Draw a vertical rectangle (#FF0000) representing a thermometer. Label horizontal axis 't' (#FFFFFF).\n        self.lecture[0].set_color(YELLOW)\n        thermometer = Rectangle(height=3, width=0.6, color=\"#FF0000\", fill_opacity=0.8)\n        self.place_in_area(thermometer, \"B3\", \"E3\")\n        \n        t_axis = Line(start=self.grid[\"F2\"], end=self.grid[\"F4\"], color=WHITE)\n        t_label = MathTex(\"t\", color=\"#FFFFFF\")\n        self.place_at_grid(t_label, \"F5\", scale_factor=0.8)\n        \n        self.play(Create(thermometer), Create(t_axis), Write(t_label))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        # Transform the rectangle into a 2D grid of small squares (#FFFFFF) to represent space.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        grid_rows, grid_cols = 5, 5\n        grid_squares = VGroup(*[\n            Square(side_length=0.4, color=\"#FFFFFF\", stroke_width=2)\n            for _ in range(grid_rows * grid_cols)\n        ]).arrange_in_grid(rows=grid_rows, cols=grid_cols, buff=0.05)\n        \n        self.place_in_area(grid_squares, \"B2\", \"E5\")\n        \n        space_label = MathTex(\"x, y\", color=\"#FFFFFF\")\n        self.place_at_grid(space_label, \"F3\", scale_factor=0.8)\n\n        self.play(\n            Transform(thermometer, grid_squares),\n            FadeOut(t_axis),\n            Transform(t_label, space_label)\n        )\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Color central squares red (#FF0000) and outer squares blue (#0000FF). Animate heat spreading.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Use the transformed thermometer which is now visually a grid\n        # We'll create a new set of squares for the colored version to avoid transform artifacts\n        colored_grid = grid_squares.copy()\n        \n        def get_color_for_dist(dist, max_dist, heat_factor):\n            # heat_factor goes from 0 to 1\n            # intensity = 1 (red) at center, 0 (blue) at edges\n            normalized_dist = dist / max_dist\n            intensity = np.clip(1.0 - normalized_dist + (heat_factor * 0.8) - 0.2, 0, 1)\n            return interpolate_color(BLUE, RED, intensity)\n\n        # Initial colors\n        max_dist = 3.0\n        for i in range(grid_rows):\n            for j in range(grid_cols):\n                dist = np.sqrt((i - grid_rows//2)**2 + (j - grid_cols//2)**2)\n                idx = i * grid_cols + j\n                colored_grid[idx].set_fill(get_color_for_dist(dist, max_dist, 0), opacity=0.8)\n\n        self.play(FadeIn(colored_grid), FadeOut(thermometer))\n        \n        heat_tracker = ValueTracker(0)\n        \n        def update_grid(obj):\n            h = heat_tracker.get_value()\n            for i in range(grid_rows):\n                for j in range(grid_cols):\n                    dist = np.sqrt((i - grid_rows//2)**2 + (j - grid_cols//2)**2)\n                    idx = i * grid_cols + j\n                    obj[idx].set_fill(get_color_for_dist(dist, max_dist, h), opacity=0.8)\n\n        colored_grid.add_updater(update_grid)\n        self.play(heat_tracker.animate.set_value(1), run_time=4)\n        colored_grid.remove_updater(update_grid)\n        \n        self.wait(3)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Data from storyboard\n        title = \"Prerequisite Kit: The Partial Derivative\"\n        lines = [\n            \"- Partial derivatives measure change while holding other variables constant.\",\n            \"- Imagine hiking a mountain along a single compass direction.\",\n            \"- We isolate one dimension to understand complex multidimensional shapes.\"\n        ]\n        \n        self.setup_layout(title, lines)\n        \n        # === Animation for Lecture Line 1 ===\n        # Load mountain SVG [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/mountain.svg]\n        # We use the SVG to represent the mountain surface\n        try:\n            mountain = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/mountain.svg\")\n        except Exception:\n            # Fallback if file not found during local dev (not expected in MAS)\n            mountain = Triangle().scale(2)\n            \n        mountain.set_color(\"#666666\")\n        self.place_in_area(mountain, 'A1', 'F6', scale_factor=1.8)\n        \n        # Small yellow sphere (#FFFF00) representing the hiker\n        sphere = Dot(color=\"#FFFF00\", radius=0.1)\n        # Place sphere at a visual 'slope' location relative to the mountain center\n        self.place_at_grid(sphere, 'C3')\n        \n        # Highlight first lecture line in Yellow (matching sphere)\n        self.lecture[0].set_color(YELLOW)\n        self.play(\n            DrawBorderThenFill(mountain, run_time=2),\n            FadeIn(sphere, shift=UP)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Green tangent line (#00FF00) along the x-direction (horizontal-ish)\n        tangent_x = Line(\n            start=sphere.get_center() + LEFT * 1.0 + DOWN * 0.1,\n            end=sphere.get_center() + RIGHT * 1.0 + UP * 0.1,\n            color=\"#00FF00\",\n            stroke_width=6\n        )\n        \n        # Highlight second lecture line in Green (matching tangent line)\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(GREEN)\n        self.play(Create(tangent_x))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Cyan tangent line (#00FFFF) along the y-direction (slanted-ish)\n        tangent_y = Line(\n            start=sphere.get_center() + LEFT * 0.4 + UP * 0.8,\n            end=sphere.get_center() + RIGHT * 0.4 + DOWN * 0.8,\n            color=\"#00FFFF\",\n            stroke_width=6\n        )\n        \n        # Highlight third lecture line in Cyan (matching tangent line)\n        # Using hex code \"#00FFFF\" to avoid NameError for 'CYAN' constant\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(\"#00FFFF\")\n        self.play(Create(tangent_y))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        title = \"The Heat Equation: Modeling Diffusion\"\n        lines = [\n            \"The heat equation describes how temperature spreads through space.\",\n            \"Time change depends on the curvature of spatial temperature.\",\n            \"High curvature means heat flows quickly into colder regions.\",\n            \"Over time, temperature gradients flatten toward a steady state.\",\n            \"This parabolic behavior models diffusion in many physical systems.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        RECT_COLOR = \"#0000FF\"\n        SOURCE_COLOR = \"#FFA500\"\n        FORMULA_HIGHLIGHT = \"#FFFF00\"\n        CURVE_COLOR = \"#FF0000\"\n        ARROW_COLOR = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        # Show a blue rectangle with an orange circle labeled 'Heat Source'.\n        self.lecture[0].set_color(RECT_COLOR)\n        \n        ice_block = Rectangle(width=4, height=3, color=RECT_COLOR, fill_opacity=0.3)\n        self.place_in_area(ice_block, \"B2\", \"E5\")\n        \n        heat_source = Circle(radius=0.4, color=SOURCE_COLOR, fill_opacity=0.8)\n        self.place_at_grid(heat_source, \"C3\")\n        \n        source_label = Text(\"Heat Source\", font_size=18, color=SOURCE_COLOR)\n        source_label.next_to(heat_source, UP, buff=0.1)\n        \n        self.play(FadeIn(ice_block), FadeIn(heat_source), Write(source_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Display formula: du/dt = alpha * d2u/dx2. Highlight du/dt in yellow.\n        self.lecture[1].set_color(FORMULA_HIGHLIGHT)\n        \n        formula = MathTex(\n            \"\\\\frac{\\\\partial u}{\\\\partial t}\", \"=\", \"\\\\alpha\", \"\\\\frac{\\\\partial^2 u}{\\\\partial x^2}\",\n            font_size=36\n        )\n        formula[0].set_color(FORMULA_HIGHLIGHT)\n        self.place_in_area(formula, \"A2\", \"A5\")\n        \n        self.play(Write(formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Plot a sharp red bell curve over the blue rectangle.\n        self.lecture[2].set_color(CURVE_COLOR)\n        \n        axes = Axes(\n            x_range=[-2, 2],\n            y_range=[0, 1.5],\n            x_length=4,\n            y_length=2.5,\n            axis_config={\"include_tip\": False, \"include_ticks\": False}\n        ).move_to(ice_block.get_center())\n        \n        def bell_curve_func(x, sigma):\n            return np.exp(-(x**2) / (2 * sigma**2))\n\n        sigma_tracker = ValueTracker(0.3)\n        curve = always_redraw(lambda: axes.plot(\n            lambda x: bell_curve_func(x, sigma_tracker.get_value()),\n            color=CURVE_COLOR\n        ))\n        \n        self.play(Create(curve))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Draw white arrows pointing from the peak outward.\n        # Animate the bell curve flattening.\n        self.lecture[3].set_color(ARROW_COLOR)\n        \n        arrow_left = Arrow(start=axes.c2p(0, 1), end=axes.c2p(-1, 0.5), color=ARROW_COLOR, buff=0.1)\n        arrow_right = Arrow(start=axes.c2p(0, 1), end=axes.c2p(1, 0.5), color=ARROW_COLOR, buff=0.1)\n        \n        self.play(GrowArrow(arrow_left), GrowArrow(arrow_right))\n        self.wait(0.5)\n        \n        # Flattening animation\n        self.play(\n            sigma_tracker.animate.set_value(2.0),\n            FadeOut(arrow_left),\n            FadeOut(arrow_right),\n            run_time=3\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # This parabolic behavior models diffusion in many physical systems.\n        self.lecture[4].set_color(WHITE)\n        \n        # Final flattening to almost horizontal\n        self.play(sigma_tracker.animate.set_value(10.0), run_time=2)\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        title = \"The Wave Equation: Modeling Vibration\"\n        lines = [\n            \"The wave equation models oscillations like a plucked string.\",\n            \"Acceleration at a point depends on local spatial tension.\",\n            \"This creates disturbances that propagate as traveling waves.\",\n            \"Energy moves through the medium without displacing the matter.\",\n            \"Hyperbolic equations describe this dynamic, time-dependent behavior.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Helper for wave pulse\n        def pulse_func(x, t, center=3.0, width=0.5, amp=0.5):\n            # Traveling pulse f(x - ct)\n            c = 1.5\n            pos = center + c * t\n            # Simple wrapping for continuous movement in demo\n            pos = (pos % 7.0) - 0.5 \n            return amp * np.exp(-((x - pos) ** 2) / (2 * width ** 2))\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        # Horizontal string\n        string = Line(self.grid[\"D1\"], self.grid[\"D6\"], color=\"#FFFFFF\")\n        # Formula: d^2u/dt^2 = c^2 d^2u/dx^2\n        formula = MathTex(r\"\\frac{\\partial^2 u}{\\partial t^2} = c^2 \\frac{\\partial^2 u}{\\partial x^2}\", color=WHITE)\n        self.place_at_grid(formula, \"B3\", scale_factor=0.8)\n        \n        self.play(Create(string), Write(formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Brown arc pulling the string\n        arc = ArcBetweenPoints(self.grid[\"C3\"] + LEFT*0.2, self.grid[\"C3\"] + RIGHT*0.2, angle=TAU/4, color=\"#A52A2A\")\n        \n        pulled_string = VMobject(color=\"#FFFFFF\")\n        pulled_string.set_points_as_corners([\n            self.grid[\"D1\"],\n            self.grid[\"D2\"],\n            self.grid[\"C3\"], # Pulled up point\n            self.grid[\"D4\"],\n            self.grid[\"D5\"],\n            self.grid[\"D6\"]\n        ]).make_smooth()\n\n        self.play(Create(arc))\n        self.play(Transform(string, pulled_string))\n        self.wait(1)\n        self.play(FadeOut(arc), string.animate.set_points_as_corners([self.grid[\"D1\"], self.grid[\"D6\"]]))\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Traveling pulse simulation\n        time_tracker = ValueTracker(0)\n        \n        def get_wave_path():\n            points = []\n            start_x = self.grid[\"D1\"][0]\n            end_x = self.grid[\"D6\"][0]\n            y_base = self.grid[\"D1\"][1]\n            # Sample 50 points across the string segment\n            for x in np.linspace(start_x, end_x, 50):\n                # Map physical x to internal relative coordinate (0-6)\n                rel_x = (x - start_x) / (end_x - start_x) * 6.0 \n                y_offset = pulse_func(rel_x, time_tracker.get_value())\n                points.append([x, y_base + y_offset, 0])\n            return points\n\n        wave_line = VMobject(color=\"#00FFFF\")\n        wave_line.set_points_as_corners(get_wave_path())\n        wave_line.add_updater(lambda m: m.set_points_as_corners(get_wave_path()))\n        \n        # Yellow dot on the string at x=3.5 (near Grid D4)\n        dot_x_coord = self.grid[\"D4\"][0]\n        dot_rel_x = (dot_x_coord - self.grid[\"D1\"][0]) / (self.grid[\"D6\"][0] - self.grid[\"D1\"][0]) * 6.0\n        \n        dot = Dot(color=\"#FFFF00\")\n        dot.add_updater(lambda m: m.move_to([\n            dot_x_coord, \n            self.grid[\"D1\"][1] + pulse_func(dot_rel_x, time_tracker.get_value()), \n            0\n        ]))\n\n        self.play(FadeOut(string), Create(wave_line), FadeIn(dot))\n        self.play(time_tracker.animate.set_value(4), run_time=4, rate_func=linear)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        # Add vertical guide to show the dot stays on its X-axis\n        v_line = DashedLine(self.grid[\"C4\"], self.grid[\"E4\"], color=GRAY, stroke_opacity=0.3)\n        self.add(v_line)\n        self.play(time_tracker.animate.set_value(8), run_time=4, rate_func=linear)\n        self.remove(v_line)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        # Green vectors showing displacement/tension at wave peak\n        def get_peak_pos():\n            t = time_tracker.get_value()\n            c = 1.5\n            center = 3.0\n            pos_rel = ((center + c * t) % 7.0) - 0.5\n            x_coord = self.grid[\"D1\"][0] + (pos_rel / 6.0) * (self.grid[\"D6\"][0] - self.grid[\"D1\"][0])\n            # Clamp to string bounds for visual consistency\n            x_coord = np.clip(x_coord, self.grid[\"D1\"][0], self.grid[\"D6\"][0])\n            y_coord = self.grid[\"D1\"][1] + pulse_func(pos_rel, t)\n            return [x_coord, y_coord, 0]\n\n        peak_vector = Arrow(start=DOWN*0.3, end=UP*0.3, color=\"#00FF00\", buff=0)\n        peak_vector.add_updater(lambda m: m.move_to(get_peak_pos()))\n        \n        self.play(GrowArrow(peak_vector))\n        self.play(time_tracker.animate.set_value(12), run_time=4, rate_func=linear)\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        title_text = \"The Big Three: Classification of PDEs\"\n        lecture_lines = [\n            \"PDEs fall into three main types based on behavior.\",\n            \"Elliptic equations describe steady-state systems and equilibrium.\",\n            \"Parabolic equations model diffusion and spreading over time.\",\n            \"Hyperbolic equations represent waves and transport phenomena.\",\n            \"This classification helps us choose the right solving strategy.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # PDEs fall into three main types based on behavior.\n        # Display 'PDE Classification' in white (#FFFFFF) at the top.\n        self.lecture[0].set_color(WHITE)\n        pde_class_label = Text(\"PDE Classification\", font_size=32, color=WHITE)\n        self.place_in_area(pde_class_label, \"A2\", \"A5\")\n        self.play(Write(pde_class_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Elliptic equations describe steady-state systems and equilibrium.\n        # Show 'Elliptic: Equilibrium' (#00FF00) next to a static smooth surface.\n        self.lecture[1].set_color(\"#00FF00\")\n        elliptic_label = Text(\"Elliptic: Equilibrium\", font_size=20, color=\"#00FF00\")\n        self.place_at_grid(elliptic_label, \"B2\", scale_factor=0.8)\n        \n        elliptic_surface = Line(LEFT, RIGHT, color=\"#00FF00\")\n        self.place_at_grid(elliptic_surface, \"B4\", scale_factor=1.0)\n        \n        self.play(FadeIn(elliptic_label), Create(elliptic_surface))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Parabolic equations model diffusion and spreading over time.\n        # Show 'Parabolic: Diffusion' (#FFFF00) with a spreading Gaussian curve.\n        self.lecture[2].set_color(\"#FFFF00\")\n        parabolic_label = Text(\"Parabolic: Diffusion\", font_size=20, color=\"#FFFF00\")\n        self.place_at_grid(parabolic_label, \"C2\", scale_factor=0.8)\n        \n        sigma_tracker = ValueTracker(0.2)\n        curve_pos = self.grid[\"C4\"]\n        \n        # Helper to get Gaussian points\n        def get_gaussian_points(sigma):\n            return ParametricFunction(\n                lambda t: np.array([t, 0.4 * (1/sigma) * np.exp(-t**2 / (2 * sigma**2)), 0]),\n                t_range=[-1.5, 1.5]\n            ).scale(0.6).move_to(curve_pos).get_points()\n\n        parabolic_curve = ParametricFunction(\n            lambda t: np.array([t, 0.4 * (1/0.2) * np.exp(-t**2 / (2 * 0.2**2)), 0]),\n            t_range=[-1.5, 1.5],\n            color=\"#FFFF00\"\n        ).scale(0.6).move_to(curve_pos)\n        \n        # Update curve points in-place to optimize performance\n        parabolic_curve.add_updater(lambda m: m.set_points(get_gaussian_points(sigma_tracker.get_value())))\n        \n        self.play(FadeIn(parabolic_label), Create(parabolic_curve))\n        self.play(sigma_tracker.animate.set_value(1.2), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Hyperbolic equations represent waves and transport phenomena.\n        # Show 'Hyperbolic: Waves' (#00FFFF) with two pulses moving in opposite directions.\n        self.lecture[3].set_color(\"#00FFFF\")\n        hyperbolic_label = Text(\"Hyperbolic: Waves\", font_size=20, color=\"#00FFFF\")\n        self.place_at_grid(hyperbolic_label, \"D2\", scale_factor=0.8)\n        \n        pulse_func = lambda x: 0.4 * np.exp(-x**2 / 0.05)\n        pulse1 = ParametricFunction(lambda t: [t, pulse_func(t), 0], t_range=[-0.5, 0.5], color=\"#00FFFF\")\n        pulse2 = ParametricFunction(lambda t: [t, pulse_func(t), 0], t_range=[-0.5, 0.5], color=\"#00FFFF\")\n        \n        self.place_at_grid(pulse1, \"D4\", scale_factor=0.8)\n        self.place_at_grid(pulse2, \"D4\", scale_factor=0.8)\n        \n        self.play(FadeIn(hyperbolic_label), Create(pulse1), Create(pulse2))\n        self.play(\n            pulse1.animate.shift(LEFT * 1.2),\n            pulse2.animate.shift(RIGHT * 1.2),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # This classification helps us choose the right solving strategy.\n        # Display 'Fundamental Physics' (#FFFFFF) below the three examples.\n        self.lecture[4].set_color(WHITE)\n        fundamental_physics = Text(\"Fundamental Physics\", font_size=28, color=WHITE)\n        self.place_in_area(fundamental_physics, \"F2\", \"F5\")\n        \n        self.play(Write(fundamental_physics))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        title = \"The 'Walls' of the Math: Boundary Conditions\"\n        lines = [\n            \"Boundaries define the physical limits of our PDE system.\",\n            \"Dirichlet conditions fix the value at the boundary's edge.\",\n            \"Neumann conditions specify the slope or flux across boundaries.\"\n        ]\n        self.setup_layout(title, lines)\n        \n        # Colors\n        COLOR_SEGMENT = \"#FFFFFF\"\n        COLOR_DIRICHLET = \"#FF0000\"\n        COLOR_NEUMANN = \"#00FF00\"\n        COLOR_HIGHLIGHT = YELLOW\n        \n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(COLOR_HIGHLIGHT)\n        \n        # Draw a horizontal white segment (#FFFFFF) with red circles (#FF0000) at endpoints.\n        p_left = self.grid[\"C2\"]\n        p_right = self.grid[\"C5\"]\n        segment = Line(p_left, p_right, color=COLOR_SEGMENT)\n        \n        circle_l = Circle(radius=0.1, color=COLOR_DIRICHLET, fill_opacity=1)\n        circle_r = Circle(radius=0.1, color=COLOR_DIRICHLET, fill_opacity=1)\n        circle_l.move_to(p_left)\n        circle_r.move_to(p_right)\n        \n        self.play(Create(segment))\n        self.play(FadeIn(circle_l), FadeIn(circle_r))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(COLOR_HIGHLIGHT)\n        \n        # Label the endpoints 'Dirichlet: Fixed Value' (#FF0000).\n        label_dirichlet = Text(\"Dirichlet: Fixed Value\", font_size=20, color=COLOR_DIRICHLET)\n        self.place_in_area(label_dirichlet, \"B2\", \"B5\")\n        \n        self.play(Write(label_dirichlet))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(COLOR_HIGHLIGHT)\n        \n        # Replace circles with green tangent lines (#00FF00). Label 'Neumann: Fixed Slope'.\n        slope_l = Line(start=UP*0.4 + LEFT*0.2, end=DOWN*0.4 + RIGHT*0.2, color=COLOR_NEUMANN).move_to(p_left)\n        slope_r = Line(start=UP*0.4 + LEFT*0.2, end=DOWN*0.4 + RIGHT*0.2, color=COLOR_NEUMANN).move_to(p_right)\n        \n        label_neumann = Text(\"Neumann: Fixed Slope\", font_size=20, color=COLOR_NEUMANN)\n        self.place_in_area(label_neumann, \"B2\", \"B5\")\n        \n        self.play(\n            ReplacementTransform(circle_l, slope_l),\n            ReplacementTransform(circle_r, slope_r),\n            ReplacementTransform(label_dirichlet, label_neumann)\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section7Scene(TeachingScene):\n    def construct(self):\n        # Setup title and lecture lines\n        lecture_lines = [\n            \"PDEs power weather forecasts and modern engineering designs.\",\n            \"They are the mathematical foundation for describing physical reality.\",\n            \"Mastering them unlocks the secrets of a changing world.\"\n        ]\n        self.setup_layout(\"Conclusion: The Language of the Universe\", lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight first lecture line\n        self.lecture[0].set_color(YELLOW)\n\n        # Show icons: Smartphone [Asset], Rocket [Asset], and MRI\n        # Load SVG assets\n        smartphone_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/smartphone.svg\").set_color(WHITE)\n        rocket_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/rocket.svg\").set_color(\"#C0C0C0\")\n        \n        # MRI Machine: No asset provided, create a simple representation with shapes\n        mri_base = RoundedRectangle(height=1.2, width=1.0, corner_radius=0.1, color=\"#A9A9A9\")\n        mri_bore = Circle(radius=0.35, color=\"#A9A9A9\").shift(UP*0.1)\n        mri_icon = VGroup(mri_base, mri_bore)\n\n        # Place icons in the grid\n        self.place_at_grid(smartphone_icon, \"B2\", scale_factor=0.7)\n        self.place_at_grid(rocket_icon, \"B4\", scale_factor=0.7)\n        self.place_at_grid(mri_icon, \"B6\", scale_factor=0.6)\n\n        self.play(FadeIn(smartphone_icon), FadeIn(rocket_icon), FadeIn(mri_icon))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight second lecture line\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n\n        # Overlay yellow PDE formulas (#FFFF00) across the icons\n        # Use MathTex for formulas. Simplified to standard symbols to ensure rendering.\n        heat_eq = MathTex(r\"\\frac{\\partial u}{\\partial t} = \\alpha \\nabla^2 u\", color=\"#FFFF00\", font_size=24)\n        wave_eq = MathTex(r\"\\frac{\\partial^2 u}{\\partial t^2} = c^2 \\nabla^2 u\", color=\"#FFFF00\", font_size=24)\n        # Navier-Stokes equation (simplified representation)\n        navier_stokes = MathTex(r\"\\rho \\frac{D\\mathbf{v}}{Dt} = -\\nabla p + \\mu \\nabla^2 \\mathbf{v}\", color=\"#FFFF00\", font_size=18)\n\n        self.place_at_grid(heat_eq, \"C2\")\n        self.place_at_grid(wave_eq, \"C4\")\n        self.place_at_grid(navier_stokes, \"C6\")\n\n        self.play(Write(heat_eq), Write(wave_eq), Write(navier_stokes))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Highlight third lecture line\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n\n        # Display 'PDEs: The Language of the Universe' (#FFFFFF) centered at the bottom\n        final_text = Text(\"PDEs: The Language of the Universe\", font_size=32, color=WHITE)\n        self.place_in_area(final_text, \"E1\", \"F6\")\n\n        self.play(FadeIn(final_text, shift=UP))\n        self.wait(4)\n\n        # Reset colors and final wait\n        self.lecture[2].set_color(WHITE)\n        self.wait(2)\n"
+  ],
+  "outline": {
+    "topic": "Partial Differential Equations: Modeling Change in Space and Time",
+    "target_audience": "Undergraduate STEM students (Physics, Engineering, Math)",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "From One to Many: The PDE Intuition",
+        "content": "Transition from Ordinary Differential Equations (ODEs) to Partial Differential Equations (PDEs). Explain that while ODEs track change over one variable (usually time), PDEs track change across multiple variables simultaneously (like time and position).",
+        "example": "Visualize a single thermometer tracking a room's temperature (ODE) versus a high-tech 3D thermal grid showing how heat flows from a fireplace to the corners of the room (PDE)."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite Kit: The Partial Derivative",
+        "content": "A quick visual refresher on partial derivatives (∂u/∂x). Explain the concept of 'holding one variable constant' while measuring the slope of another to ensure a smooth transition into complex equations.",
+        "example": "A hiker (character) standing on a 3D mountain. Moving East-West represents the derivative with respect to 'x', while moving North-South represents 'y'. The PDE describes the shape of the entire mountain."
+      },
+      {
+        "id": "section_3",
+        "title": "The Heat Equation: Modeling Diffusion",
+        "content": "Introduce the Parabolic PDE (Heat Equation). Explain how the rate of change in time (∂u/∂t) is proportional to the 'curvature' of the temperature in space (∂²u/∂x²).",
+        "example": "A Penguin sitting on a block of ice. An animation shows the 'heat profile' flattening out over time, moving from the warm penguin into the cold ice until the temperature curve becomes a straight line."
+      },
+      {
+        "id": "section_4",
+        "title": "The Wave Equation: Modeling Vibration",
+        "content": "Introduce the Hyperbolic PDE (Wave Equation). Discuss how the acceleration of a point (second derivative in time) is tied to its spatial tension (second derivative in space).",
+        "example": "A guitar string plucked by a cat. The animation highlights a single point on the string oscillating up and down while the wave pulse travels horizontally, demonstrating the relationship between spatial shape and temporal motion."
+      },
+      {
+        "id": "section_5",
+        "title": "The Big Three: Classification of PDEs",
+        "content": "Briefly classify PDEs into three types based on their behavior: Elliptic (steady-state/equilibrium), Parabolic (diffusion), and Hyperbolic (waves/vibration).",
+        "example": "A 'Water' themed graphic: A still, calm lake surface (Elliptic), ink drop spreading in the water (Parabolic), and a boat's wake moving across the surface (Hyperbolic)."
+      },
+      {
+        "id": "section_6",
+        "title": "The 'Walls' of the Math: Boundary Conditions",
+        "content": "Explain that PDEs are 'wild' and need constraints to be solved. Introduce Dirichlet (fixed values) and Neumann (fixed flux/slope) boundary conditions.",
+        "example": "A digital artist (character) using a 'clamping' tool. If the ends of a vibrating string are nailed down (Dirichlet), the wave looks different than if the ends are sliding on frictionless poles (Neumann)."
+      },
+      {
+        "id": "section_7",
+        "title": "Conclusion: The Language of the Universe",
+        "content": "Summarize how PDEs are used in modern technology, from weather forecasting to designing airplane wings and simulating black holes.",
+        "example": "A montage showing a smartphone, a SpaceX rocket, and a medical MRI machine—all devices that rely on solving PDEs to function correctly."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "From One to Many: The PDE Intuition",
+      "lecture_lines": [
+        "ODEs track changes over one variable, like time.",
+        "But reality often involves multiple variables, like position.",
+        "PDEs describe how systems evolve in space and time."
+      ],
+      "animations": [
+        "Draw a vertical rectangle (#FF0000) representing a thermometer. Label horizontal axis 't' (#FFFFFF).",
+        "Transform the rectangle into a 2D grid of small squares (#FFFFFF) to represent space.",
+        "Color central squares red (#FF0000) and outer squares blue (#0000FF). Animate heat spreading."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite Kit: The Partial Derivative",
+      "lecture_lines": [
+        "Partial derivatives measure change while holding other variables constant.",
+        "Imagine hiking a mountain along a single compass direction.",
+        "We isolate one dimension to understand complex multidimensional shapes."
+      ],
+      "animations": [
+        "Draw a 3D wireframe mesh (#666666) representing a mountain [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/mountain.svg]. Place a small yellow sphere (#FFFF00) on the surface.",
+        "Draw a green tangent line (#00FF00) along the x-direction through the sphere.",
+        "Draw a cyan tangent line (#00FFFF) along the y-direction through the sphere."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Heat Equation: Modeling Diffusion",
+      "lecture_lines": [
+        "The heat equation describes how temperature spreads through space.",
+        "Time change depends on the curvature of spatial temperature.",
+        "High curvature means heat flows quickly into colder regions.",
+        "Over time, temperature gradients flatten toward a steady state.",
+        "This parabolic behavior models diffusion in many physical systems."
+      ],
+      "animations": [
+        "Show a blue rectangle (#0000FF) with an orange circle (#FFA500) labeled 'Heat Source'.",
+        "Display formula: d u / d t = alpha * d2 u / d x2. Highlight d u / d t in yellow (#FFFF00).",
+        "Plot a sharp red bell curve (#FF0000) over the blue rectangle.",
+        "Draw white arrows (#FFFFFF) pointing from the peak outward.",
+        "Animate the bell curve (#FF0000) flattening into a horizontal line."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Wave Equation: Modeling Vibration",
+      "lecture_lines": [
+        "The wave equation models oscillations like a plucked string.",
+        "Acceleration at a point depends on local spatial tension.",
+        "This creates disturbances that propagate as traveling waves.",
+        "Energy moves through the medium without displacing the matter.",
+        "Hyperbolic equations describe this dynamic, time-dependent behavior."
+      ],
+      "animations": [
+        "Show a horizontal line (#FFFFFF) using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/string.svg]. Display wave equation formula in white.",
+        "Animate a brown arc (#A52A2A) pulling and releasing the line center.",
+        "Highlight a single yellow dot (#FFFF00) on the line moving up and down.",
+        "Animate a cyan sine pulse (#00FFFF) traveling from left to right.",
+        "Add green vectors (#00FF00) showing curvature at the wave peak."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Big Three: Classification of PDEs",
+      "lecture_lines": [
+        "PDEs fall into three main types based on behavior.",
+        "Elliptic equations describe steady-state systems and equilibrium.",
+        "Parabolic equations model diffusion and spreading over time.",
+        "Hyperbolic equations represent waves and transport phenomena.",
+        "This classification helps us choose the right solving strategy."
+      ],
+      "animations": [
+        "Display 'PDE Classification' in white (#FFFFFF) at the top.",
+        "Show 'Elliptic: Equilibrium' (#00FF00) next to a static smooth surface.",
+        "Show 'Parabolic: Diffusion' (#FFFF00) with a spreading Gaussian curve.",
+        "Show 'Hyperbolic: Waves' (#00FFFF) with two pulses moving in opposite directions.",
+        "Display 'Fundamental Physics' (#FFFFFF) below the three examples."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "The 'Walls' of the Math: Boundary Conditions",
+      "lecture_lines": [
+        "Boundaries define the physical limits of our PDE system.",
+        "Dirichlet conditions fix the value at the boundary's edge.",
+        "Neumann conditions specify the slope or flux across boundaries."
+      ],
+      "animations": [
+        "Draw a horizontal white segment (#FFFFFF) with red circles (#FF0000) at endpoints.",
+        "Label the endpoints 'Dirichlet: Fixed Value' (#FF0000).",
+        "Replace circles with green tangent lines (#00FF00). Label 'Neumann: Fixed Slope'."
+      ]
+    },
+    {
+      "id": "section_7",
+      "title": "Conclusion: The Language of the Universe",
+      "lecture_lines": [
+        "PDEs power weather forecasts and modern engineering designs.",
+        "They are the mathematical foundation for describing physical reality.",
+        "Mastering them unlocks the secrets of a changing world."
+      ],
+      "animations": [
+        "Show icons: Smartphone [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/smartphone.svg] (#FFFFFF), Rocket [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/rocket.svg] (#C0C0C0), and MRI (#A9A9A9).",
+        "Overlay yellow PDE formulas (#FFFF00) across the icons.",
+        "Display 'PDEs: The Language of the Universe' (#FFFFFF) centered."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review once lecture lines are finalized."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_1 implementing the thermometer-to-grid transformation and heat spreading animation using the grid system and TeachingScene base class."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review once lecture lines are finalized."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Fixed NameError: CYAN by using hex code '#00FFFF'. Also integrated the mountain.svg asset as requested."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section_3 (key section)."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review once lecture lines are finalized."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_3 with the 6x6 grid system and requested animations for the Heat Equation."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section_4 (key section)."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review once lecture lines are finalized."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 4 (The Wave Equation) following the grid system and storyboard. Implemented traveling wave pulse with a ValueTracker and dynamic mobject updaters for the string, a vertical-oscillating dot, and curvature vectors."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section_5 (key section)."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review once lecture lines are finalized."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 5 following the storyboard and visual grid constraints. Implemented Elliptic (static surface), Parabolic (spreading Gaussian with optimized set_points updater), and Hyperbolic (two pulses moving apart) animations. Used the 6x6 grid for positioning labels and visuals. Correctly applied color changes to lecture lines."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review once lecture lines are finalized."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section6Scene with animations for boundary conditions (Dirichlet and Neumann). Grid system used for positioning. Line colors highlighted sequentially."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_7."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and title. Ready for review once lecture lines are finalized."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Integrated SVGMobject assets for Smartphone and Rocket. Provided a geometric representation for the MRI machine. Used MathTex for the formulas and ensured proper grid positioning. Sequential highlighting of lecture lines implemented."
+    },
+    {
+      "id": 22,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Draw a 3D wireframe mesh (#666666) representing a mountain [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/mountain.svg]. Place a small yellow sphere (#FFFF00) on the surface.']",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Integrated mountain.svg asset and ensured proper grid positioning for the mountain and hiker (sphere)."
+    },
+    {
+      "id": 23,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a horizontal line (#FFFFFF) using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/string.svg]. Display wave equation formula in white.']",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_7] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show icons: Smartphone [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/smartphone.svg] (#FFFFFF), Rocket [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/rocket.svg] (#C0C0C0), and MRI (#A9A9A9).']",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated code to use SVGMobject with the provided asset paths for the smartphone and rocket icons as requested in the storyboard."
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The t_label is placed at F5, which is horizontally disconnected from the thermometer positioned in column 3 (B3-E3). Fix: Line 63: self.place_at_grid(t_label, 'F3', scale_factor=0.8) (line=63, object=t_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The space_label (x, y) is positioned at F3, causing it to be off-center relative to the grid_squares which span columns 2 through 5. Fix: Line 82: self.place_in_area(space_label, 'F3', 'F4', scale_factor=0.8) (line=82, object=space_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The mountain graphic is oversized (scale 1.8) and covers the entire grid area (A1-F6), which causes it to overlap with the lecture text on the left. Fix: Line 67: self.place_in_area(mountain, 'A3', 'F6', scale_factor=1.4) (line=67, object=mountain)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The hiker sphere is positioned at C3, which puts it too far left and creates visual clutter near the lecture text area. Fix: Line 72: self.place_at_grid(sphere, 'B4', scale_factor=0.8) (line=72, object=sphere)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The ice_block and its internal animations are positioned too far to the left (starting at B2), causing visual crowding and potential overlap with the longer lecture notes. Fix: Line 70: self.place_in_area(self.ice_block, 'B3', 'E6') (line=70, object=ice_block)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The heat_source needs to be repositioned to remain centered within the ice_block after the block is shifted right. Fix: Line 73: self.place_at_grid(self.heat_source, 'C4') (line=73, object=heat_source)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The formula is centered over the old ice_block position, creating a layout imbalance and crowding the top-left area. Fix: Line 90: self.place_in_area(self.formula, 'A3', 'A6') (line=90, object=formula)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The wave equation formula at B3 is too small and lacks vertical centering within its designated area, making it look disconnected from the animation below. Fix: Line 74: self.place_in_area(formula, 'A1', 'B6', scale_factor=1.0) (line=74, object=formula)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The wave animation (the cyan line and moving pulse) extends too far into the left side, potentially obstructing or cluttering the space reserved for lecture notes. Fix: Position the wave animation group using self.place_in_area('C1', 'F6', scale_factor=1.0) to keep it strictly on the right side of the screen. (line=80, object=wave_animation_group)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The markers on the wave (yellow dot, red/green arrows) appear very close to the text 'Hyperbolic equations describe...', which may lead to visual overlap during animation playback. Fix: Ensure all wave markers and annotations are grouped with the wave and constrained within the right-side grid area C1:F6. (line=95, object=wave_markers_group)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The labels 'Elliptic: Equilibrium' and 'Parabolic: Diffusion' (B2, C2) are positioned too far from their visual models at column 4 and risk overlapping long lecture notes. Fix: Line 72 & 85: self.place_at_grid(self.elliptic_label, 'B3', scale_factor=0.8) and self.place_at_grid(self.parabolic_label, 'C3', scale_factor=0.8) (line=72, object=elliptic_label, parabolic_label)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'Hyperbolic: Waves' label at D2 is separated from its visual pulses at D4 by a large gap, making the connection less intuitive. Fix: Line 115: self.place_at_grid(self.hyperbolic_label, 'D3', scale_factor=0.8) (line=115, object=hyperbolic_label)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The empty space at row E creates a visual disconnect between the classification items and the 'Fundamental Physics' footer. Fix: Line 137: self.place_in_area(self.fundamental_physics, 'E2', 'E5') (line=137, object=fundamental_physics)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The Dirichlet label at B2-B5 is positioned too close to the horizontal line in row C, creating a vertically cramped appearance that lacks professional spacing. Fix: Line 85: self.place_in_area(label_dirichlet, 'A2', 'A5', scale_factor=0.7) (line=85, object=label_dirichlet)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The Neumann label at B2-B5 visually overlaps with the tall green boundary slashes that extend upwards from the horizontal line, causing a cluttered and obstructed visual. Fix: Line 99: self.place_in_area(label_neumann, 'A2', 'A5', scale_factor=0.7) (line=99, object=label_neumann)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The Navier-Stokes equation (navier_stokes) is too horizontally wide for a single-point placement at 'C6', which causes it to crowd the right edge of the frame and appear cramped. Fix: Line 92: self.place_in_area(navier_stokes, 'C5', 'C6') (line=92, object=navier_stokes)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The 'mri_icon' has a scale factor of 0.6, while the 'smartphone_icon' and 'rocket_icon' are at 0.7, creating a visual inconsistency within the icon row. Fix: Line 73: self.place_at_grid(mri_icon, 'B6', scale_factor=0.7) (line=73, object=mri_icon)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6",
+    "section_7": "Coder7"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5,
+    "section_7": 6
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_6/480p15/Section6Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_7/480p15/Section7Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 166099,
+        "video_mtime_ns": 1785210724000000000,
+        "code_sha1": "08a88469bacbcd3667cbfa67044bd321b3a247e7"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The t_label is placed at F5, which is horizontally disconnected from the thermometer positioned in column 3 (B3-E3).",
+              "solution": "Line 63: self.place_at_grid(t_label, 'F3', scale_factor=0.8)",
+              "line_number": 63,
+              "object_affected": "t_label"
+            },
+            {
+              "problem": "The space_label (x, y) is positioned at F3, causing it to be off-center relative to the grid_squares which span columns 2 through 5.",
+              "solution": "Line 82: self.place_in_area(space_label, 'F3', 'F4', scale_factor=0.8)",
+              "line_number": 82,
+              "object_affected": "space_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        25,
+        26
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 135252,
+        "video_mtime_ns": 1785210957000000000,
+        "code_sha1": "d6de1568ea154acb603aafb3c0ff659398abb7d5"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The mountain graphic is oversized (scale 1.8) and covers the entire grid area (A1-F6), which causes it to overlap with the lecture text on the left.",
+              "solution": "Line 67: self.place_in_area(mountain, 'A3', 'F6', scale_factor=1.4)",
+              "line_number": 67,
+              "object_affected": "mountain"
+            },
+            {
+              "problem": "The hiker sphere is positioned at C3, which puts it too far left and creates visual clutter near the lecture text area.",
+              "solution": "Line 72: self.place_at_grid(sphere, 'B4', scale_factor=0.8)",
+              "line_number": 72,
+              "object_affected": "sphere"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        27,
+        28
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 370537,
+        "video_mtime_ns": 1785210738000000000,
+        "code_sha1": "892482741bb696d6b5e751fad9d5ccbe22accec5"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The ice_block and its internal animations are positioned too far to the left (starting at B2), causing visual crowding and potential overlap with the longer lecture notes.",
+              "solution": "Line 70: self.place_in_area(self.ice_block, 'B3', 'E6')",
+              "line_number": 70,
+              "object_affected": "ice_block"
+            },
+            {
+              "problem": "The heat_source needs to be repositioned to remain centered within the ice_block after the block is shifted right.",
+              "solution": "Line 73: self.place_at_grid(self.heat_source, 'C4')",
+              "line_number": 73,
+              "object_affected": "heat_source"
+            },
+            {
+              "problem": "The formula is centered over the old ice_block position, creating a layout imbalance and crowding the top-left area.",
+              "solution": "Line 90: self.place_in_area(self.formula, 'A3', 'A6')",
+              "line_number": 90,
+              "object_affected": "formula"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        29,
+        30,
+        31
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 410026,
+        "video_mtime_ns": 1785210734000000000,
+        "code_sha1": "7cae7116f2c4aa1d90b5f773b8cfbbdc20aac87a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The wave equation formula at B3 is too small and lacks vertical centering within its designated area, making it look disconnected from the animation below.",
+              "solution": "Line 74: self.place_in_area(formula, 'A1', 'B6', scale_factor=1.0)",
+              "line_number": 74,
+              "object_affected": "formula"
+            },
+            {
+              "problem": "The wave animation (the cyan line and moving pulse) extends too far into the left side, potentially obstructing or cluttering the space reserved for lecture notes.",
+              "solution": "Position the wave animation group using self.place_in_area('C1', 'F6', scale_factor=1.0) to keep it strictly on the right side of the screen.",
+              "line_number": 80,
+              "object_affected": "wave_animation_group"
+            },
+            {
+              "problem": "The markers on the wave (yellow dot, red/green arrows) appear very close to the text 'Hyperbolic equations describe...', which may lead to visual overlap during animation playback.",
+              "solution": "Ensure all wave markers and annotations are grouped with the wave and constrained within the right-side grid area C1:F6.",
+              "line_number": 95,
+              "object_affected": "wave_markers_group"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 393030,
+        "video_mtime_ns": 1785210737000000000,
+        "code_sha1": "3d7b25a966862c905e579a94a5c858ce41159cd9"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The labels 'Elliptic: Equilibrium' and 'Parabolic: Diffusion' (B2, C2) are positioned too far from their visual models at column 4 and risk overlapping long lecture notes.",
+              "solution": "Line 72 & 85: self.place_at_grid(self.elliptic_label, 'B3', scale_factor=0.8) and self.place_at_grid(self.parabolic_label, 'C3', scale_factor=0.8)",
+              "line_number": 72,
+              "object_affected": "elliptic_label, parabolic_label"
+            },
+            {
+              "problem": "The 'Hyperbolic: Waves' label at D2 is separated from its visual pulses at D4 by a large gap, making the connection less intuitive.",
+              "solution": "Line 115: self.place_at_grid(self.hyperbolic_label, 'D3', scale_factor=0.8)",
+              "line_number": 115,
+              "object_affected": "hyperbolic_label"
+            },
+            {
+              "problem": "The empty space at row E creates a visual disconnect between the classification items and the 'Fundamental Physics' footer.",
+              "solution": "Line 137: self.place_in_area(self.fundamental_physics, 'E2', 'E5')",
+              "line_number": 137,
+              "object_affected": "fundamental_physics"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35,
+        36,
+        37
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 145944,
+        "video_mtime_ns": 1785210723000000000,
+        "code_sha1": "72ffae6c69b5452a328e44087beae5eb820d190e"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The Dirichlet label at B2-B5 is positioned too close to the horizontal line in row C, creating a vertically cramped appearance that lacks professional spacing.",
+              "solution": "Line 85: self.place_in_area(label_dirichlet, 'A2', 'A5', scale_factor=0.7)",
+              "line_number": 85,
+              "object_affected": "label_dirichlet"
+            },
+            {
+              "problem": "The Neumann label at B2-B5 visually overlaps with the tall green boundary slashes that extend upwards from the horizontal line, causing a cluttered and obstructed visual.",
+              "solution": "Line 99: self.place_in_area(label_neumann, 'A2', 'A5', scale_factor=0.7)",
+              "line_number": 99,
+              "object_affected": "label_neumann"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        38,
+        39
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_7",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_7/480p15/Section7Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time/media/videos/section_7/480p15/Section7Scene.mp4",
+        "video_size": 190512,
+        "video_mtime_ns": 1785210961000000000,
+        "code_sha1": "6cd2ddb1a56ccb5f18a937a738d72dbc05809c6d"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The Navier-Stokes equation (navier_stokes) is too horizontally wide for a single-point placement at 'C6', which causes it to crowd the right edge of the frame and appear cramped.",
+              "solution": "Line 92: self.place_in_area(navier_stokes, 'C5', 'C6')",
+              "line_number": 92,
+              "object_affected": "navier_stokes"
+            },
+            {
+              "problem": "The 'mri_icon' has a scale factor of 0.6, while the 'smartphone_icon' and 'rocket_icon' are at 0.7, creating a visual inconsistency within the icon row.",
+              "solution": "Line 73: self.place_at_grid(mri_icon, 'B6', scale_factor=0.7)",
+              "line_number": 73,
+              "object_affected": "mri_icon"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        40,
+        41
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/16-Partial_Differential_Equations_Modeling_Change_in_Space_and_Time",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 412396,
+      "completion_tokens": 46738,
+      "total_tokens": 582998,
+      "call_count": 43
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 274,
+        "completion_tokens": 876,
+        "total_tokens": 1917,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 25009,
+        "completion_tokens": 1242,
+        "total_tokens": 28184,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 29712,
+        "completion_tokens": 1458,
+        "total_tokens": 33870,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 81564,
+        "completion_tokens": 1513,
+        "total_tokens": 86222,
+        "call_count": 2
+      },
+      "agent:Coder7": {
+        "prompt_tokens": 54960,
+        "completion_tokens": 7881,
+        "total_tokens": 73590,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 15819,
+        "completion_tokens": 3184,
+        "total_tokens": 21464,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 18195,
+        "completion_tokens": 2168,
+        "total_tokens": 24652,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 16641,
+        "completion_tokens": 5387,
+        "total_tokens": 23155,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 15457,
+        "completion_tokens": 4962,
+        "total_tokens": 21547,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 58255,
+        "completion_tokens": 6679,
+        "total_tokens": 73827,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 44850,
+        "completion_tokens": 4218,
+        "total_tokens": 61334,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4817,
+        "completion_tokens": 822,
+        "total_tokens": 17098,
+        "call_count": 14
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 10491,
+        "completion_tokens": 2941,
+        "total_tokens": 30036,
+        "call_count": 4
+      },
+      "scope_refine:section_7": {
+        "prompt_tokens": 16400,
+        "completion_tokens": 1363,
+        "total_tokens": 37828,
+        "call_count": 4
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2828,
+        "completion_tokens": 246,
+        "total_tokens": 5337,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2382,
+        "completion_tokens": 234,
+        "total_tokens": 4753,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2886,
+        "completion_tokens": 312,
+        "total_tokens": 4672,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3436,
+        "completion_tokens": 353,
+        "total_tokens": 6403,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3139,
+        "completion_tokens": 383,
+        "total_tokens": 10149,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2459,
+        "completion_tokens": 251,
+        "total_tokens": 9368,
+        "call_count": 1
+      },
+      "video_review:section_7": {
+        "prompt_tokens": 2822,
+        "completion_tokens": 265,
+        "total_tokens": 7592,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 412396,
+        "completion_tokens": 46738,
+        "total_tokens": 582998,
+        "call_count": 43
+      }
+    }
+  }
+}

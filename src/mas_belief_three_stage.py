@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import time
+from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional, Type
@@ -123,8 +124,6 @@ class ConsolidationResponse(BaseModel):
 
 class EvidenceObservation(EvidenceClassification):
     belief_id: str
-    direction: Literal["support", "contradict", "neutral"]
-    evidence_confidence: float = Field(ge=0.0, le=1.0)
 
 
 class RetrospectiveResponse(BaseModel):
@@ -167,9 +166,15 @@ def _structured_call(
             attempt_prompt += (
                 "\n\nRETRY: Return one complete JSON object conforming exactly to the "
                 "provided schema. Use only the permitted categorical values and no commentary."
-                "\nThe previous response failed local validation:\n"
+                "\nThe previous response failed local validation. Here is the precise "
+                "validation error:\n"
                 + error_feedback
-                + "\nCorrect this error while preserving all otherwise valid distinct content."
+                + "\nCorrect every issue named in that error while preserving all otherwise "
+                "valid distinct content. If the error reports an invalid evidence partition, "
+                "ensure every expected evidence ID appears exactly once across the partition: "
+                "add all missing IDs, remove duplicate occurrences, and omit unknown IDs. "
+                "Verify the completed partition against the full input evidence list before "
+                "returning the corrected JSON."
             )
         response = create_interaction(
             client,
@@ -461,23 +466,16 @@ MULTIPLE OBSERVATIONS WITHIN ONE TOPIC:
 - NEVER put a belief in applicable_belief_ids unless you also return at least one
   observation for it. If its context seems relevant but you cannot describe a
   concrete observation, put it in insufficient_belief_ids.
-- A single belief may have both supporting and contradicting observations in the same
-  topic. Preserve both; do not average them into one judgement.
+- A single belief may have multiple distinct observations in the same topic. Preserve
+  them separately; do not average them into one judgement.
 - Do not repeat the same event using different wording. Each observation must identify
   a distinct transition or outcome.
-- direction="support" means that this observation provides positive evidence that
-  applying the exact frozen instruction caused or materially contributed to a better
-  target outcome. Compliance alone is not support.
-- direction="contradict" means that this observation provides negative evidence about
-  the effectiveness of the exact frozen instruction. Violation alone is not
-  contradiction.
-- direction="neutral" records an informative application, non-application, relevance,
-  or outcome event that does not justify a positive or negative effectiveness update.
-- Absence of the strategy, mere final-code presence, or an unclear before/after outcome
-  is normally neutral—not automatically support or contradiction.
+- Do not output support, contradiction, update direction, update eligibility, or a
+  numeric confidence. Local deterministic code derives Bayesian update eligibility
+  from your four categorical judgements.
 - The local updater caps the combined Bayesian evidence weight contributed by all
-  observations for one belief in one topic, so report distinct evidence honestly
-  rather than trying to compress it.
+  update-eligible observations for one belief in one topic, so report distinct evidence
+  honestly rather than trying to compress it.
 
 SEPARATE THESE JUDGEMENTS:
 1. Contextual applicability: did the matching problem and opportunity occur?
@@ -493,48 +491,23 @@ Likewise, a successful render, high AES/TQ score, positive reviewer comment, or 
 pipeline completion must not be attributed to a particular strategy unless the evidence
 isolates that relationship.
 
-DIRECTION IS AN EFFECTIVENESS JUDGEMENT, NOT A COMPLIANCE JUDGEMENT:
-Choose direction only AFTER completing strategy_application, attribution_strength,
-evidence_reliability, and outcome_improvement.
-
-Use direction="support" only when ALL of these hold:
-1. the exact strategy was applied fully or partially;
-2. the target problem is observed before application and resolved or improved after it;
-3. the transition has strong or moderate attribution to that strategy; and
-4. the source directly or corroboratively records the relevant transition.
-
-Otherwise, do not label the observation support. In particular:
-- strategy present in final code + successful render => neutral;
-- strategy followed + positive AES/TQ score => neutral unless a specific target
-  before/after change is isolated;
-- strategy absent + predicted problem occurred => neutral evidence of relevance and
-  noncompliance, not evidence that the strategy would have fixed it;
-- a reviewer saying that a technique is good, clear, consistent, or helpful without a
-  comparable transition => neutral;
-- an instruction was followed and no target outcome is available => neutral.
-
-Use direction="contradict" only when the evidence tests effectiveness negatively:
-- the exact strategy was applied, the target outcome was unchanged or worsened, and
-  attribution is strong or moderate; or
-- a genuinely comparable alternative succeeds without the strategy AND the frozen
-  instruction specifically claims that its strategy is necessary or uniquely required.
-Do not treat ordinary noncompliance, an alternative implementation, or success without
-a merely recommended strategy as contradiction.
-
-Use direction="neutral" for every concrete applicability/compliance observation that
-does not pass the support or contradiction tests. Neutral is a useful result: it records
-role, context, application, and outcome information without changing effectiveness.
-When uncertain between support and neutral, choose neutral. When uncertain between
-contradiction and neutral, choose neutral.
+YOUR TASK IS EVIDENCE CLASSIFICATION, NOT THE FINAL EFFECTIVENESS DECISION:
+For every concrete observation, classify these four inputs independently:
+1. strategy_application;
+2. outcome_improvement;
+3. attribution_strength; and
+4. evidence_reliability.
+Do not try to make these categories collectively imply support. Report what the
+artifacts establish for each category. Local code—not you—will apply a fixed,
+auditable rule to decide whether the observation updates effectiveness.
 
 PARTITION GUIDANCE:
 - Use not_applicable only when the belief's scoped problem, role, stage, or opportunity
   genuinely did not occur.
 - Use insufficient when the context may match but no concrete event establishes whether
   the exact strategy was applied, violated, or encountered.
-- Use applicable with direction="neutral" when a concrete strategy application,
-  non-application, or matching problem event is directly observable but effectiveness
-  cannot be established.
+- Use applicable when a concrete strategy application, non-application, or matching
+  problem event is directly observable, even when effectiveness cannot be established.
 - Do not classify a belief as applicable merely because its API, keyword, visual theme,
   or broad best practice appears somewhere in the topic.
 
@@ -581,23 +554,17 @@ Never use improved or resolved merely because the final render succeeded, the st
 appears in code, or an aggregate evaluation score was positive.
 
 CAUSAL EDGE CASES:
-- strategy full/partial + isolated improvement may support effectiveness;
-- strategy full/partial + isolated worsening may contradict effectiveness;
+- strategy full/partial + isolated improvement should be classified literally as
+  full/partial, improved/resolved, strong/moderate, and direct/corroborated;
+- strategy full/partial + isolated unchanged/worsened outcome should be classified
+  literally using those corresponding categories;
 - strategy full/partial + no before/after outcome means improvement is unclear;
 - strategy none + predicted problem occurred shows relevance/noncompliance, but does not
   directly demonstrate that providing the strategy would have fixed it;
-- strategy none + successful outcome may suggest the strategy is unnecessary, but only
-  contradicts it when the opportunity and alternative explanation are comparable;
+- strategy none + successful outcome still has strategy_application="none"; do not
+  reinterpret non-application as application;
 - aggregate AES/TQ scores cannot establish attribution to one coding, layout, planning,
   or pedagogical strategy without specific supporting evidence.
-
-EVIDENCE CONFIDENCE:
-- Reserve 1.0 for an explicit, unambiguous and well-isolated recorded transition.
-- Use 0.8-0.9 when the event is clear but interpretation or attribution has some
-  uncertainty.
-- Use 0.5-0.7 for indirect, incomplete, or weakly attributable observations.
-- Confidence describes confidence in the complete observation, not confidence that a
-  code token, issue, or final state exists.
 
 AUDIT LOCATION:
 - Populate agent whenever the responsible agent can be identified.
@@ -605,17 +572,16 @@ AUDIT LOCATION:
 - Keep either null only when the event is genuinely topic-wide or the source does not
   permit identification.
 
-Before returning a support or contradiction direction, ask:
+Before returning an observation, ask:
 1. What exact event was directly observed?
 2. Where is the before/action/after transition?
 3. Which simultaneous changes offer alternative explanations?
 4. Does the evidence support the complete frozen instruction or only a clause/example?
-5. Would direction="neutral" or outcome_improvement="unclear" be more honest?
+5. Would outcome_improvement="unclear" or weaker attribution be more honest?
 
-Prefer neutral direction, weak attribution, or unclear improvement over an unsupported
-causal claim. Use insufficient when even the concrete application or problem event
-cannot be established. Do not aim for balanced numbers, but actively search for
-contradictory, unchanged, and noncompliant evidence as well as supportive evidence.
+Prefer weak attribution or unclear improvement over an unsupported causal claim. Use
+insufficient when even the concrete application or problem event cannot be established.
+Do not aim for balanced categories; classify only what the supplied artifacts establish.
 
 Frozen beliefs:
 {json.dumps(compact_beliefs, ensure_ascii=False, separators=(",", ":"))}
@@ -629,29 +595,40 @@ def _validate_evaluation(
     response: RetrospectiveResponse,
     belief_ids: List[str],
 ) -> None:
-    # Gemini sometimes uses "applicable" to mean merely contextually relevant
-    # while returning observations only for evidentially useful beliefs. The
-    # latter is our operational definition. Reclassify unsupported applicable
-    # IDs as insufficient locally rather than inventing evidence or paying for
-    # a full retry.
+    # Reconcile bookkeeping locally. Concrete observations establish the
+    # applicable partition. Missing, duplicated, or unsupported known IDs are
+    # conservatively insufficient; unknown IDs still indicate a corrupt model
+    # response and must fail.
+    expected = set(belief_ids)
     observed_ids = {item.belief_id for item in response.observations}
-    unsupported_applicable = [
-        belief_id
-        for belief_id in response.applicable_belief_ids
-        if belief_id not in observed_ids
+    supplied_ids = (
+        set(response.applicable_belief_ids)
+        | set(response.not_applicable_belief_ids)
+        | set(response.insufficient_belief_ids)
+        | observed_ids
+    )
+    unknown = sorted(supplied_ids - expected)
+    if unknown:
+        raise ValueError(f"Invalid evidence response: unknown belief IDs={unknown}")
+
+    original_not_applicable = set(response.not_applicable_belief_ids)
+    original_insufficient = set(response.insufficient_belief_ids)
+    response.applicable_belief_ids = [
+        belief_id for belief_id in belief_ids if belief_id in observed_ids
     ]
-    if unsupported_applicable:
-        unsupported_set = set(unsupported_applicable)
-        response.applicable_belief_ids = [
-            belief_id
-            for belief_id in response.applicable_belief_ids
-            if belief_id not in unsupported_set
-        ]
-        response.insufficient_belief_ids.extend(
-            belief_id
-            for belief_id in unsupported_applicable
-            if belief_id not in response.insufficient_belief_ids
-        )
+    response.not_applicable_belief_ids = [
+        belief_id
+        for belief_id in belief_ids
+        if belief_id not in observed_ids
+        and belief_id in original_not_applicable
+        and belief_id not in original_insufficient
+    ]
+    not_applicable = set(response.not_applicable_belief_ids)
+    response.insufficient_belief_ids = [
+        belief_id
+        for belief_id in belief_ids
+        if belief_id not in observed_ids and belief_id not in not_applicable
+    ]
 
     assigned = (
         response.applicable_belief_ids
@@ -659,25 +636,7 @@ def _validate_evaluation(
         + response.insufficient_belief_ids
     )
     if sorted(assigned) != sorted(belief_ids):
-        missing = sorted(set(belief_ids) - set(assigned))
-        duplicated = sorted(
-            belief_id for belief_id in set(assigned) if assigned.count(belief_id) > 1
-        )
-        unknown = sorted(set(assigned) - set(belief_ids))
-        raise ValueError(
-            f"Invalid evidence partition: missing={missing}, "
-            f"duplicated={duplicated}, unknown={unknown}"
-        )
-    applicable = set(response.applicable_belief_ids)
-    observation_ids = [item.belief_id for item in response.observations]
-    missing_observations = sorted(applicable - set(observation_ids))
-    misplaced_observations = sorted(set(observation_ids) - applicable)
-    if missing_observations or misplaced_observations:
-        raise ValueError(
-            "Invalid evidence observations: "
-            f"applicable_without_observations={missing_observations}, "
-            f"observations_for_non_applicable={misplaced_observations}"
-        )
+        raise AssertionError("Evidence partition reconciliation lost a frozen belief")
 
 
 def _records_from_frozen(frozen: List[Dict[str, Any]]) -> Dict[str, BeliefRecord]:
@@ -717,18 +676,17 @@ def _assessment_from_observation(
         item.evidence_reliability,
         item.outcome_improvement,
     )
+    update_direction, update_eligible = _derive_update_direction(item)
     action = {
         "support": ACTION_SUPPORT,
         "contradict": ACTION_CONTRADICT,
         "neutral": ACTION_OBSERVE,
-    }[item.direction]
-    # Direction is the explicit effectiveness judgement. Force the numeric
-    # outcome to the corresponding side of the Beta update; neutral records are
-    # retained but ACTION_OBSERVE is deliberately excluded from updating.
-    if item.direction == "support":
-        values["improvement"] = max(0.5, values["improvement"])
-    elif item.direction == "contradict":
-        values["improvement"] = min(0.499999, values["improvement"])
+    }[update_direction]
+    # An attributable unchanged/worsened outcome is evidence against the
+    # strategy's effectiveness, so its Beta outcome is deterministically zero.
+    if update_direction == "contradict":
+        values["improvement"] = 0.0
+    derived_confidence = values["reliability_probability"]
     return BeliefAssessment(
         run_id=run_id,
         belief_id=belief.belief_id,
@@ -737,16 +695,21 @@ def _assessment_from_observation(
         compliance=item.compliance,
         outcome=item.outcome,
         action=action,
-        weight=item.evidence_confidence,
+        weight=derived_confidence,
         scope=belief.scope,
-        evidence_confidence=item.evidence_confidence,
+        evidence_confidence=derived_confidence,
         impact=belief.impact,
         belief_type=belief.belief_type,
         timing=belief.timing,
         agent=item.agent,
         section_id=item.section_id,
         reason=item.reason,
-        evidence={"summary": item.evidence, "direction": item.direction},
+        evidence={
+            "summary": item.evidence,
+            "update_direction": update_direction,
+            "update_eligible": update_eligible,
+            "confidence_source": "derived_from_evidence_reliability",
+        },
         topic=topic,
         strategy_application=item.strategy_application,
         attribution_strength=item.attribution_strength,
@@ -755,6 +718,39 @@ def _assessment_from_observation(
         **values,
         reflection_call="retrospective_evidence",
     )
+
+
+def _derive_update_direction(
+    item: EvidenceObservation,
+) -> tuple[Literal["support", "contradict", "neutral"], bool]:
+    """Derive the effectiveness update from auditable categorical evidence."""
+    strategy_applied = item.strategy_application in {"full", "partial"}
+    attributable = item.attribution_strength in {"strong", "moderate"}
+    reliable = item.evidence_reliability in {"direct", "corroborated"}
+    if (
+        strategy_applied
+        and attributable
+        and reliable
+        and item.outcome_improvement in {"resolved", "improved"}
+    ):
+        return "support", True
+    if (
+        strategy_applied
+        and attributable
+        and reliable
+        and item.outcome_improvement in {"unchanged", "worsened"}
+    ):
+        return "contradict", True
+    return "neutral", False
+
+
+def _observation_matrix_payload(item: EvidenceObservation) -> Dict[str, Any]:
+    direction, eligible = _derive_update_direction(item)
+    return {
+        **item.model_dump(),
+        "update_direction": direction,
+        "update_eligible": eligible,
+    }
 
 
 def _cap_topic_observation_weights(
@@ -785,6 +781,98 @@ def _cap_topic_observation_weights(
             assessment.evidence["uncapped_evidence_weight"] = raw_weight
             assessment.evidence["topic_weight_scale"] = scale
     return assessments
+
+
+def _evidence_quality_summary(
+    matrix_rows: List[Dict[str, Any]],
+    records: Dict[str, BeliefRecord],
+) -> Dict[str, Any]:
+    observations = [
+        observation
+        for row in matrix_rows
+        for observation in row.get("observations", [])
+    ]
+    evaluation_counts = Counter(row["evaluation"] for row in matrix_rows)
+    direction_counts = Counter(
+        observation["update_direction"] for observation in observations
+    )
+    derived_reliability_weights = {
+        "direct": 1.0,
+        "corroborated": 0.85,
+        "indirect": 0.65,
+        "inferred": 0.4,
+        "unverifiable": 0.0,
+    }
+    category_fields = (
+        "strategy_application",
+        "attribution_strength",
+        "evidence_reliability",
+        "outcome_improvement",
+        "compliance",
+        "outcome",
+    )
+    per_topic: Dict[str, Dict[str, Any]] = {}
+    for row in matrix_rows:
+        topic_summary = per_topic.setdefault(
+            row["topic"],
+            {
+                "evaluation_counts": Counter(),
+                "observation_count": 0,
+                "update_direction_counts": Counter(),
+            },
+        )
+        topic_summary["evaluation_counts"][row["evaluation"]] += 1
+        topic_observations = row.get("observations", [])
+        topic_summary["observation_count"] += len(topic_observations)
+        topic_summary["update_direction_counts"].update(
+            observation["update_direction"] for observation in topic_observations
+        )
+    topic_weights = {
+        topic: round(
+            sum(record.topic_evidence_weights.get(topic, 0.0) for record in records.values()),
+            6,
+        )
+        for topic in per_topic
+    }
+    for topic, summary in per_topic.items():
+        summary["evaluation_counts"] = dict(summary["evaluation_counts"])
+        summary["update_direction_counts"] = dict(
+            summary["update_direction_counts"]
+        )
+        summary["bayesian_evidence_weight"] = topic_weights[topic]
+
+    return {
+        "evaluation_counts": dict(evaluation_counts),
+        "observation_count": len(observations),
+        "update_eligible_count": sum(
+            bool(observation["update_eligible"]) for observation in observations
+        ),
+        "update_direction_counts": dict(direction_counts),
+        "category_distributions": {
+            field: dict(Counter(observation.get(field) for observation in observations))
+            for field in category_fields
+        },
+        "derived_reliability_weight_distribution": dict(
+            Counter(
+                str(derived_reliability_weights[observation["evidence_reliability"]])
+                for observation in observations
+            )
+        ),
+        "audit_location_coverage": {
+            "agent_identified": sum(
+                observation.get("agent") is not None for observation in observations
+            ),
+            "section_identified": sum(
+                observation.get("section_id") is not None for observation in observations
+            ),
+            "total_observations": len(observations),
+        },
+        "rows_with_multiple_observations": sum(
+            len(row.get("observations", [])) > 1 for row in matrix_rows
+        ),
+        "bayesian_evidence_weight_total": round(sum(topic_weights.values()), 6),
+        "per_topic": per_topic,
+    }
 
 
 def _assign_operational_status(record: BeliefRecord) -> None:
@@ -1072,7 +1160,7 @@ def main() -> int:
                     "belief_id": belief_id,
                     "evaluation": "applicable",
                     "observations": [
-                        observation.model_dump()
+                        _observation_matrix_payload(observation)
                         for observation in observations_by_id[belief_id]
                     ],
                 }
@@ -1164,6 +1252,7 @@ def main() -> int:
             "evidence_matrix_rows": len(matrix_rows),
             "usage": usage_total,
             "calls": call_log,
+            "evidence_quality": _evidence_quality_summary(matrix_rows, records),
             "status_counts": {
                 status: sum(1 for record in records.values() if record.status == status)
                 for status in ("active", "probation", "contested", "deprecated")

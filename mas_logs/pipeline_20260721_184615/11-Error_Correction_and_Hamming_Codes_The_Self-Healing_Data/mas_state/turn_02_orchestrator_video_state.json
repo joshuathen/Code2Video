@@ -1,0 +1,1151 @@
+{
+  "topic": "Error Correction and Hamming Codes: The Self-Healing Data",
+  "target_audience": "University students (Computer Science or Electrical Engineering)",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with the title and lecture lines\n        title_str = \"The Problem: The Noisy Universe\"\n        lecture_lines = [\n            \"Space radiation can flip bits during data transmission.\",\n            \"A single flip turns 'Turn Left' into 'Turn Right'.\",\n            \"Without error checking, the receiver never knows.\"\n        ]\n        self.setup_layout(title_str, lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Show a binary string \"1011\" (white #FFFFFF) drifting through a noisy gray background (#333333).\n        # Change Line 1 color to #FFFF00. self.wait(2).\n        \n        # Background rect to represent noisy environment (L008: Hex colors)\n        bg_rect = Rectangle(width=6.0, height=6.0, fill_color=\"#333333\", fill_opacity=0.6, stroke_width=0)\n        self.place_in_area(bg_rect, \"A1\", \"F6\")\n        \n        # Create some noise dots\n        noise_dots = VGroup(*[\n            Dot(radius=0.015, color=\"#555555\").move_to([np.random.uniform(0.5, 5.5), np.random.uniform(-2.8, 2.2), 0])\n            for _ in range(30)\n        ])\n        \n        binary_string = MathTex(\"1\", \"0\", \"1\", \"1\", color=\"#FFFFFF\", font_size=72)\n        self.place_in_area(binary_string, \"B2\", \"D5\")\n        \n        # Highlight lecture line\n        self.play(self.lecture[0].animate.set_color(\"#FFFF00\"))\n        self.wait(2) # L010: Absorption time\n        \n        self.play(FadeIn(bg_rect), Create(noise_dots))\n        self.play(Write(binary_string))\n        \n        # Simple drift updater (L027: Minimize logic)\n        binary_string.add_updater(lambda m, dt: m.shift(LEFT * 0.1 * dt))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        # A yellow bolt (#FFFF00) strikes the third bit, flipping it from '1' to '0'. \n        # Change Line 2 color to #FFFF00. self.wait(2).\n        \n        self.play(self.lecture[1].animate.set_color(\"#FFFF00\"))\n        self.wait(2)\n        \n        # Semantic label for the message (L002: Scale labels)\n        left_label = Text(\"Turn Left\", font_size=24, color=\"#FFFFFF\")\n        self.place_at_grid(left_label, \"B3\", scale_factor=0.8)\n        self.play(FadeIn(left_label))\n        \n        # Pause drift for interaction\n        binary_string.clear_updaters()\n        \n        # Strike animation\n        target_bit = binary_string[2]\n        bolt = VMobject(color=\"#FFFF00\", stroke_width=6)\n        c = target_bit.get_center()\n        bolt.set_points_as_corners([\n            c + UP*3 + RIGHT*1, \n            c + UP*2 + LEFT*0.5, \n            c + UP*1 + RIGHT*0.4, \n            c\n        ])\n        \n        self.play(Create(bolt), run_time=0.3)\n        self.play(FadeOut(bolt), run_time=0.1)\n        \n        # Flip bit 1 -> 0 and update label (L009: Pedagogical bridge)\n        flipped_bit = MathTex(\"0\", color=\"#FFFFFF\", font_size=72).move_to(target_bit)\n        right_label = Text(\"Turn Right\", font_size=24, color=\"#FF0000\")\n        self.place_at_grid(right_label, \"B3\", scale_factor=0.8)\n        \n        self.play(\n            Transform(target_bit, flipped_bit),\n            Transform(left_label, right_label)\n        )\n        \n        # Resume slow drift\n        binary_string.add_updater(lambda m, dt: m.shift(LEFT * 0.05 * dt))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # The string \"1011\" morphs into \"1001\" with the '0' highlighted in red (#FF0000).\n        # A robot graphic appears, displaying a '?' symbol above its head.\n        # The red '0' flashes, then the word \"HAMMING\" fades in (blue #5555FF).\n        # Change Line 3 color to #FFFF00. self.wait(2).\n        \n        self.play(self.lecture[2].animate.set_color(\"#FFFF00\"))\n        self.wait(2)\n        \n        # Highlight the error bit\n        binary_string.clear_updaters()\n        self.play(target_bit.animate.set_color(\"#FF0000\"))\n        \n        # Robot representation (Astro/Rover)\n        astro_head = Square(side_length=0.5, color=\"#AAAAAA\", fill_opacity=1)\n        astro_eye1 = Dot(radius=0.04, color=\"#000000\").move_to(astro_head.get_center() + LEFT*0.1 + UP*0.1)\n        astro_eye2 = Dot(radius=0.04, color=\"#000000\").move_to(astro_head.get_center() + RIGHT*0.1 + UP*0.1)\n        astro_body = Rectangle(width=0.8, height=0.6, color=\"#888888\", fill_opacity=1).next_to(astro_head, DOWN, buff=0.1)\n        astro = VGroup(astro_head, astro_eye1, astro_eye2, astro_body)\n        self.place_at_grid(astro, \"E5\", scale_factor=1.2)\n        \n        q_mark = Text(\"?\", color=\"#FFFFFF\", font_size=42).next_to(astro, UP, buff=0.2)\n        \n        self.play(FadeIn(astro))\n        self.play(Write(q_mark))\n        \n        # Flash the red zero (L004: Indicate)\n        self.play(Indicate(target_bit, color=\"#FF0000\", scale_factor=1.4))\n        self.wait(1)\n        \n        # Solution introduction\n        hamming_logo = Text(\"HAMMING\", color=\"#5555FF\", font_size=48)\n        self.place_at_grid(hamming_logo, \"B5\", scale_factor=1.0)\n        \n        self.play(FadeIn(hamming_logo))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Title and Lecture Lines for Section 2\n        title_text = \"Prerequisite: The Simple Parity Bit\"\n        lecture_lines = [\n            \"Parity bits detect if an error occurred.\",\n            \"Even parity makes the total count of ones even.\",\n            \"However, it cannot locate or fix the error.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Show binary \"101\" (#FFFFFF); a green '0' (#00FF00) appears at the end.\n        self.lecture[0].set_color(\"#FFFF00\")\n        \n        bit1 = Text(\"1\", font_size=48, color=\"#FFFFFF\")\n        bit2 = Text(\"0\", font_size=48, color=\"#FFFFFF\")\n        bit3 = Text(\"1\", font_size=48, color=\"#FFFFFF\")\n        \n        self.place_at_grid(bit1, \"C2\")\n        self.place_at_grid(bit2, \"C3\")\n        self.place_at_grid(bit3, \"C4\")\n        \n        data_bits = VGroup(bit1, bit2, bit3)\n        \n        parity_bit = Text(\"0\", font_size=48, color=\"#00FF00\")\n        self.place_at_grid(parity_bit, \"C5\")\n        \n        parity_label = Text(\"Parity Bit\", font_size=24, color=\"#00FF00\")\n        self.place_at_grid(parity_label, \"B5\", scale_factor=0.7)\n        \n        self.play(Write(data_bits))\n        self.play(FadeIn(parity_bit), FadeIn(parity_label))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        # Sum the '1's; a box highlights the two '1's and parity '0'.\n        self.lecture[0].set_color(\"#FFFFFF\")\n        self.lecture[1].set_color(\"#FFFF00\")\n        \n        # Box highlighting the '1's and the parity '0'\n        # To strictly follow \"highlights the two 1s and parity 0\", we create a combined mobject\n        highlight_group = VGroup(bit1, bit3, parity_bit)\n        highlight_box = SurroundingRectangle(highlight_group, color=\"#FFFF00\", buff=0.15)\n        \n        # Sum formula display\n        sum_formula = MathTex(\"1 + 0 + 1 + 0 = 2\", color=\"#FFFF00\")\n        self.place_in_area(sum_formula, \"D2\", \"D5\", scale_factor=0.8)\n        \n        even_label = Text(\"(Even)\", font_size=28, color=\"#00FF00\")\n        self.place_at_grid(even_label, \"D6\", scale_factor=0.7)\n        \n        self.play(Create(highlight_box))\n        self.play(Write(sum_formula))\n        self.play(FadeIn(even_label))\n        self.play(Indicate(highlight_box))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Flip a bit to '1'; the entire block turns red (#FF0000) indicating error.\n        self.lecture[1].set_color(\"#FFFFFF\")\n        self.lecture[2].set_color(\"#FFFF00\")\n        \n        # New bit '1' at C3 (flipped from '0')\n        error_bit = Text(\"1\", font_size=48, color=\"#FF0000\")\n        self.place_at_grid(error_bit, \"C3\")\n        \n        # Transition to error state\n        error_box = SurroundingRectangle(VGroup(bit1, error_bit, bit3, parity_bit), color=\"#FF0000\", buff=0.2)\n        \n        error_sum = MathTex(\"1 + 1 + 1 + 0 = 3\", color=\"#FF0000\")\n        self.place_in_area(error_sum, \"D2\", \"D5\", scale_factor=0.8)\n        \n        odd_label = Text(\"(Odd - Error!)\", font_size=28, color=\"#FF0000\")\n        self.place_at_grid(odd_label, \"D6\", scale_factor=0.7)\n        \n        self.play(\n            FadeOut(highlight_box),\n            FadeOut(sum_formula),\n            FadeOut(even_label),\n            ReplacementTransform(bit2, error_bit),\n            bit1.animate.set_color(\"#FF0000\"),\n            bit3.animate.set_color(\"#FF0000\"),\n            parity_bit.animate.set_color(\"#FF0000\"),\n            parity_label.animate.set_color(\"#FF0000\")\n        )\n        \n        self.play(\n            Create(error_box),\n            Write(error_sum),\n            FadeIn(odd_label)\n        )\n        self.play(Indicate(error_box))\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        title = \"The Hamming Logic: Overlapping Circles\"\n        lines = [\n            \"Richard Hamming used overlapping circles for data.\",\n            \"Data bits sit in the intersections of these circles.\",\n            \"Each circle is managed by a specific parity bit.\",\n            \"Flipping a data bit affects multiple parity circles.\",\n            \"This unique intersection points directly to the error.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(\"#FFFF00\")\n        \n        # We need 3 overlapping circles. \n        # Using a layout that makes a clear central intersection.\n        circle_red = Circle(radius=1.3, color=\"#FF0000\", fill_opacity=0.2)\n        circle_green = Circle(radius=1.3, color=\"#00FF00\", fill_opacity=0.2)\n        circle_blue = Circle(radius=1.3, color=\"#0000FF\", fill_opacity=0.2)\n        \n        # Position them such that they overlap in the middle\n        # Middle of the grid is roughly C4/D4 area.\n        self.place_at_grid(circle_red, \"B4\")\n        self.place_at_grid(circle_green, \"D3\")\n        self.place_at_grid(circle_blue, \"D5\")\n        \n        self.play(Create(circle_red), Create(circle_green), Create(circle_blue))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(\"#FFFF00\")\n        \n        # Data bit '1' in the central intersection (roughly C4)\n        data_bit = Text(\"1\", font_size=36, color=\"#FFFFFF\")\n        self.place_at_grid(data_bit, \"C4\")\n        \n        self.play(Write(data_bit))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(\"#FFFF00\")\n        \n        # Parity labels in outer sections\n        p1 = Text(\"P1\", font_size=24, color=\"#FF0000\")\n        p2 = Text(\"P2\", font_size=24, color=\"#00FF00\")\n        p3 = Text(\"P3\", font_size=24, color=\"#0000FF\")\n        \n        # P1 top (A4), P2 left-bottom (E2), P3 right-bottom (E6)\n        self.place_at_grid(p1, \"A4\")\n        self.place_at_grid(p2, \"E2\")\n        self.place_at_grid(p3, \"E6\")\n        \n        self.play(FadeIn(p1), FadeIn(p2), FadeIn(p3))\n        self.wait(2)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(\"#FFFF00\")\n        \n        # Central '1' flips to '0'\n        new_data_bit = Text(\"0\", font_size=36, color=\"#FFFFFF\")\n        self.place_at_grid(new_data_bit, \"C4\")\n        \n        self.play(Transform(data_bit, new_data_bit))\n        # Circles pulse orange\n        self.play(\n            Indicate(circle_red, color=\"#FFA500\"),\n            Indicate(circle_green, color=\"#FFA500\"),\n            Indicate(circle_blue, color=\"#FFA500\"),\n            run_time=2\n        )\n        self.wait(2)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(\"#FFFF00\")\n        \n        # Arrow points to center\n        # Arrow needs a start and end. Grid system doesn't easily provide vectors.\n        # But I can use place_at_grid to position it then shift? No, \"NEVER use manual positioning\".\n        # I'll use an Arrow object and position it using place_in_area or place_at_grid.\n        # However, Arrow(start, end) is the usual way. \n        # I'll create an arrow mobject and use place_in_area to orient it if possible, \n        # or just place a standard Arrow.\n        \n        # Let's try to place an arrow that points towards C4.\n        # We can place it at B5 pointing to C4?\n        # Actually, let's use a simple arrow and place it.\n        arrow = Arrow(start=RIGHT+UP, end=ORIGIN, color=\"#FFFFFF\", buff=0.1)\n        self.place_at_grid(arrow, \"B5\", scale_factor=0.8) # Roughly pointing to C4\n        \n        self.play(GrowArrow(arrow))\n        self.wait(2)\n        \n        # Final cleanup highlight\n        self.lecture[4].set_color(WHITE)\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # === Setup Layout ===\n        title_text = \"The Power of 2: Positioning Bits\"\n        lecture_lines = [\n            \"Parity bits occupy positions at powers of two.\",\n            \"All other positions hold the actual message data.\",\n            \"This specific layout enables the mathematical correction magic.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Define indices for parity and data\n        parity_indices = [0, 1, 3]  # Positions 1, 2, 4 (0-indexed)\n        data_indices = [2, 4, 5, 6]    # Positions 3, 5, 6, 7 (0-indexed)\n\n        # === Animation for Lecture Line 1 ===\n        # Description: Display numbers 1-7; highlight 1, 2, and 4 in blue (#5555FF). Change Line 1 color to #FFFF00. self.wait(2).\n        \n        # Highlight lecture line first (L010)\n        self.play(self.lecture[0].animate.set_color(\"#FFFF00\"))\n        self.wait(1.5)\n\n        # Create slots and numbers\n        slots = VGroup(*[\n            Circle(radius=0.4, color=\"#FFFFFF\").set_stroke(width=2) \n            for _ in range(7)\n        ]).arrange(RIGHT, buff=0.3)\n        \n        nums = VGroup(*[\n            Text(str(i), font_size=24, color=\"#FFFFFF\") \n            for i in range(1, 8)\n        ])\n        for n, s in zip(nums, slots):\n            n.move_to(s.get_center())\n            \n        bit_positions = VGroup(slots, nums)\n        # Use place_in_area to stay within Column 2-6 (L002)\n        self.place_in_area(bit_positions, \"B2\", \"B6\", scale_factor=0.8)\n        \n        self.play(FadeIn(bit_positions))\n        self.wait(1.0)\n\n        # Highlight powers of 2\n        self.play(\n            *[slots[i].animate.set_color(\"#5555FF\") for i in parity_indices],\n            *[nums[i].animate.set_color(\"#5555FF\") for i in parity_indices],\n            *[Indicate(nums[i], color=\"#5555FF\") for i in parity_indices]\n        )\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 2 ===\n        # Description: Fill positions 3, 5, 6, 7 with white 'D' characters (#FFFFFF). Change Line 2 color to #FFFF00. self.wait(2).\n        \n        self.play(self.lecture[1].animate.set_color(\"#FFFF00\"))\n        self.wait(1.5)\n\n        d_labels = VGroup()\n        for i in data_indices:\n            d = Text(\"D\", font_size=24, color=\"#FFFFFF\")\n            d.move_to(slots[i].get_center())\n            d_labels.add(d)\n\n        # Morph indices 3, 5, 6, 7 to 'D' (L009)\n        self.play(\n            *[Transform(nums[i], d_labels[idx]) for idx, i in enumerate(data_indices)]\n        )\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 3 ===\n        # Description: Arrange the labels into the sequence [P1, P2, D3, P4, D5, D6, D7]. Change Line 3 color to #FFFF00. self.wait(2).\n        \n        self.play(self.lecture[2].animate.set_color(\"#FFFF00\"))\n        self.wait(1.5)\n\n        # Define final labels for the sequence\n        # Index map: 0:P1, 1:P2, 2:D3, 3:P4, 4:D5, 5:D6, 6:D7\n        final_label_texts = [\"P1\", \"P2\", \"D3\", \"P4\", \"D5\", \"D6\", \"D7\"]\n        final_colors = [\"#5555FF\", \"#5555FF\", \"#FFFFFF\", \"#5555FF\", \"#FFFFFF\", \"#FFFFFF\", \"#FFFFFF\"]\n        \n        final_labels = VGroup()\n        for i in range(7):\n            lbl = Text(final_label_texts[i], font_size=22, color=final_colors[i])\n            lbl.move_to(slots[i].get_center())\n            final_labels.add(lbl)\n\n        # Transform current elements into the full [P, D] sequence\n        transforms = []\n        # Transform parity numbers (already blue) to P1, P2, P4\n        for idx, i in enumerate(parity_indices):\n            transforms.append(Transform(nums[i], final_labels[i])) # 1->P1, 2->P2, 4->P4\n        \n        # Transform 'D' characters (which are currently 'nums' at data_indices) to D3, D5, D6, D7\n        # Actually, in Step 2, I transformed nums[i] to d_labels[idx]. \n        # So nums[i] now looks like 'D'.\n        for idx, i in enumerate(data_indices):\n            # i=2 -> D3 (final_labels[2]), i=4 -> D5 (final_labels[4]), etc.\n            transforms.append(Transform(nums[i], final_labels[i]))\n\n        self.play(*transforms)\n        self.wait(2.0)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        title = \"The Calculation: Who Checks Whom?\"\n        lines = [\n            \"Every bit position has a unique binary address.\",\n            \"Parity bit 1 checks addresses ending in one.\",\n            \"Parity bit 2 checks addresses with a middle one.\",\n            \"Each parity bit covers a specific pattern of bits.\",\n            \"This creates a digital fingerprint for every position.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Helper to create index rows\n        # We need indices 1 to 7\n        indices_vgroup = VGroup()\n        indices_list = []\n        for i in range(1, 8):\n            binary_str = format(i, '03b')\n            row = MathTex(rf\"{i}: \\text{{({binary_str})}}\", color=\"#FFFFFF\", font_size=36)\n            indices_list.append(row)\n            indices_vgroup.add(row)\n        \n        indices_vgroup.arrange(DOWN, buff=0.3)\n        self.place_in_area(indices_vgroup, \"A3\", \"F5\", scale_factor=0.9)\n\n        # === Animation for Lecture Line 1 ===\n        # List binary indices 001 to 111 vertically in white (#FFFFFF). \n        # Change Line 1 color to #FFFF00. self.wait(2).\n        self.play(self.lecture[0].animate.set_color(\"#FFFF00\"))\n        self.play(FadeIn(indices_vgroup, shift=RIGHT))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight rows with a '1' in the last digit in cyan (#00FFFF). \n        # Change Line 2 color to #FFFF00. self.wait(2).\n        # Last digit index is bit 0. Indices: 1 (001), 3 (011), 5 (101), 7 (111)\n        p1_indices = [0, 2, 4, 6] # 0-based indices of the list (1, 3, 5, 7)\n        self.play(self.lecture[1].animate.set_color(\"#FFFF00\"))\n        self.play(\n            *[Indicate(indices_list[i], color=\"#00FFFF\") for i in p1_indices],\n            run_time=2\n        )\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Highlight rows with a '1' in the middle digit in magenta (#FF00FF). \n        # Change Line 3 color to #FFFF00. self.wait(2).\n        # Middle digit index is bit 1. Indices: 2 (010), 3 (011), 6 (110), 7 (111)\n        p2_indices = [1, 2, 5, 6] # 0-based indices of the list (2, 3, 6, 7)\n        self.play(self.lecture[2].animate.set_color(\"#FFFF00\"))\n        self.play(\n            *[Indicate(indices_list[i], color=\"#FF00FF\") for i in p2_indices],\n            run_time=2\n        )\n        self.wait(2)\n\n        # === Animation for Lecture Line 4 ===\n        # Highlight rows with a '1' in the first digit in yellow (#FFFF00). \n        # Change Line 4 color to #FFFF00. self.wait(2).\n        # First digit index is bit 2. Indices: 4 (100), 5 (101), 6 (110), 7 (111)\n        p3_indices = [3, 4, 5, 6] # 0-based indices of the list (4, 5, 6, 7)\n        self.play(self.lecture[3].animate.set_color(\"#FFFF00\"))\n        self.play(\n            *[Indicate(indices_list[i], color=\"#FFFF00\") for i in p3_indices],\n            run_time=2\n        )\n        self.wait(2)\n\n        # === Animation for Lecture Line 5 ===\n        # Highlight index 3 (011) to show it's within both cyan and magenta groups. \n        # Change Line 5 color to #FFFF00. self.wait(2).\n        self.play(self.lecture[4].animate.set_color(\"#FFFF00\"))\n        \n        # Highlight 3 (index 2 in list)\n        idx_3 = indices_list[2]\n        # Show specific colors for the parts? The prompt says \"Highlight index 3\"\n        # I'll use a double indication or a special focus.\n        box = SurroundingRectangle(idx_3, color=\"#FFFFFF\", buff=0.1)\n        self.play(Create(box))\n        self.play(Indicate(idx_3, color=\"#00FFFF\"), scale_factor=1.2)\n        self.play(Indicate(idx_3, color=\"#FF00FF\"), scale_factor=1.2)\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Setup title and lecture lines\n        title_text = \"Correction: Finding the 'Syndrome'\"\n        lecture_lines = [\n            \"To fix errors, we re-calculate all parity bits.\",\n            \"Failing checks indicate something changed during transmission.\",\n            \"Add the position numbers of all failing parity bits.\",\n            \"This sum identifies the exact index of the error.\",\n            \"Simply flip that bit back to restore the data.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n        \n        # Hex Colors (L008)\n        HIGHLIGHT = \"#FFFF00\"\n        ERROR = \"#FF0000\"\n        CORRECT = \"#00FF00\"\n        MATH_COLOR = \"#FFFFFF\"\n        BLUE_ACCENT = \"#00FFFF\"\n        GRAY_TEXT = \"#808080\"\n\n        # === Animation for Lecture Line 1 ===\n        # Line 1: \"To fix errors, we re-calculate all parity bits.\"\n        self.play(self.lecture[0].animate.set_color(HIGHLIGHT))\n        \n        # Define the bit sequence (Hamming 7,4)\n        # Positions: 1, 2, 3, 4, 5, 6, 7\n        # We simulate an error at position 3 (D3)\n        # Bits: P1=0, P2=0, D3=1 (Error), P4=0, D5=0, D6=0, D7=0\n        positions = [1, 2, 3, 4, 5, 6, 7]\n        bit_labels = [\"P1\", \"P2\", \"D3\", \"P4\", \"D5\", \"D6\", \"D7\"]\n        bit_values = [0, 0, 1, 0, 0, 0, 0]\n        \n        bits_group = VGroup()\n        for i in range(7):\n            # Proximity rule (L002): labels within 1 unit\n            square = Square(side_length=0.7, color=WHITE)\n            val = Text(str(bit_values[i]), font_size=24, color=WHITE)\n            pos_label = Text(str(positions[i]), font_size=16, color=BLUE_ACCENT).next_to(square, UP, buff=0.1)\n            name_label = Text(bit_labels[i], font_size=16, color=GRAY_TEXT).next_to(square, DOWN, buff=0.1)\n            bit_mobject = VGroup(square, val, pos_label, name_label)\n            bits_group.add(bit_mobject)\n        \n        bits_group.arrange(RIGHT, buff=0.25)\n        # Use place_in_area to constrain group within safe grid bounds (L002)\n        self.place_in_area(bits_group, \"B2\", \"C6\", scale_factor=0.65)\n        \n        self.play(FadeIn(bits_group))\n        self.wait(2.0) # Absorption time (L010)\n\n        # === Animation for Lecture Line 2 ===\n        # Line 2: \"Failing checks indicate something changed during transmission.\"\n        # Storyboard: Apply red circles (#FF0000) around P1 and P2\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(HIGHLIGHT)\n        )\n        \n        # Circles around bits 1 and 2 (P1 and P2)\n        circle_p1 = Circle(radius=0.45, color=ERROR).move_to(bits_group[0][0])\n        circle_p2 = Circle(radius=0.45, color=ERROR).move_to(bits_group[1][0])\n        \n        self.play(Create(circle_p1), Create(circle_p2))\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 3 ===\n        # Line 3: \"Add the position numbers of all failing parity bits.\"\n        # Storyboard: Display the math \"1 + 2\"\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(HIGHLIGHT)\n        )\n        \n        # Display the failing indices sum\n        math_sum = MathTex(\"1 + 2\", color=MATH_COLOR)\n        self.place_at_grid(math_sum, \"E3\", scale_factor=1.2)\n        \n        self.play(Write(math_sum))\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 4 ===\n        # Line 4: \"This sum identifies the exact index of the error.\"\n        # Storyboard: Complete the math \"= 3\" and highlight bit 3\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(HIGHLIGHT)\n        )\n        \n        math_result = MathTex(\"1 + 2 = 3\", color=MATH_COLOR)\n        self.place_at_grid(math_result, \"E3\", scale_factor=1.2)\n        \n        self.play(Transform(math_sum, math_result))\n        self.play(Indicate(bits_group[2])) # Use Indicate (L004)\n        self.wait(2.0)\n\n        # === Animation for Lecture Line 5 ===\n        # Line 5: \"Simply flip that bit back to restore the data.\"\n        # Storyboard: Bit at position 3 flashes green (#00FF00) and flips its value.\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(HIGHLIGHT)\n        )\n        \n        # Flash green at target bit\n        self.play(Flash(bits_group[2][0], color=CORRECT, flash_radius=0.5))\n        \n        # Flip the bit value from '1' to '0'\n        corrected_val = Text(\"0\", font_size=24, color=CORRECT).move_to(bits_group[2][1])\n        \n        self.play(\n            Transform(bits_group[2][1], corrected_val),\n            bits_group[2][0].animate.set_color(CORRECT)\n        )\n        self.wait(2.0)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section7Scene(TeachingScene):\n    def construct(self):\n        title_text = \"Real-World Impact: From RAM to Deep Space\"\n        lecture_lines = [\n            \"Hamming codes protect modern server memory from crashes.\",\n            \"They allow deep-space probes to communicate reliably.\",\n            \"This math ensures your bank balance remains accurate.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Animate a green RAM stick (#00FF00) with flowing binary data.\n        # Change Line 1 color to #FFFF00.\n        \n        # Build RAM Stick\n        ram_body = Rectangle(height=0.8, width=3.5, fill_opacity=1, fill_color=\"#006400\", stroke_color=\"#00FF00\")\n        ram_chips = VGroup(*[\n            Rectangle(height=0.4, width=0.4, fill_opacity=1, fill_color=\"#1A1A1A\")\n            for _ in range(5)\n        ]).arrange(RIGHT, buff=0.2)\n        ram_stick = VGroup(ram_body, ram_chips)\n        self.place_in_area(ram_stick, \"B2\", \"C5\")\n        \n        # Flowing binary data\n        binary_data = VGroup(*[\n            Text(str(np.random.choice([\"0\", \"1\"])), font_size=20, color=\"#FFFFFF\")\n            for _ in range(8)\n        ]).arrange(RIGHT, buff=0.3)\n        self.place_at_grid(binary_data, \"B2\")\n        \n        self.play(\n            self.lecture[0].animate.set_color(\"#FFFF00\"),\n            Create(ram_stick),\n            FadeIn(binary_data)\n        )\n        \n        # Simple data flow animation using an updater\n        binary_data.add_updater(lambda m, dt: m.shift(RIGHT * 0.5 * dt))\n        self.wait(1.0)\n        \n        # Reset and continue flow\n        self.play(\n            binary_data.animate.shift(LEFT * 0.5),\n            run_time=1.0\n        )\n        binary_data.clear_updaters()\n        \n        self.wait(2.0)\n        self.play(FadeOut(ram_stick), FadeOut(binary_data))\n\n        # === Animation for Lecture Line 2 ===\n        # Show a satellite (#AAAAAA) beaming a signal to a distant Earth icon.\n        # Change Line 2 color to #FFFF00.\n        \n        # Satellite visual\n        sat_body = Square(side_length=0.6, fill_opacity=1, fill_color=\"#AAAAAA\")\n        sat_panel_l = Rectangle(height=0.4, width=0.8, fill_opacity=1, fill_color=\"#0000FF\").next_to(sat_body, LEFT, buff=0)\n        sat_panel_r = Rectangle(height=0.4, width=0.8, fill_opacity=1, fill_color=\"#0000FF\").next_to(sat_body, RIGHT, buff=0)\n        satellite = VGroup(sat_body, sat_panel_l, sat_panel_r)\n        self.place_at_grid(satellite, \"B2\", scale_factor=0.8)\n        \n        # Earth visual\n        earth = Circle(radius=0.5, fill_opacity=1, fill_color=\"#0000FF\", stroke_color=\"#FFFFFF\")\n        earth_land = VGroup(\n            Triangle().scale(0.2).set_fill(\"#00FF00\", 1).move_to(earth.get_center() + UP*0.1),\n            Square().scale(0.15).set_fill(\"#00FF00\", 1).move_to(earth.get_center() + DOWN*0.1 + RIGHT*0.1)\n        )\n        earth_group = VGroup(earth, earth_land)\n        self.place_at_grid(earth_group, \"E5\", scale_factor=0.9)\n        \n        # Signal visual\n        signal = Arc(radius=0.3, start_angle=-TAU/8, angle=TAU/4, color=\"#FFFFFF\")\n        signal.move_to(satellite.get_right() + RIGHT * 0.3)\n        \n        self.play(\n            self.lecture[1].animate.set_color(\"#FFFF00\"),\n            Create(satellite),\n            Create(earth_group)\n        )\n        \n        # Beaming animation\n        signals = VGroup()\n        for i in range(3):\n            s = signal.copy().shift(RIGHT * i * 0.4)\n            signals.add(s)\n            \n        self.play(\n            LaggedStart(*[FadeIn(s) for s in signals], lag_ratio=0.3),\n            run_time=2\n        )\n        \n        self.wait(2.0)\n        self.play(FadeOut(satellite), FadeOut(earth_group), FadeOut(signals))\n\n        # === Animation for Lecture Line 3 ===\n        # Display a large white \"1011\" with a green checkmark (#00FF00) overlay.\n        # Change Line 3 color to #FFFF00.\n        \n        balance_text = Text(\"1011\", font_size=60, color=\"#FFFFFF\")\n        self.place_in_area(balance_text, \"C3\", \"D4\")\n        \n        # Green checkmark\n        checkmark = VGroup(\n            Line(LEFT * 0.2 + DOWN * 0.2, ORIGIN, color=\"#00FF00\", stroke_width=8),\n            Line(ORIGIN, RIGHT * 0.4 + UP * 0.5, color=\"#00FF00\", stroke_width=8)\n        )\n        checkmark.next_to(balance_text, RIGHT, buff=0.3)\n        \n        self.play(\n            self.lecture[2].animate.set_color(\"#FFFF00\"),\n            Write(balance_text)\n        )\n        self.play(Create(checkmark))\n        self.play(Indicate(balance_text, color=\"#00FF00\"))\n        \n        self.wait(2.0)\n"
+  ],
+  "outline": {
+    "topic": "Error Correction and Hamming Codes: The Self-Healing Data",
+    "target_audience": "University students (Computer Science or Electrical Engineering)",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Problem: The Noisy Universe",
+        "content": "Introduce the concept of data corruption during transmission. Explain that in the real world, cosmic rays, electromagnetic interference, or hardware glitches can flip a '0' to a '1'. Show that without a check system, the receiver has no way of knowing the data is wrong.",
+        "example": "Astro the Robot sends the binary message '1011' (representing 'Turn Left') to a Mars Rover. Due to space radiation, the Rover receives '1001' ('Turn Right'), causing a potential collision."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Simple Parity Bit",
+        "content": "Introduce the simplest form of error detection: Parity. Explain 'Even Parity' where we add a single bit to make the total count of 1s even. Highlight the limitation: it can detect that an error happened, but it can't tell you *where* it happened or how to fix it.",
+        "example": "Data '101' has two 1s. We add a parity bit '0' to keep it even (1010). If the Rover receives '1110', it sees three 1s and knows there's an error, but doesn't know which bit flipped."
+      },
+      {
+        "id": "section_3",
+        "title": "The Hamming Logic: Overlapping Circles",
+        "content": "Introduce Richard Hamming’s breakthrough using a visual Venn Diagram of three overlapping circles (A, B, C). Place data bits in the intersections and parity bits in the outer segments of each circle. Explain that every data bit is 'watched' by multiple parity bits.",
+        "example": "Visualize 3 circles labeled P1, P2, and P3. A data bit 'd1' sits where all three circles overlap. If 'd1' flips, all three parity bits will report an error, pointing uniquely to that specific intersection."
+      },
+      {
+        "id": "section_4",
+        "title": "The Power of 2: Positioning Bits",
+        "content": "Transition from circles to a linear sequence. Explain the rule: Parity bits are placed at positions that are powers of 2 (1, 2, 4, 8...). All other positions are for data. This binary indexing is the key to the 'math magic' of Hamming Codes.",
+        "example": "For a 7-bit message: Positions 1, 2, and 4 are Parity (P). Positions 3, 5, 6, and 7 are Data (D). The sequence looks like: [P1, P2, D3, P4, D5, D6, D7]."
+      },
+      {
+        "id": "section_5",
+        "title": "The Calculation: Who Checks Whom?",
+        "content": "Explain how to determine which parity bit covers which data bit using binary addresses. Parity bit 1 (binary 001) checks all positions with a '1' in the rightmost bit. Parity bit 2 (010) checks positions with a '1' in the middle bit, etc. Use an animation to highlight these binary patterns.",
+        "example": "P1 (001) checks positions 1, 3, 5, 7. P2 (010) checks positions 2, 3, 6, 7. This creates a unique 'fingerprint' for every bit position."
+      },
+      {
+        "id": "section_6",
+        "title": "Correction: Finding the 'Syndrome'",
+        "content": "Demonstrate the 'Syndrome' calculation. When data is received, we re-calculate the parity bits. If the checks fail, we add the position numbers of the failing parity bits. The sum is the exact index of the flipped bit.",
+        "example": "If Parity checks P1 and P2 fail but P4 passes, we add their positions: 1 + 2 = 3. Position 3 is the error! We flip bit 3 back to its original state, and the data is perfectly restored."
+      },
+      {
+        "id": "section_7",
+        "title": "Real-World Impact: From RAM to Deep Space",
+        "content": "Conclude by showing where this is used today. Explain that ECC (Error Correction Code) RAM in servers uses Hamming codes to prevent system crashes, and space probes use advanced versions to talk to Earth across millions of miles.",
+        "example": "Show a server motherboard. Explain that without Hamming codes, your bank's computer might flip a bit in your balance, turning $1,000 into $0."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Problem: The Noisy Universe",
+      "lecture_lines": [
+        "Radiation can flip bits during data transmission.",
+        "A single bit flip changes the message meaning.",
+        "Without checks, the receiver cannot detect errors.",
+        "This corruption causes systems to behave unexpectedly.",
+        "Hamming codes detect and fix these silent errors."
+      ],
+      "animations": [
+        "Show a binary string \"1011\" (white #FFFFFF) drifting through a noisy gray background (#333333). Change Line 1 color to #FFFF00. self.wait(2).",
+        "A yellow bolt [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bolt.svg] (#FFFF00) strikes the third bit, flipping it from '1' to '0'. Change Line 2 color to #FFFF00. self.wait(2).",
+        "The string \"1011\" morphs into \"1001\" with the '0' highlighted in red (#FF0000). Change Line 3 color to #FFFF00. self.wait(2).",
+        "A robot graphic [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg] appears, displaying a '?' symbol above its head. Change Line 4 color to #FFFF00. self.wait(2).",
+        "The red '0' flashes, then the word \"HAMMING\" fades in (blue #5555FF). Change Line 5 color to #FFFF00. self.wait(2)."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Simple Parity Bit",
+      "lecture_lines": [
+        "Parity bits detect if an error occurred.",
+        "Even parity makes the total count of ones even.",
+        "However, it cannot locate or fix the error."
+      ],
+      "animations": [
+        "Show binary \"101\" (#FFFFFF); a green '0' (#00FF00) appears at the end. Change Line 1 color to #FFFF00. self.wait(2).",
+        "Sum the '1's; a box highlights the two '1's and parity '0'. Change Line 2 color to #FFFF00. self.wait(2).",
+        "Flip a bit to '1'; the entire block turns red (#FF0000) indicating error. Change Line 3 color to #FFFF00. self.wait(2)."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Hamming Logic: Overlapping Circles",
+      "lecture_lines": [
+        "Richard Hamming used overlapping circles for data.",
+        "Data bits sit in the intersections of these circles.",
+        "Each circle is managed by a specific parity bit.",
+        "Flipping a data bit affects multiple parity circles.",
+        "This unique intersection points directly to the error."
+      ],
+      "animations": [
+        "Draw three overlapping circles in red (#FF0000), green (#00FF00), and blue (#0000FF). Change Line 1 color to #FFFF00. self.wait(2).",
+        "Place a white '1' (#FFFFFF) in the central intersection of all circles. Change Line 2 color to #FFFF00. self.wait(2).",
+        "Labels P1, P2, P3 appear in the outer sections of each circle. Change Line 3 color to #FFFF00. self.wait(2).",
+        "The central '1' flips to '0'; all three circles pulse orange (#FFA500). Change Line 4 color to #FFFF00. self.wait(2).",
+        "A white arrow (#FFFFFF) points to the unique central overlap area. Change Line 5 color to #FFFF00. self.wait(2)."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Power of 2: Positioning Bits",
+      "lecture_lines": [
+        "Parity bits occupy positions at powers of two.",
+        "All other positions hold the actual message data.",
+        "This specific layout enables the mathematical correction magic."
+      ],
+      "animations": [
+        "Display numbers 1-7; highlight 1, 2, and 4 in blue (#5555FF). Change Line 1 color to #FFFF00. self.wait(2).",
+        "Fill positions 3, 5, 6, 7 with white 'D' characters (#FFFFFF). Change Line 2 color to #FFFF00. self.wait(2).",
+        "Arrange the labels into the sequence [P1, P2, D3, P4, D5, D6, D7]. Change Line 3 color to #FFFF00. self.wait(2)."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Calculation: Who Checks Whom?",
+      "lecture_lines": [
+        "Every bit position has a unique binary address.",
+        "Parity bit 1 checks addresses ending in one.",
+        "Parity bit 2 checks addresses with a middle one.",
+        "Each parity bit covers a specific pattern of bits.",
+        "This creates a digital fingerprint for every position."
+      ],
+      "animations": [
+        "List binary indices 001 to 111 vertically in white (#FFFFFF). Change Line 1 color to #FFFF00. self.wait(2).",
+        "Highlight rows with a '1' in the last digit in cyan (#00FFFF). Change Line 2 color to #FFFF00. self.wait(2).",
+        "Highlight rows with a '1' in the middle digit in magenta (#FF00FF). Change Line 3 color to #FFFF00. self.wait(2).",
+        "Highlight rows with a '1' in the first digit in yellow (#FFFF00). Change Line 4 color to #FFFF00. self.wait(2).",
+        "Highlight index 3 (011) to show it's within both cyan and magenta groups. Change Line 5 color to #FFFF00. self.wait(2)."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Correction: Finding the 'Syndrome'",
+      "lecture_lines": [
+        "Failing parity checks indicate a bit has flipped.",
+        "Add failing parity positions to find the error.",
+        "Flipping that bit back perfectly restores the data."
+      ],
+      "animations": [
+        "Show the bit sequence [P1, P2, D3, P4, D5, D6, D7]. Highlight parity bits P1, P2, P4 in white (#FFFFFF) as they are recalculated. Change Line 1 color to #FFFF00. self.wait(2).",
+        "P1 and P2 turn red (#FF0000), indicating they fail their parity checks. Change Line 2 color to #FFFF00. self.wait(2).",
+        "Display the math \"1 + 2 = 3\" in white text (#FFFFFF) below the sequence. Change Line 3 color to #FFFF00. self.wait(2).",
+        "The bit at position 3 (D3) is highlighted with a yellow box (#FFFF00). Change Line 4 color to #FFFF00. self.wait(2).",
+        "Bit D3 flashes green (#00FF00) and flips its value. Display the asset [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/based.svg] next to the corrected bit. Change Line 5 color to #FFFF00. self.wait(2)."
+      ]
+    },
+    {
+      "id": "section_7",
+      "title": "Real-World Impact: From RAM to Deep Space",
+      "lecture_lines": [
+        "Hamming codes protect modern server memory from crashes.",
+        "They allow deep-space probes to communicate reliably.",
+        "This math ensures your bank balance remains accurate."
+      ],
+      "animations": [
+        "Animate a green RAM stick [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ram.svg] (#00FF00) with flowing binary data. Change Line 1 color to #FFFF00. self.wait(2).",
+        "Show a satellite (#AAAAAA) beaming a signal to a distant Earth icon. Change Line 2 color to #FFFF00. self.wait(2).",
+        "Display a large white \"1011\" with a green checkmark (#00FF00) overlay. Change Line 3 color to #FFFF00. self.wait(2)."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (under 10 words each) for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted for Section 1 based on the outline. These follow a 1:1 mapping with the planned 5 lecture lines."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented Section1Scene with drifting binary string, lightning bolt bit-flip, and pedagogical labels. Addressed storyboard/line mismatch by combining visuals in the final block. Followed all visual anchor and grid rules."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (under 10 words each) for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted for Section 2 based on the outline. These follow a 1:1 mapping with the planned 3 lecture lines."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_2 implementing the parity bit introduction and error detection demonstration using a 6x6 grid system and appropriate color highlighting."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (under 10 words each) for Section 3 (Key Section)."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted for Section 3 based on the outline. These follow a 1:1 mapping with the planned 5 lecture lines."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented section_3 with overlapping circles, bit flip animation, and parity labels using the mandatory grid system."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (under 10 words each) for Section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted for Section 4 based on the outline. These follow a 1:1 mapping with the planned 3 lecture lines."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented Section 4 Manim code. \n- Created a linear sequence of 7 bit positions.\n- Highlighted parity positions (1, 2, 4) in blue (#5555FF).\n- Populated data positions (3, 5, 6, 7) with 'D' labels.\n- Finalized the sequence as [P1, P2, D3, P4, D5, D6, D7] using morphing transformations.\n- Integrated lecture line color changes and appropriate wait times (L010).\n- Ensured grid placement to the right of lecture text (L002)."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (under 10 words each) for Section 5 (Key Section)."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted for Section 5 based on the outline. These follow a 1:1 mapping with the planned 5 lecture lines."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented the binary indexing pattern (001-111) and the parity-specific highlights (P1, P2, P3 patterns). Followed grid constraints and used hex colors. Highlighted position 3 as the intersection of P1 and P2."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (under 10 words each) for Section 6 (Key Section)."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted for Section 6 based on the outline. These follow a 1:1 mapping with the planned 3 lecture lines."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_6. Implemented syndrome calculation math (1+2=3) and bit correction (flip from 1 to 0 at position 3) using grid positioning and mandated hex colors. Correctly mapped 5 lecture lines to animation steps following the storyboard's logic."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (under 10 words each) for Section 7."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted for Section 7 based on the outline. These follow a 1:1 mapping with the planned 3 lecture lines."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_7 featuring RAM stick with binary flow, satellite signal transmission, and bank balance checkmark animations. Follows the 6x6 grid system and pedagogical pacing rules."
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Sync Script and Animations: The storyboard currently has 3 lecture lines but 5 animation stages. Add 2 concise lecture lines to match the animations (e.g., for the robot's reaction and the 'HAMMING' fade-in) to ensure a 1:1 mapping for the coder.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "ScriptWriter: Section 1 is now 5 lines/5 animations. However, Section 6 has 3 lines but 5 animations. Please provide 2 additional concise lines for Section 6 to ensure a 1:1 mapping."
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Sync Script and Animations: The storyboard has 5 lecture lines but only 3 animation stages. Add 2 codable animation stages to match the remaining lecture lines (calculating failing checks and identifying the syndrome sum) to ensure a 1:1 mapping for the coder.",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "AnimationPlanner: Ensure Section 6 animations (currently 5) are well-defined and match the 5 lines requested from the ScriptWriter."
+    },
+    {
+      "id": 24,
+      "fromAgent": "Coder1",
+      "toAgent": "ScriptWriter",
+      "description": "The storyboard for section_1 has a mismatch between lecture_lines (3 lines) and animations (5 steps). Animations 4 and 5 refer to Line 4 and Line 5, which do not exist. I have combined the visual logic of animations 3, 4, and 5 into the 3rd lecture line's block for now, but the script or storyboard should be updated for consistency.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Resolved by script/storyboard update."
+    },
+    {
+      "id": 25,
+      "fromAgent": "Coder1",
+      "toAgent": "AnimationPlanner",
+      "description": "The storyboard for section_1 includes animations 4 and 5 which refer to non-existent lecture lines. Please verify if more lines were intended or if the animations should be condensed. I am proceeding by combining them into the final line's animation block.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Resolved by script/storyboard update."
+    },
+    {
+      "id": 26,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"A yellow bolt [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bolt.svg] (#FFFF00) strikes the third bit, flipping it from '1' to '0'. Change Line 2 color to #FFFF00. self.wait(2).\", \"A robot graphic [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg] appears, displaying a '?' symbol above its head. Change Line 4 color to #FFFF00. self.wait(2).\"]",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Coder1: In addition to the layout fixes (Issues 29-31), you MUST update the code to use the 5-line script now in the storyboard and integrate the assets: bolt.svg and robot.svg."
+    },
+    {
+      "id": 27,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Bit D3 flashes green (#00FF00) and flips its value. Display the asset [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/based.svg] next to the corrected bit. Change Line 5 color to #FFFF00. self.wait(2).']",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Coder6: In addition to the layout fixes (Issues 41-43), integrate the asset based.svg as requested in the storyboard. Note that the script will be updated to 5 lines shortly."
+    },
+    {
+      "id": 28,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_7] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Animate a green RAM stick [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ram.svg] (#00FF00) with flowing binary data. Change Line 1 color to #FFFF00. self.wait(2).']",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Coder7: In addition to the layout fixes (Issues 44-46), integrate the asset ram.svg as requested in the storyboard."
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'Turn Left' and 'Turn Right' labels are positioned at B3, which overlaps with the top of the binary string area (B2-D5). Fix: Lines 94 and 117: self.place_at_grid(left_label, 'A3', scale_factor=0.8) and self.place_at_grid(right_label, 'A3', scale_factor=0.8) (line=94, object=left_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The hamming_logo at B5 overlaps with both the 'Turn Right' label and the background animation area. Fix: Line 160: self.place_at_grid(hamming_logo, 'A5', scale_factor=0.7) (line=160, object=hamming_logo)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'astro' asset at E5 is very close to the binary string area, creating a cluttered look in the bottom-right corner. Fix: Line 147: self.place_at_grid(astro, 'F5', scale_factor=1.0) (line=147, object=astro)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'odd_label' containing '(Odd - Error!)' is placed at the far right edge (D6), which is too narrow for the long text and risks being cut off. Fix: Line 120: self.place_in_area(odd_label, 'D5', 'D6', scale_factor=0.7) (line=120, object=odd_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The bit sequence and parity label are shifted too far right, starting at C2, which restricts the available space for result labels in column 6. Fix: Line 65-67, 72, 75: Shift bits left by one column. self.place_at_grid(bit1, 'C1'); self.place_at_grid(bit2, 'C2'); self.place_at_grid(bit3, 'C3'); self.place_at_grid(parity_bit, 'C4'); self.place_at_grid(parity_label, 'B4', scale_factor=0.7) (line=65, object=bit1, bit2, bit3, parity_bit, parity_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The summation formulas and the error_bit are misaligned with the new bit positions, which will cause visual inconsistency during the error demonstration. Fix: Lines 93, 111, 117: Align formulas and error bit with the new grid. self.place_in_area(sum_formula, 'D1', 'D4', scale_factor=0.8); self.place_at_grid(error_bit, 'C2'); self.place_in_area(error_sum, 'D1', 'D4', scale_factor=0.8) (line=93, object=sum_formula, error_bit, error_sum)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The parity label 'p2' at E2 is at a diagonal distance of approximately 1.41 units from its object 'circle_green' (D3), violating the 1-grid unit proximity constraint. Fix: Line 97: self.place_at_grid(self.p2, 'E3') (line=97, object=p2)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The parity label 'p3' at E6 is at a diagonal distance of approximately 1.41 units from its object 'circle_blue' (D5), violating the 1-grid unit proximity constraint. Fix: Line 98: self.place_at_grid(self.p3, 'E5') (line=98, object=p3)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'arrow' at B5 is positioned in a congested area between the red and blue circle boundaries; moving it to A5 provides better visual separation and clarity. Fix: Line 137: self.place_at_grid(self.arrow, 'A5', scale_factor=0.8) (line=137, object=arrow)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The horizontal array of bit circles is positioned too high in row B, which creates a vertical imbalance on the right side of the frame and leaves the lower half empty. Fix: Line 82: self.place_in_area(bit_positions, 'C1', 'C6', scale_factor=0.8) (line=82, object=bit_positions)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: Using only five grid units (B2-B6) for seven bit circles causes them to appear slightly cramped horizontally. Fix: Line 82: self.place_in_area(bit_positions, 'C1', 'C6', scale_factor=0.8) (line=82, object=bit_positions)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The indices_vgroup is positioned too far to the right edge of the frame, creating a visual disconnect from the lecture notes and leaving the center-right stage empty. Fix: Line 68: self.place_in_area(indices_vgroup, 'A2', 'F4', scale_factor=0.8) (line=68, object=indices_vgroup)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The math_sum is positioned too low and is horizontally misaligned with the bit array, creating a visual disconnect. Fix: Line 121: self.place_at_grid(math_sum, 'D4', scale_factor=1.0) (line=121, object=math_sum)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The math_result is vertically distant from the bit group, making it difficult for the eye to track the relationship between the sum and the error index. Fix: Line 135: self.place_at_grid(math_result, 'D4', scale_factor=1.0) (line=135, object=math_result)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The bits_group is under-scaled (0.65), which limits the legibility of the parity labels (P1, P2, D3...) and the bit indices. Fix: Line 91: self.place_in_area(bits_group, 'B2', 'C6', scale_factor=0.8) (line=91, object=bits_group)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 44,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The binary_data at B2 overlaps with the ram_stick area (B2-C5), as they both occupy the B2 grid coordinate. Fix: Line 74: self.place_at_grid(binary_data, 'A3') (line=74, object=binary_data)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 45,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The satellite at B2 is positioned too high, crowding the video title and failing to align vertically with the second lecture line. Fix: Line 105: self.place_at_grid(satellite, 'C2', scale_factor=0.8) (line=105, object=satellite)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 46,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The balance_text (C3-D4) is clustered in the middle of the screen, creating poor vertical alignment with the third lecture line at the bottom. Fix: Line 145: self.place_in_area(balance_text, 'E3', 'F5') (line=145, object=balance_text)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6",
+    "section_7": "Coder7"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5,
+    "section_7": 6
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_6/480p15/Section6Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_7/480p15/Section7Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 393802,
+        "video_mtime_ns": 1784633643000000000,
+        "code_sha1": "fb5d45aae09e7de51ff80a4ea03fdf572a932c26"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'Turn Left' and 'Turn Right' labels are positioned at B3, which overlaps with the top of the binary string area (B2-D5).",
+              "solution": "Lines 94 and 117: self.place_at_grid(left_label, 'A3', scale_factor=0.8) and self.place_at_grid(right_label, 'A3', scale_factor=0.8)",
+              "line_number": 94,
+              "object_affected": "left_label"
+            },
+            {
+              "problem": "The hamming_logo at B5 overlaps with both the 'Turn Right' label and the background animation area.",
+              "solution": "Line 160: self.place_at_grid(hamming_logo, 'A5', scale_factor=0.7)",
+              "line_number": 160,
+              "object_affected": "hamming_logo"
+            },
+            {
+              "problem": "The 'astro' asset at E5 is very close to the binary string area, creating a cluttered look in the bottom-right corner.",
+              "solution": "Line 147: self.place_at_grid(astro, 'F5', scale_factor=1.0)",
+              "line_number": 147,
+              "object_affected": "astro"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        29,
+        30,
+        31
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 222427,
+        "video_mtime_ns": 1784633622000000000,
+        "code_sha1": "f02c5212b6806dddc4cb109259687c2c55b9c5ea"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'odd_label' containing '(Odd - Error!)' is placed at the far right edge (D6), which is too narrow for the long text and risks being cut off.",
+              "solution": "Line 120: self.place_in_area(odd_label, 'D5', 'D6', scale_factor=0.7)",
+              "line_number": 120,
+              "object_affected": "odd_label"
+            },
+            {
+              "problem": "The bit sequence and parity label are shifted too far right, starting at C2, which restricts the available space for result labels in column 6.",
+              "solution": "Line 65-67, 72, 75: Shift bits left by one column. self.place_at_grid(bit1, 'C1'); self.place_at_grid(bit2, 'C2'); self.place_at_grid(bit3, 'C3'); self.place_at_grid(parity_bit, 'C4'); self.place_at_grid(parity_label, 'B4', scale_factor=0.7)",
+              "line_number": 65,
+              "object_affected": "bit1, bit2, bit3, parity_bit, parity_label"
+            },
+            {
+              "problem": "The summation formulas and the error_bit are misaligned with the new bit positions, which will cause visual inconsistency during the error demonstration.",
+              "solution": "Lines 93, 111, 117: Align formulas and error bit with the new grid. self.place_in_area(sum_formula, 'D1', 'D4', scale_factor=0.8); self.place_at_grid(error_bit, 'C2'); self.place_in_area(error_sum, 'D1', 'D4', scale_factor=0.8)",
+              "line_number": 93,
+              "object_affected": "sum_formula, error_bit, error_sum"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 400993,
+        "video_mtime_ns": 1784633625000000000,
+        "code_sha1": "de3ebc6799fce182780db56f73a23c6c7f03591a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The parity label 'p2' at E2 is at a diagonal distance of approximately 1.41 units from its object 'circle_green' (D3), violating the 1-grid unit proximity constraint.",
+              "solution": "Line 97: self.place_at_grid(self.p2, 'E3')",
+              "line_number": 97,
+              "object_affected": "p2"
+            },
+            {
+              "problem": "The parity label 'p3' at E6 is at a diagonal distance of approximately 1.41 units from its object 'circle_blue' (D5), violating the 1-grid unit proximity constraint.",
+              "solution": "Line 98: self.place_at_grid(self.p3, 'E5')",
+              "line_number": 98,
+              "object_affected": "p3"
+            },
+            {
+              "problem": "The 'arrow' at B5 is positioned in a congested area between the red and blue circle boundaries; moving it to A5 provides better visual separation and clarity.",
+              "solution": "Line 137: self.place_at_grid(self.arrow, 'A5', scale_factor=0.8)",
+              "line_number": 137,
+              "object_affected": "arrow"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35,
+        36,
+        37
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 286304,
+        "video_mtime_ns": 1784633628000000000,
+        "code_sha1": "5eebdfb7ff9cb45ae98c3fb2f3c106d6296e2d2f"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The horizontal array of bit circles is positioned too high in row B, which creates a vertical imbalance on the right side of the frame and leaves the lower half empty.",
+              "solution": "Line 82: self.place_in_area(bit_positions, 'C1', 'C6', scale_factor=0.8)",
+              "line_number": 82,
+              "object_affected": "bit_positions"
+            },
+            {
+              "problem": "Using only five grid units (B2-B6) for seven bit circles causes them to appear slightly cramped horizontally.",
+              "solution": "Line 82: self.place_in_area(bit_positions, 'C1', 'C6', scale_factor=0.8)",
+              "line_number": 82,
+              "object_affected": "bit_positions"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        38,
+        39
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 507552,
+        "video_mtime_ns": 1784633649000000000,
+        "code_sha1": "9864438b746410b0e9eef9b524233a68a44e465c"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The indices_vgroup is positioned too far to the right edge of the frame, creating a visual disconnect from the lecture notes and leaving the center-right stage empty.",
+              "solution": "Line 68: self.place_in_area(indices_vgroup, 'A2', 'F4', scale_factor=0.8)",
+              "line_number": 68,
+              "object_affected": "indices_vgroup"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        40
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 425642,
+        "video_mtime_ns": 1784633646000000000,
+        "code_sha1": "44e4587865491284f0bce9951e8bc020a9f27fbb"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The math_sum is positioned too low and is horizontally misaligned with the bit array, creating a visual disconnect.",
+              "solution": "Line 121: self.place_at_grid(math_sum, 'D4', scale_factor=1.0)",
+              "line_number": 121,
+              "object_affected": "math_sum"
+            },
+            {
+              "problem": "The math_result is vertically distant from the bit group, making it difficult for the eye to track the relationship between the sum and the error index.",
+              "solution": "Line 135: self.place_at_grid(math_result, 'D4', scale_factor=1.0)",
+              "line_number": 135,
+              "object_affected": "math_result"
+            },
+            {
+              "problem": "The bits_group is under-scaled (0.65), which limits the legibility of the parity labels (P1, P2, D3...) and the bit indices.",
+              "solution": "Line 91: self.place_in_area(bits_group, 'B2', 'C6', scale_factor=0.8)",
+              "line_number": 91,
+              "object_affected": "bits_group"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        41,
+        42,
+        43
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_7",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_7/480p15/Section7Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data/media/videos/section_7/480p15/Section7Scene.mp4",
+        "video_size": 278265,
+        "video_mtime_ns": 1784633646000000000,
+        "code_sha1": "40bfa04c6a8d45b095da107e5fbb99892407291a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The binary_data at B2 overlaps with the ram_stick area (B2-C5), as they both occupy the B2 grid coordinate.",
+              "solution": "Line 74: self.place_at_grid(binary_data, 'A3')",
+              "line_number": 74,
+              "object_affected": "binary_data"
+            },
+            {
+              "problem": "The satellite at B2 is positioned too high, crowding the video title and failing to align vertically with the second lecture line.",
+              "solution": "Line 105: self.place_at_grid(satellite, 'C2', scale_factor=0.8)",
+              "line_number": 105,
+              "object_affected": "satellite"
+            },
+            {
+              "problem": "The balance_text (C3-D4) is clustered in the middle of the screen, creating poor vertical alignment with the third lecture line at the bottom.",
+              "solution": "Line 145: self.place_in_area(balance_text, 'E3', 'F5')",
+              "line_number": 145,
+              "object_affected": "balance_text"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        44,
+        45,
+        46
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_184615/11-Error_Correction_and_Hamming_Codes_The_Self-Healing_Data",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 218162,
+      "completion_tokens": 23382,
+      "total_tokens": 288949,
+      "call_count": 36
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 277,
+        "completion_tokens": 1125,
+        "total_tokens": 2046,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 18812,
+        "completion_tokens": 641,
+        "total_tokens": 19643,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 22789,
+        "completion_tokens": 583,
+        "total_tokens": 23578,
+        "call_count": 2
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 37311,
+        "completion_tokens": 722,
+        "total_tokens": 38656,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 8665,
+        "completion_tokens": 1805,
+        "total_tokens": 10665,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 10179,
+        "completion_tokens": 1959,
+        "total_tokens": 12166,
+        "call_count": 1
+      },
+      "agent:Coder7": {
+        "prompt_tokens": 11338,
+        "completion_tokens": 2353,
+        "total_tokens": 13905,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 16645,
+        "completion_tokens": 2120,
+        "total_tokens": 18840,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 16766,
+        "completion_tokens": 1797,
+        "total_tokens": 18679,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 16009,
+        "completion_tokens": 2178,
+        "total_tokens": 18505,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 22536,
+        "completion_tokens": 2588,
+        "total_tokens": 25200,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 6095,
+        "completion_tokens": 1158,
+        "total_tokens": 18494,
+        "call_count": 14
+      },
+      "scope_refine:section_7": {
+        "prompt_tokens": 7934,
+        "completion_tokens": 2077,
+        "total_tokens": 10528,
+        "call_count": 1
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3610,
+        "completion_tokens": 359,
+        "total_tokens": 5960,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 3018,
+        "completion_tokens": 514,
+        "total_tokens": 7170,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3264,
+        "completion_tokens": 352,
+        "total_tokens": 11055,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3024,
+        "completion_tokens": 240,
+        "total_tokens": 6285,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3509,
+        "completion_tokens": 145,
+        "total_tokens": 8014,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 3335,
+        "completion_tokens": 344,
+        "total_tokens": 9189,
+        "call_count": 1
+      },
+      "video_review:section_7": {
+        "prompt_tokens": 3046,
+        "completion_tokens": 322,
+        "total_tokens": 10371,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 218162,
+        "completion_tokens": 23382,
+        "total_tokens": 288949,
+        "call_count": 36
+      }
+    }
+  }
+}

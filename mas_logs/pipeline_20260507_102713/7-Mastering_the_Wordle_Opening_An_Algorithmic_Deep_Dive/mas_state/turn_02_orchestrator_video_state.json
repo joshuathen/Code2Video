@@ -1,0 +1,1073 @@
+{
+  "topic": "Mastering the Wordle Opening: An Algorithmic Deep Dive",
+  "target_audience": "University students and puzzle enthusiasts with a basic interest in logic and data science.",
+  "code": [
+    "from manim import *\nimport random\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup title and lecture lines\n        title_text = \"The Objective: Shrinking the Search Space\"\n        lecture_lines = [\n            'Wordle is about narrowing down 2,315 secret words.',\n            'Your first guess should eliminate the most candidates.',\n            'High-frequency letters shrink the search space faster.'\n        ]\n        self.setup_layout(title_text, lecture_lines)\n        \n        # === Animation for Lecture Line 1 ===\n        # Color change only for active line\n        self.lecture[0].set_color(YELLOW)\n        \n        # A dense cloud of 2,315 small white (#FFFFFF) dots fills the screen to represent the word pool.\n        # We constrain the cloud to the grid area on the right side.\n        num_dots = 2315\n        dots = VGroup()\n        random.seed(42) # Consistent random distribution\n        \n        # Grid boundaries: x [0.0, 6.0], y [-3.3, 2.7]\n        for _ in range(num_dots):\n            pos_x = random.uniform(0.1, 5.9)\n            pos_y = random.uniform(-3.2, 2.6)\n            dot = Dot(point=[pos_x, pos_y, 0], radius=0.015, color=\"#FFFFFF\", fill_opacity=0.7)\n            dots.add(dot)\n        \n        # Show the cloud population\n        self.play(FadeIn(dots, lag_ratio=0.0001), run_time=2.0)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Transition lecture highlight\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # The word 'FUZZY' appears in grey (#787C7E) boxes\n        fuzzy_word = self.create_wordle_word(\"FUZZY\", \"#787C7E\")\n        self.place_in_area(fuzzy_word, \"A1\", \"A6\", scale_factor=0.8)\n        \n        self.play(FadeIn(fuzzy_word, shift=UP*0.2))\n        \n        # \"only a tiny fraction of dots vanish\"\n        # Since FUZZY is an inefficient guess, we eliminate very few dots.\n        num_fuzzy_removed = 75 \n        all_indices = list(range(num_dots))\n        random.shuffle(all_indices)\n        fuzzy_indices = all_indices[:num_fuzzy_removed]\n        remaining_indices = all_indices[num_fuzzy_removed:]\n        \n        dots_to_remove_fuzzy = VGroup(*[dots[i] for i in fuzzy_indices])\n        self.play(FadeOut(dots_to_remove_fuzzy), run_time=0.8)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Transition lecture highlight\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # The word 'TRACE' appears in grey (#787C7E) boxes\n        trace_word = self.create_wordle_word(\"TRACE\", \"#787C7E\")\n        self.place_in_area(trace_word, \"A1\", \"A6\", scale_factor=0.8)\n        \n        # Contrast with previous guess\n        self.play(FadeOut(fuzzy_word), FadeIn(trace_word))\n        \n        # \"a massive portion of dots vanish instantly\"\n        # TRACE is highly efficient, eliminating ~90% of the pool.\n        num_remaining = len(remaining_indices)\n        num_trace_removed = int(num_remaining * 0.93)\n        trace_indices = remaining_indices[:num_trace_removed]\n        \n        dots_to_remove_trace = VGroup(*[dots[i] for i in trace_indices])\n        self.play(FadeOut(dots_to_remove_trace), run_time=1.5)\n        self.wait(3)\n\n    def create_wordle_word(self, word, box_color):\n        \"\"\"Helper to create a row of Wordle-style boxes with letters.\"\"\"\n        word_group = VGroup()\n        for letter in word:\n            square = Square(side_length=0.6, fill_color=box_color, fill_opacity=1, stroke_width=2, stroke_color=WHITE)\n            char = Text(letter, font_size=28, color=WHITE, weight=BOLD)\n            word_group.add(VGroup(square, char))\n        word_group.arrange(RIGHT, buff=0.1)\n        return word_group\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Initialize Scene layout\n        lecture_lines = [\n            'Entropy measures the reduction of uncertainty in bits.',\n            'Each bit of information cuts possibilities in half.',\n            'We seek guesses that maximize this information gain.'\n        ]\n        self.setup_layout(\"Prerequisite: Understanding Entropy and Information Theory\", lecture_lines)\n        \n        HIGHLIGHT_COLOR = \"#5865F2\" # Blue\n        NODE_COLOR = \"#FFFFFF\" # White\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(WHITE))\n        \n        # Root node\n        root_circle = Circle(radius=0.4, color=NODE_COLOR, fill_opacity=0.2)\n        root_label = Text(\"Total Words\", font_size=16, color=NODE_COLOR)\n        root_node = VGroup(root_circle, root_label)\n        self.place_in_area(root_node, \"A3\", \"A4\")\n        \n        self.play(Create(root_circle), Write(root_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(WHITE))\n        \n        # Level 1 Nodes\n        node_l1_1 = Circle(radius=0.3, color=NODE_COLOR, fill_opacity=0.2)\n        node_l1_2 = Circle(radius=0.3, color=NODE_COLOR, fill_opacity=0.2)\n        self.place_in_area(node_l1_1, \"C1\", \"C2\")\n        self.place_in_area(node_l1_2, \"C5\", \"C6\")\n        \n        # Level 2 Nodes\n        node_l2_1 = Circle(radius=0.2, color=NODE_COLOR, fill_opacity=0.2)\n        node_l2_2 = Circle(radius=0.2, color=NODE_COLOR, fill_opacity=0.2)\n        node_l2_3 = Circle(radius=0.2, color=NODE_COLOR, fill_opacity=0.2)\n        node_l2_4 = Circle(radius=0.2, color=NODE_COLOR, fill_opacity=0.2)\n        self.place_at_grid(node_l2_1, \"E1\", scale_factor=1.0)\n        self.place_at_grid(node_l2_2, \"E2\", scale_factor=1.0)\n        self.place_at_grid(node_l2_3, \"E5\", scale_factor=1.0)\n        self.place_at_grid(node_l2_4, \"E6\", scale_factor=1.0)\n        \n        # Edges\n        edge1 = Line(root_circle.get_bottom(), node_l1_1.get_top(), color=NODE_COLOR)\n        edge2 = Line(root_circle.get_bottom(), node_l1_2.get_top(), color=NODE_COLOR)\n        \n        edge_l2_1 = Line(node_l1_1.get_bottom(), node_l2_1.get_top(), color=NODE_COLOR)\n        edge_l2_2 = Line(node_l1_1.get_bottom(), node_l2_2.get_top(), color=NODE_COLOR)\n        edge_l2_3 = Line(node_l1_2.get_bottom(), node_l2_3.get_top(), color=NODE_COLOR)\n        edge_l2_4 = Line(node_l1_2.get_bottom(), node_l2_4.get_top(), color=NODE_COLOR)\n        \n        tree_edges = VGroup(edge1, edge2, edge_l2_1, edge_l2_2, edge_l2_3, edge_l2_4)\n        tree_nodes = VGroup(node_l1_1, node_l1_2, node_l2_1, node_l2_2, node_l2_3, node_l2_4)\n        \n        # Labels for halves\n        half_label_1 = Text(\"50%\", font_size=14, color=GRAY).next_to(edge1, LEFT, buff=0.1)\n        half_label_2 = Text(\"50%\", font_size=14, color=GRAY).next_to(edge2, RIGHT, buff=0.1)\n        \n        self.play(\n            Create(tree_edges),\n            Create(tree_nodes),\n            Write(half_label_1),\n            Write(half_label_2)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(HIGHLIGHT_COLOR))\n        \n        # Highlight path\n        path_highlight = VGroup(edge1, node_l1_1, edge_l2_2, node_l2_2)\n        bit_label = Text(\"1 Bit Reduction\", font_size=18, color=HIGHLIGHT_COLOR)\n        self.place_in_area(bit_label, \"F1\", \"F3\")\n        \n        self.play(\n            path_highlight.animate.set_color(HIGHLIGHT_COLOR).set_stroke(width=6),\n            Write(bit_label)\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Lecture lines and Title\n        title_str = \"The Math: The 243 Possible Feedback Patterns\"\n        lines_str = [\n            'Five positions with three colors yield 243 feedback patterns.',\n            'Every guess maps the word list into these patterns.',\n            'Optimal words distribute answers evenly across all buckets.',\n            'Dense buckets leave too much uncertainty for the solver.',\n            'Sparse distributions provide the most information on average.'\n        ]\n        \n        self.setup_layout(title_str, lines_str)\n        \n        # Colors\n        COLOR_GREY = \"#787C7E\"\n        COLOR_YELLOW = \"#C9B458\"\n        COLOR_GREEN = \"#6AAA64\"\n        COLOR_WHITE = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight first line\n        self.lecture[0].set_color(YELLOW)\n        \n        # Blank Wordle Row\n        wordle_row = VGroup(*[Square(side_length=0.6, stroke_color=COLOR_WHITE) for _ in range(5)]).arrange(RIGHT, buff=0.1)\n        self.place_in_area(wordle_row, \"B1\", \"B6\")\n        \n        # 3 Color Squares\n        color_squares = VGroup(\n            Square(side_length=0.4, fill_color=COLOR_GREY, fill_opacity=1, stroke_width=0),\n            Square(side_length=0.4, fill_color=COLOR_YELLOW, fill_opacity=1, stroke_width=0),\n            Square(side_length=0.4, fill_color=COLOR_GREEN, fill_opacity=1, stroke_width=0)\n        ).arrange(RIGHT, buff=0.3)\n        self.place_in_area(color_squares, \"A2\", \"A5\")\n        \n        # Equation\n        equation = Text(\"3^5 = 243\", color=COLOR_WHITE, font_size=48)\n        self.place_in_area(equation, \"C1\", \"C6\")\n        \n        self.play(Create(wordle_row), FadeIn(color_squares), Write(equation))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Transition lecture highlight\n        self.play(self.lecture[0].animate.set_color(WHITE), self.lecture[1].animate.set_color(YELLOW))\n        \n        # Histogram with 243 thin white bars\n        bars = VGroup(*[\n            Line(ORIGIN, UP * 0.1, stroke_width=1.5, color=COLOR_WHITE) \n            for _ in range(243)\n        ]).arrange(RIGHT, buff=0.01)\n        self.place_in_area(bars, \"F1\", \"F6\")\n        \n        self.play(Create(bars))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Transition lecture highlight\n        self.play(self.lecture[1].animate.set_color(WHITE), self.lecture[2].animate.set_color(YELLOW))\n        \n        # SALET appears\n        word_salet = Text(\"SALET\", font_size=36, color=COLOR_WHITE)\n        self.place_in_area(word_salet, \"D2\", \"D5\")\n        \n        # Dots distribute\n        dots = VGroup(*[\n            Dot(radius=0.03, color=COLOR_WHITE).move_to(word_salet.get_center()) \n            for _ in range(50)\n        ])\n        \n        # Distribution animation: bars grow evenly\n        def grow_bars_even(mobjects):\n            for i, bar in enumerate(mobjects):\n                target_height = 0.4 + np.random.uniform(-0.1, 0.1)\n                bar.scale(target_height / bar.get_height())\n                bar.move_to(self.grid[\"F1\"] + RIGHT * (i * 0.02) + UP * (bar.get_height()/2), coor_mask=np.array([1,1,0]))\n\n        self.play(FadeIn(word_salet))\n        self.play(\n            LaggedStart(*[dot.animate.move_to(bars[np.random.randint(0, 243)].get_top()) for dot in dots], lag_ratio=0.05),\n            *[bar.animate.scale(4) for bar in bars],\n            run_time=2\n        )\n        self.remove(dots)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Transition lecture highlight\n        self.play(self.lecture[2].animate.set_color(WHITE), self.lecture[3].animate.set_color(YELLOW))\n        \n        # Dense buckets: few very tall bars, many zeros\n        dense_animations = []\n        for i, bar in enumerate(bars):\n            if i % 60 == 0: # 4 peaks\n                dense_animations.append(bar.animate.stretch_to_fit_height(1.5).set_color(COLOR_YELLOW))\n            else:\n                dense_animations.append(bar.animate.stretch_to_fit_height(0.05).set_opacity(0.3))\n        \n        self.play(*dense_animations, run_time=1.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Transition lecture highlight\n        self.play(self.lecture[3].animate.set_color(WHITE), self.lecture[4].animate.set_color(YELLOW))\n        \n        # Sparse distributions: back to even\n        sparse_animations = []\n        for bar in bars:\n            sparse_animations.append(bar.animate.stretch_to_fit_height(0.5).set_color(COLOR_WHITE).set_opacity(1.0))\n            \n        self.play(*sparse_animations, run_time=1.5)\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # 1. Setup the layout\n        self.setup_layout(\n            \"Section 4: Algorithmic Deep Dive\",\n            [\n                \"- Information Theory Basics\",\n                \"- Calculating Expected Entropy\",\n                \"- The Power of 'CRANE' and 'SALET'\",\n                \"- Pruning the Search Space\"\n            ]\n        )\n\n        # 2. Visualizing Wordle Blocks in the grid\n        wordle_squares = VGroup()\n        letters = [\"C\", \"R\", \"A\", \"N\", \"E\"]\n        colors = [GRAY, GRAY, YELLOW, GRAY, GREEN]\n\n        for i, (char, col) in enumerate(zip(letters, colors)):\n            # Create a box\n            box = Square(side_length=0.7, stroke_color=WHITE, stroke_width=2)\n            box.set_fill(col, opacity=0.5)\n            \n            # Create letter\n            char_mob = Text(char, font_size=24, color=WHITE)\n            \n            # Place in grid (Row A, Cols 1-5)\n            grid_id = f\"A{i+1}\"\n            self.place_at_grid(box, grid_id)\n            char_mob.move_to(box.get_center())\n            \n            wordle_squares.add(VGroup(box, char_mob))\n\n        # 3. Animate the word entry\n        self.play(\n            AnimationGroup(\n                *[FadeIn(sq, shift=DOWN) for sq in wordle_squares],\n                lag_ratio=0.2\n            )\n        )\n        self.wait(1)\n\n        # 4. Highlight Entropy Calculation (Conceptual)\n        # Using Text instead of MathTex to avoid FileNotFoundError: 'latex'\n        entropy_math = Text(\n            \"E[I] = Σ p_i log2( 1 / p_i )\",\n            font_size=24,\n            color=BLUE\n        )\n        self.place_at_grid(entropy_math, \"C3\", scale_factor=1.0)\n        entropy_math.shift(RIGHT * 0.5) # Slight manual adjustment for visibility\n        \n        self.play(Write(entropy_math))\n        self.wait(1)\n\n        # 5. Connect concepts\n        arrow = Arrow(\n            wordle_squares[2].get_bottom(),\n            entropy_math.get_top(),\n            buff=0.2,\n            color=YELLOW\n        )\n        self.play(Create(arrow))\n        \n        analysis_text = Text(\"High Entropy Split\", font_size=18, color=YELLOW)\n        analysis_text.next_to(arrow, RIGHT)\n        self.play(FadeIn(analysis_text))\n\n        self.wait(3)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\n            \"The Clash of Titans: ADIEU vs. CRANE vs. SALET\", \n            [\n                \"Humans love 'ADIEU' to find vowels quickly.\", \n                \"Vowels are common but don't prune words efficiently.\", \n                \"Algorithms prefer 'SALET' for its powerful consonant placement.\", \n                \"'SALET' leaves fewer than 20 words on average.\", \n                \"Consonants provide better structural information than vowels.\"\n            ]\n        )\n        \n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        adieu = Text(\"ADIEU\", font_size=32, color=WHITE)\n        crane = Text(\"CRANE\", font_size=32, color=WHITE)\n        salet = Text(\"SALET\", font_size=32, color=WHITE)\n        \n        self.place_at_grid(adieu, \"B2\")\n        self.place_at_grid(crane, \"C2\")\n        self.place_at_grid(salet, \"D2\")\n        \n        self.play(\n            Write(adieu),\n            Write(crane),\n            Write(salet),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(BLUE)\n        \n        # Visualizing \"remaining possibilities\" with bars\n        # Scale: 1.0 length unit ~ 20 words\n        bar_adieu = Rectangle(width=2.5, height=0.3, color=BLUE, fill_opacity=0.8)\n        bar_crane = Rectangle(width=1.0, height=0.3, color=BLUE, fill_opacity=0.4)\n        bar_salet = Rectangle(width=0.4, height=0.3, color=BLUE, fill_opacity=0.4)\n        \n        # Position bars next to words (column 4/5)\n        self.place_at_grid(bar_adieu, \"B5\")\n        self.place_at_grid(bar_crane, \"C5\")\n        self.place_at_grid(bar_salet, \"D5\")\n        \n        label_50 = Text(\"50+ words\", font_size=18, color=BLUE)\n        self.place_at_grid(label_50, \"B6\")\n        \n        self.play(\n            GrowFromEdge(bar_adieu, LEFT),\n            GrowFromEdge(bar_crane, LEFT),\n            GrowFromEdge(bar_salet, LEFT),\n            FadeIn(label_50),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(GREEN)\n        highlight_salet = SurroundingRectangle(salet, color=GREEN, buff=0.1)\n        \n        self.play(\n            Create(highlight_salet),\n            salet.animate.set_color(GREEN),\n            run_time=1\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(ORANGE)\n        label_20 = Text(\"< 20 words\", font_size=18, color=ORANGE)\n        self.place_at_grid(label_20, \"D6\")\n        \n        self.play(\n            bar_salet.animate.set_color(ORANGE),\n            FadeIn(label_20),\n            run_time=1\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Final leaderboard in Gold (#D4AF37)\n        self.lecture[4].set_color(\"#D4AF37\")\n        \n        # Elements for the leaderboard\n        header_rank = Text(\"RANK\", font_size=20, color=\"#D4AF37\")\n        header_word = Text(\"STRATEGY\", font_size=20, color=\"#D4AF37\")\n        header_steps = Text(\"AVG STEPS\", font_size=20, color=\"#D4AF37\")\n        \n        self.place_at_grid(header_rank, \"B2\")\n        self.place_at_grid(header_word, \"B3\")\n        self.place_at_grid(header_steps, \"B5\")\n        \n        rank1 = Text(\"1st\", font_size=24, color=\"#D4AF37\")\n        rank2 = Text(\"2nd\", font_size=24, color=\"#D4AF37\")\n        rank3 = Text(\"3rd\", font_size=24, color=\"#D4AF37\")\n        \n        step1 = Text(\"3.42\", font_size=24, color=\"#D4AF37\")\n        step2 = Text(\"3.48\", font_size=24, color=\"#D4AF37\")\n        step3 = Text(\"3.66\", font_size=24, color=\"#D4AF37\")\n        \n        self.place_at_grid(rank1, \"C2\")\n        self.place_at_grid(rank2, \"D2\")\n        self.place_at_grid(rank3, \"E2\")\n        \n        self.place_at_grid(step1, \"C5\")\n        self.place_at_grid(step2, \"D5\")\n        self.place_at_grid(step3, \"E5\")\n\n        # Reorder transition\n        self.play(\n            FadeOut(bar_adieu, bar_crane, bar_salet, label_50, label_20, highlight_salet),\n            adieu.animate.move_to(self.grid[\"E3\"]).set_color(\"#D4AF37\"),\n            crane.animate.move_to(self.grid[\"D3\"]).set_color(\"#D4AF37\"),\n            salet.animate.move_to(self.grid[\"C3\"]).set_color(\"#D4AF37\"),\n            run_time=1.5\n        )\n        \n        self.play(\n            FadeIn(header_rank, header_word, header_steps),\n            FadeIn(rank1, rank2, rank3),\n            FadeIn(step1, step2, step3),\n            run_time=1\n        )\n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Setup Title and Lecture Lines\n        title = \"Practical Application: Your 5-Minute Strategy\"\n        lines = [\n            \"Prioritize high-frequency consonants in your opening moves.\",\n            \"Avoid repeating letters across your first two guesses.\",\n            \"Play for information, not just for the lucky win.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Pre-create common colors\n        COLOR_CONSONANT = \"#FFFFFF\"\n        COLOR_NO_REPEAT = \"#FF0000\"\n        COLOR_CHEAT_SHEET = \"#D4AF37\"\n        COLOR_SOLVED = \"#6AAA64\"\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        \n        # Consonants Icons\n        consonants = [\"S\", \"T\", \"R\", \"L\", \"N\"]\n        consonant_icons = VGroup()\n        for char in consonants:\n            circ = Circle(radius=0.4, color=COLOR_CONSONANT)\n            txt = Text(char, font_size=32, color=COLOR_CONSONANT)\n            consonant_icons.add(VGroup(circ, txt))\n        \n        consonant_icons.arrange_in_grid(rows=2, cols=3, buff=0.3)\n        self.place_in_area(consonant_icons, \"A2\", \"B4\", scale_factor=0.8)\n        \n        self.play(FadeIn(consonant_icons))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW)\n        )\n        \n        # No-repeat sign\n        no_repeat_circle = Circle(radius=0.8, color=COLOR_NO_REPEAT, stroke_width=8)\n        no_repeat_slash = Line(\n            start=no_repeat_circle.point_at_angle(135 * DEGREES),\n            end=no_repeat_circle.point_at_angle(-45 * DEGREES),\n            color=COLOR_NO_REPEAT,\n            stroke_width=8\n        )\n        \n        # Representative \"Repeated Letter\" visual (e.g. 'E' and 'E')\n        ee_text = Text(\"E ... E\", color=COLOR_NO_REPEAT, font_size=36)\n        no_repeat_group = VGroup(no_repeat_circle, no_repeat_slash, ee_text)\n        self.place_in_area(no_repeat_group, \"A5\", \"C6\", scale_factor=0.9)\n        \n        self.play(Create(no_repeat_circle), Create(no_repeat_slash), Write(ee_text))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW)\n        )\n        \n        # Golden Cheat Sheet Box\n        cheat_sheet_bg = Rectangle(width=2.5, height=2.0, color=COLOR_CHEAT_SHEET, stroke_width=4)\n        cheat_sheet_title = Text(\"CHEAT SHEET\", font_size=20, color=COLOR_CHEAT_SHEET).next_to(cheat_sheet_bg.get_top(), DOWN, buff=0.1)\n        words = VGroup(\n            Text(\"SLATE\", font_size=24, color=WHITE),\n            Text(\"CRANE\", font_size=24, color=WHITE),\n            Text(\"TRACE\", font_size=24, color=WHITE)\n        ).arrange(DOWN, buff=0.2).next_to(cheat_sheet_title, DOWN, buff=0.2)\n        \n        cheat_sheet = VGroup(cheat_sheet_bg, cheat_sheet_title, words)\n        self.place_in_area(cheat_sheet, \"D1\", \"F3\", scale_factor=1.0)\n        \n        # Magnifying Glass zooming into a Solved Grid\n        # Create a simplified 3x3 grid section for the zoom\n        grid_rows = VGroup()\n        for i in range(3):\n            row = VGroup(*[Square(side_length=0.4, fill_opacity=1, fill_color=COLOR_SOLVED if i == 2 else GRAY) for _ in range(5)]).arrange(RIGHT, buff=0.05)\n            grid_rows.add(row)\n        grid_rows.arrange(DOWN, buff=0.05)\n        \n        # Final \"Solved\" state label\n        solved_text = Text(\"SOLVED\", font_size=20, color=COLOR_SOLVED).next_to(grid_rows, DOWN, buff=0.1)\n        solved_ui = VGroup(grid_rows, solved_text)\n        self.place_in_area(solved_ui, \"D4\", \"F6\", scale_factor=1.0)\n        \n        # Magnifying Glass\n        mag_circle = Circle(radius=0.5, color=WHITE, stroke_width=4)\n        mag_handle = Line(mag_circle.point_at_angle(-45 * DEGREES), mag_circle.point_at_angle(-45 * DEGREES) + (0.4 * DOWN + 0.4 * RIGHT), color=WHITE, stroke_width=6)\n        magnifying_glass = VGroup(mag_circle, mag_handle)\n        \n        # Start magnifying glass over the grid and scale up\n        magnifying_glass.move_to(solved_ui.get_center())\n        \n        self.play(FadeIn(cheat_sheet))\n        self.play(FadeIn(solved_ui))\n        self.play(magnifying_glass.animate.scale(1.5), run_time=1.5)\n        self.play(magnifying_glass.animate.scale(1/1.5), run_time=1)\n        \n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "Mastering the Wordle Opening: An Algorithmic Deep Dive",
+    "target_audience": "University students and puzzle enthusiasts with a basic interest in logic and data science.",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Objective: Shrinking the Search Space",
+        "content": "Introduce Wordle mechanics as a process of elimination. The goal of the first move isn't just to 'get letters right,' but to discard as many of the 2,315 possible secret words as possible. Visual: A large cloud of 2,315 dots representing words, which shrinks after a guess.",
+        "example": "If you guess 'FUZZY' and get all grey, you only eliminate a few words. If you guess 'TRACE' and get all grey, you eliminate hundreds of possibilities because T, R, A, C, and E are high-frequency letters."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: Understanding Entropy and Information Theory",
+        "content": "Introduce the concept of 'Bits of Information.' Information is the measure of how much uncertainty is reduced. Use a binary tree graphic to show how each bit of information cuts the remaining possibilities in half.",
+        "example": "Think of a 'Guess Who?' game. Asking 'Is the character a person?' provides 0 bits (useless), but 'Is the character wearing glasses?' splits the group, providing higher entropy."
+      },
+      {
+        "id": "section_3",
+        "title": "The Math: The 243 Possible Feedback Patterns",
+        "content": "Explain that Wordle provides 3 possible colors (Grey, Yellow, Green) for 5 positions. This creates 3^5 (243) unique color patterns. A good starting word distributes the 2,315 possible answers as evenly as possible across these 243 'buckets.' Visual: A histogram showing the distribution of words into color buckets.",
+        "example": "A bad word like 'MAMMA' puts almost all secret words into one or two buckets. A good word like 'SALET' spreads the hidden words thin across many different color patterns."
+      },
+      {
+        "id": "section_4",
+        "title": "Calculating Expected Information Gain (EIG)",
+        "content": "Present the formula for Expected Information (Entropy = Σ p * log2(1/p)). Explain that we want the word that yields the highest average 'bits' across all possible secret words. Visual: A character 'Bit-Bot' calculating the probability of each color pattern for the word 'CRANE'.",
+        "example": "If 'CRANE' results in a 'Green C' 10% of the time and 'All Grey' 20% of the time, we calculate the average surprise (entropy) we expect to get from those results."
+      },
+      {
+        "id": "section_5",
+        "title": "The Clash of Titans: ADIEU vs. CRANE vs. SALET",
+        "content": "Compare popular human strategies vs. algorithmic optimal strategies. Many humans use 'ADIEU' to find vowels, but algorithms prefer 'SALET' or 'CRANE' because consonants like R, S, and T are more effective at narrowing down the specific word structure. Visual: A leaderboard comparing the average number of steps to solve.",
+        "example": "Using 'ADIEU' identifies vowels quickly but often leaves 50+ possible words. Using 'SALET' usually leaves fewer than 20 possibilities because it tests letter positions more efficiently."
+      },
+      {
+        "id": "section_6",
+        "title": "Practical Application: Your 5-Minute Strategy",
+        "content": "Summarize the takeaway: (1) Use high-frequency consonants, (2) Avoid repeating letters in the first two guesses, (3) Focus on information over 'getting it right' on turn one. Visual: A quick 'cheat sheet' graphic showing top-tier openers like 'TAROT', 'SLATE', and 'CRANE'.",
+        "example": "Imagine you are a detective. Don't try to guess the killer's name immediately; ask the questions that eliminate the most suspects at once."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Objective: Shrinking the Search Space",
+      "lecture_lines": [
+        "Wordle is about narrowing down the word pool.",
+        "Poor guesses like FUZZY eliminate very few words.",
+        "Efficient guesses like TRACE prune the search space quickly."
+      ],
+      "animations": [
+        "A dense cloud of 2,315 small white (#FFFFFF) dots fills the screen to represent the word pool.",
+        "The word 'FUZZY' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/fuzz.svg] appears in grey (#787C7E) boxes; only a tiny fraction of dots vanish.",
+        "The word 'TRACE' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/trace.svg] appears in grey (#787C7E) boxes; a massive portion of dots vanish instantly."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: Understanding Entropy and Information Theory",
+      "lecture_lines": [
+        "Entropy measures how much uncertainty we reduce.",
+        "Information gain splits our pool of possible answers.",
+        "One bit of information cuts the possibilities in half."
+      ],
+      "animations": [
+        "A single white (#FFFFFF) root node [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/words.svg] appears, labeled 'Total Words'.",
+        "The node branches into a binary tree with two levels, showing splitting of possibilities.",
+        "One specific path highlights in blue (#5865F2) to represent one bit of information."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Math: The 243 Possible Feedback Patterns",
+      "lecture_lines": [
+        "Each Wordle guess returns a specific color pattern.",
+        "There are three possible colors for five positions.",
+        "This creates two hundred forty-three unique feedback patterns.",
+        "A histogram reveals how words map to these patterns.",
+        "Optimal words distribute answers evenly across all buckets."
+      ],
+      "animations": [
+        "Show a blank 5-letter Wordle row with white (#FFFFFF) outlines.",
+        "Display 3 color squares: Grey (#787C7E), Yellow (#C9B458), and Green (#6AAA64).",
+        "The equation '3^5 = 243' appears in bold white (#FFFFFF) at the center.",
+        "A histogram with 243 thin white (#FFFFFF) bars appears along the bottom.",
+        "The word 'SALET' appears, and dots distribute across the histogram bars evenly."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Calculating Expected Information Gain (EIG)",
+      "lecture_lines": [
+        "We calculate expected information using the entropy formula.",
+        "Our goal is to maximize the average bits gained.",
+        "The word CRANE offers high mathematical surprise.",
+        "Bit-Bot computes the average utility of this guess.",
+        "A high bit score indicates an excellent opening word."
+      ],
+      "animations": [
+        "The Shannon Entropy formula $H = \\sum p \\cdot \\log_2(1/p)$ appears in white (#FFFFFF).",
+        "A small green (#00FF00) square 'Bit-Bot' character [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/robot.svg] slides onto the screen.",
+        "The word 'CRANE' appears with five color pattern probability percentages floating nearby.",
+        "'Bit-Bot' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/robot.svg] pulses yellow (#C9B458) as it calculates the sum of the probabilities.",
+        "A final value '5.87 Bits' appears in a large, glowing white (#FFFFFF) font."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Clash of Titans: ADIEU vs. CRANE vs. SALET",
+      "lecture_lines": [
+        "Many players prioritize finding vowels with ADIEU.",
+        "However, consonants prune the word list more effectively.",
+        "SALET and CRANE outperform ADIEU in average steps."
+      ],
+      "animations": [
+        "A list appears with words 'ADIEU', 'CRANE', and 'SALET' in white (#FFFFFF).",
+        "Horizontal bars next to each word show remaining possibilities: ADIEU (long), SALET (very short).",
+        "The list reorders into a leaderboard [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/leaderboard.svg] with average steps: 1st SALET, 2nd CRANE, 3rd ADIEU in gold (#D4AF37)."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Practical Application: Your 5-Minute Strategy",
+      "lecture_lines": [
+        "Prioritize high-frequency consonants and avoid repeating letters.",
+        "Use top-tier openers like SLATE, CRANE, or TRACE.",
+        "Focus on gaining information to solve the puzzle faster."
+      ],
+      "animations": [
+        "Icons for high-frequency consonants and a 'no-repeat' sign appear in white (#FFFFFF) and red (#FF0000).",
+        "A golden (#D4AF37) 'Cheat Sheet' box appears listing SLATE, CRANE, and TRACE.",
+        "A white (#FFFFFF) magnifying glass icon zooms into the final 'Solved' Wordle grid."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for section_1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for Section 1."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated full Manim code for Section 1, including the TeachingScene base class, grid-based positioning, and the dot-cloud animation representing Wordle's search space elimination. Implemented 'FUZZY' and 'TRACE' examples as specified."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for section_2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for Section 2."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 2 following the visual anchor system and lecture line mapping requirements. Binary tree visualizes entropy and bits of information reduction."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for section_3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for Section 3 (key section)."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated full Manim code for Section 3 following the visual anchor system and teaching script guidelines. Used a 6x6 grid for positioning and managed 243 histogram bars to visualize information distribution."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for section_4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for Section 4 (key section)."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Section4Scene using the required TeachingScene base class and grid positioning system. Implemented all 5 lecture lines with matching animations including the Shannon Entropy formula, Bit-Bot character, CRANE word with probabilities, and the final bits calculation pulse."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for section_5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for Section 5."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Section 5 Manim code comparing ADIEU vs CRANE vs SALET using the 6x6 grid system and requested leaderboard transition. Match lecture line colors with animation elements."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for section_6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for Section 6."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated the final summary section for the Wordle project, incorporating practical strategy visualizations (high-frequency consonants, no-repeat logic, and cheat sheet) within the mandated grid system and TeachingScene structure."
+    },
+    {
+      "id": 19,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide exactly 3 concise lecture lines (max 10 words each) that align one-to-one with the 3 animation steps provided for Section 1.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Provided 3 concise lecture lines (under 10 words each) aligned with the animation steps for Section 1."
+    },
+    {
+      "id": 20,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide exactly 3 concise lecture lines (max 10 words each) that align one-to-one with the 3 animation steps provided for Section 2.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Provided 3 concise lecture lines (under 10 words each) aligned with the animation steps for Section 2."
+    },
+    {
+      "id": 21,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide exactly 5 concise lecture lines (max 10 words each) that align one-to-one with the 5 animation steps provided for Section 3.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Provided 5 concise lecture lines (under 10 words each) aligned with the animation steps for Section 3."
+    },
+    {
+      "id": 22,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide exactly 5 concise lecture lines (max 10 words each) that align one-to-one with the 5 animation steps provided for Section 4.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Provided 5 concise lecture lines (under 10 words each) aligned with the animation steps for Section 4."
+    },
+    {
+      "id": 23,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide exactly 3 concise lecture lines (max 10 words each) that align one-to-one with the 3 animation steps provided for Section 5.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Provided 3 concise lecture lines (under 10 words each) aligned with the animation steps for Section 5."
+    },
+    {
+      "id": 24,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please provide exactly 3 concise lecture lines (max 10 words each) that align one-to-one with the 3 animation steps provided for Section 6.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Provided 3 concise lecture lines (under 10 words each) aligned with the animation steps for Section 6."
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"The word 'FUZZY' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/fuzz.svg] appears in grey (#787C7E) boxes; only a tiny fraction of dots vanish.\", \"The word 'TRACE' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/trace.svg] appears in grey (#787C7E) boxes; a massive portion of dots vanish instantly.\"]",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"A single white (#FFFFFF) root node [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/words.svg] appears, labeled 'Total Words'.\"]",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"A small green (#00FF00) square 'Bit-Bot' character [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/robot.svg] slides onto the screen.\", \"'Bit-Bot' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/robot.svg] pulses yellow (#C9B458) as it calculates the sum of the probabilities.\"]",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['The list reorders into a leaderboard [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/leaderboard.svg] with average steps: 1st SALET, 2nd CRANE, 3rd ADIEU in gold (#D4AF37).']",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'fuzzy_word' asset at scale 0.8 overlaps significantly with the top layer of the search space dot cloud, making the visualization appear crowded and partially obstructing the 'narrowing' effect. Fix: Line 85: self.place_in_area(fuzzy_word, 'A1', 'A6', scale_factor=0.7) (line=85, object=fuzzy_word)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'trace_word' asset at scale 0.8 obstructs the search space dots at the top of the grid, which conflicts with the goal of showing how the pool of candidates is being pruned. Fix: Line 108: self.place_in_area(trace_word, 'A1', 'A6', scale_factor=0.7) (line=108, object=trace_word)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The first level nodes (node_l1_1, node_l1_2) are too far apart, pushing the left node into the lecture notes area. Fix: Line 77: self.place_in_area(node_l1_1, 'C2', 'C3'); Line 78: self.place_in_area(node_l1_2, 'C4', 'C5') (line=77, object=node_l1_1, node_l1_2)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Leaf nodes are stretched to the grid edges (E1, E6), causing poor utilization of center space and potential clipping. Fix: Line 85: self.place_at_grid(node_l2_1, 'E2', scale_factor=0.8); Line 86: self.place_at_grid(node_l2_2, 'E3', scale_factor=0.8); Line 87: self.place_at_grid(node_l2_3, 'E4', scale_factor=0.8); Line 88: self.place_at_grid(node_l2_4, 'E5', scale_factor=0.8) (line=85, object=node_l2_1, node_l2_2, node_l2_3, node_l2_4)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'bit_label' text is misaligned with the tree's left branch after the node adjustments. Fix: Line 120: self.place_in_area(bit_label, 'F2', 'F3') (line=120, object=bit_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The histogram (bars) is positioned too low at the very bottom edge (F1-F6), making it difficult to see clearly. Fix: Line 98: self.place_in_area(bars, 'E1', 'F6', scale_factor=1.0) (line=98, object=bars)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The equation '3^5 = 243' is stretched across the entire width (C1-C6), causing excessive whitespace for a short formula. Fix: Line 84: self.place_in_area(equation, 'C2', 'C5', scale_factor=1.0) (line=84, object=equation)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The wordle_row of five squares is overly spread out across B1-B6, creating a horizontal mismatch with the centered equation below it. Fix: Line 72: self.place_in_area(wordle_row, 'B2', 'B5', scale_factor=1.0) (line=72, object=wordle_row)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The 'entropy_math' formula at C3 is too wide for a single grid point, risking overlap with horizontal margins or adjacent columns. Fix: Line 95: self.place_in_area(entropy_math, 'C1', 'C6', scale_factor=0.8) (line=95, object=entropy_math)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The 'CRANE' word tiles lack a defined grid area, which leads to inconsistent vertical alignment with the lecture text. Fix: Line 90: self.place_in_area(crane_word, 'A2', 'A5', scale_factor=0.7) (line=90, object=crane_word)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The 'High Entropy Split' label and its associated arrow are vertically cramped between the word tiles and the entropy formula. Fix: Line 102: self.place_in_area(split_label_group, 'B2', 'B5', scale_factor=0.6) (line=102, object=split_label_group)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The table headers 'header_rank' (B2) and 'header_word' (B3) overlap horizontally because the text 'STRATEGY' is too long for a single grid column. Fix: Line 135: self.place_at_grid(header_word, 'B4', scale_factor=0.8) (line=135, object=header_word)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The bar elements (bar_adieu, bar_crane, bar_salet) are positioned too far from their corresponding word labels, creating excessive empty space in the middle of the screen. Fix: Lines 86-88: self.place_at_grid(bar_adieu, 'B4'); self.place_at_grid(bar_crane, 'C4'); self.place_at_grid(bar_salet, 'D4') (line=86, object=bar_adieu, bar_crane, bar_salet)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: Numerical labels 'label_50' and 'label_20' are placed at the very edge of the frame (column 6), which may be cut off on some displays. Fix: Lines 91 & 116: self.place_at_grid(label_50, 'B5'); self.place_at_grid(label_20, 'D5') (line=91, object=label_50, label_20)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The consonant_icons (A2-B4) are positioned too high, creating visual crowding with the title and leaving the left-side grid space underutilized. Fix: Line 75: self.place_in_area(consonant_icons, 'B1', 'C3', scale_factor=0.8) (line=75, object=consonant_icons)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 44,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The no_repeat_group (A5-C6) is vertically unaligned with the icons and occupies the top-most row, which should be reserved for whitespace near the title. Fix: Line 98: self.place_in_area(no_repeat_group, 'B4', 'C6', scale_factor=0.8) (line=98, object=no_repeat_group)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 45,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The strategy cheat_sheet and solved_ui (D1-F6) are vertically compressed against the top graphics, lacking a clear separator/gutter. Fix: Line 119: self.place_in_area(cheat_sheet, 'E1', 'F3', scale_factor=0.8); Line 132: self.place_in_area(solved_ui, 'E4', 'F6', scale_factor=0.8) (line=119, object=cheat_sheet and solved_ui)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 405522,
+        "video_mtime_ns": 1778126412006927379,
+        "code_sha1": "0d4afbf632d87987fcaa134711cce3d5076cfd9b"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'fuzzy_word' asset at scale 0.8 overlaps significantly with the top layer of the search space dot cloud, making the visualization appear crowded and partially obstructing the 'narrowing' effect.",
+              "solution": "Line 85: self.place_in_area(fuzzy_word, 'A1', 'A6', scale_factor=0.7)",
+              "line_number": 85,
+              "object_affected": "fuzzy_word"
+            },
+            {
+              "problem": "The 'trace_word' asset at scale 0.8 obstructs the search space dots at the top of the grid, which conflicts with the goal of showing how the pool of candidates is being pruned.",
+              "solution": "Line 108: self.place_in_area(trace_word, 'A1', 'A6', scale_factor=0.7)",
+              "line_number": 108,
+              "object_affected": "trace_word"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        29,
+        30
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 165971,
+        "video_mtime_ns": 1778126398738002812,
+        "code_sha1": "3527241a59ff2ab9c0f6116ffa4f4737815e604c"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The first level nodes (node_l1_1, node_l1_2) are too far apart, pushing the left node into the lecture notes area.",
+              "solution": "Line 77: self.place_in_area(node_l1_1, 'C2', 'C3'); Line 78: self.place_in_area(node_l1_2, 'C4', 'C5')",
+              "line_number": 77,
+              "object_affected": "node_l1_1, node_l1_2"
+            },
+            {
+              "problem": "Leaf nodes are stretched to the grid edges (E1, E6), causing poor utilization of center space and potential clipping.",
+              "solution": "Line 85: self.place_at_grid(node_l2_1, 'E2', scale_factor=0.8); Line 86: self.place_at_grid(node_l2_2, 'E3', scale_factor=0.8); Line 87: self.place_at_grid(node_l2_3, 'E4', scale_factor=0.8); Line 88: self.place_at_grid(node_l2_4, 'E5', scale_factor=0.8)",
+              "line_number": 85,
+              "object_affected": "node_l2_1, node_l2_2, node_l2_3, node_l2_4"
+            },
+            {
+              "problem": "The 'bit_label' text is misaligned with the tree's left branch after the node adjustments.",
+              "solution": "Line 120: self.place_in_area(bit_label, 'F2', 'F3')",
+              "line_number": 120,
+              "object_affected": "bit_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        31,
+        32,
+        33
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 355388,
+        "video_mtime_ns": 1778126454655395537,
+        "code_sha1": "f5dca5f69906ab65e118bd386fe63c4efab6da26"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The histogram (bars) is positioned too low at the very bottom edge (F1-F6), making it difficult to see clearly.",
+              "solution": "Line 98: self.place_in_area(bars, 'E1', 'F6', scale_factor=1.0)",
+              "line_number": 98,
+              "object_affected": "bars"
+            },
+            {
+              "problem": "The equation '3^5 = 243' is stretched across the entire width (C1-C6), causing excessive whitespace for a short formula.",
+              "solution": "Line 84: self.place_in_area(equation, 'C2', 'C5', scale_factor=1.0)",
+              "line_number": 84,
+              "object_affected": "equation"
+            },
+            {
+              "problem": "The wordle_row of five squares is overly spread out across B1-B6, creating a horizontal mismatch with the centered equation below it.",
+              "solution": "Line 72: self.place_in_area(wordle_row, 'B2', 'B5', scale_factor=1.0)",
+              "line_number": 72,
+              "object_affected": "wordle_row"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        34,
+        35,
+        36
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 110975,
+        "video_mtime_ns": 1778126628201007987,
+        "code_sha1": "fb9166b5046179cd33c0dc9db96f50e7ef0c1c15"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'entropy_math' formula at C3 is too wide for a single grid point, risking overlap with horizontal margins or adjacent columns.",
+              "solution": "Line 95: self.place_in_area(entropy_math, 'C1', 'C6', scale_factor=0.8)",
+              "line_number": 95,
+              "object_affected": "entropy_math"
+            },
+            {
+              "problem": "The 'CRANE' word tiles lack a defined grid area, which leads to inconsistent vertical alignment with the lecture text.",
+              "solution": "Line 90: self.place_in_area(crane_word, 'A2', 'A5', scale_factor=0.7)",
+              "line_number": 90,
+              "object_affected": "crane_word"
+            },
+            {
+              "problem": "The 'High Entropy Split' label and its associated arrow are vertically cramped between the word tiles and the entropy formula.",
+              "solution": "Line 102: self.place_in_area(split_label_group, 'B2', 'B5', scale_factor=0.6)",
+              "line_number": 102,
+              "object_affected": "split_label_group"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        37,
+        38,
+        39
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 294225,
+        "video_mtime_ns": 1778126399759309795,
+        "code_sha1": "12af4334c4fdf66dd7a8c42ddc4d924f38848012"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The table headers 'header_rank' (B2) and 'header_word' (B3) overlap horizontally because the text 'STRATEGY' is too long for a single grid column.",
+              "solution": "Line 135: self.place_at_grid(header_word, 'B4', scale_factor=0.8)",
+              "line_number": 135,
+              "object_affected": "header_word"
+            },
+            {
+              "problem": "The bar elements (bar_adieu, bar_crane, bar_salet) are positioned too far from their corresponding word labels, creating excessive empty space in the middle of the screen.",
+              "solution": "Lines 86-88: self.place_at_grid(bar_adieu, 'B4'); self.place_at_grid(bar_crane, 'C4'); self.place_at_grid(bar_salet, 'D4')",
+              "line_number": 86,
+              "object_affected": "bar_adieu, bar_crane, bar_salet"
+            },
+            {
+              "problem": "Numerical labels 'label_50' and 'label_20' are placed at the very edge of the frame (column 6), which may be cut off on some displays.",
+              "solution": "Lines 91 & 116: self.place_at_grid(label_50, 'B5'); self.place_at_grid(label_20, 'D5')",
+              "line_number": 91,
+              "object_affected": "label_50, label_20"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        40,
+        41,
+        42
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 269811,
+        "video_mtime_ns": 1778126400915987197,
+        "code_sha1": "5993c0a702ab54a6c228c1dfeedebc34473e86fa"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The consonant_icons (A2-B4) are positioned too high, creating visual crowding with the title and leaving the left-side grid space underutilized.",
+              "solution": "Line 75: self.place_in_area(consonant_icons, 'B1', 'C3', scale_factor=0.8)",
+              "line_number": 75,
+              "object_affected": "consonant_icons"
+            },
+            {
+              "problem": "The no_repeat_group (A5-C6) is vertically unaligned with the icons and occupies the top-most row, which should be reserved for whitespace near the title.",
+              "solution": "Line 98: self.place_in_area(no_repeat_group, 'B4', 'C6', scale_factor=0.8)",
+              "line_number": 98,
+              "object_affected": "no_repeat_group"
+            },
+            {
+              "problem": "The strategy cheat_sheet and solved_ui (D1-F6) are vertically compressed against the top graphics, lacking a clear separator/gutter.",
+              "solution": "Line 119: self.place_in_area(cheat_sheet, 'E1', 'F3', scale_factor=0.8); Line 132: self.place_in_area(solved_ui, 'E4', 'F6', scale_factor=0.8)",
+              "line_number": 119,
+              "object_affected": "cheat_sheet and solved_ui"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        43,
+        44,
+        45
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260507_102713/7-Mastering_the_Wordle_Opening_An_Algorithmic_Deep_Dive",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 156715,
+      "completion_tokens": 19169,
+      "total_tokens": 267767,
+      "call_count": 36
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 279,
+        "completion_tokens": 963,
+        "total_tokens": 1960,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 11615,
+        "completion_tokens": 260,
+        "total_tokens": 11999,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 8612,
+        "completion_tokens": 155,
+        "total_tokens": 8937,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 20242,
+        "completion_tokens": 513,
+        "total_tokens": 21767,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 6812,
+        "completion_tokens": 1759,
+        "total_tokens": 8898,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 5742,
+        "completion_tokens": 2262,
+        "total_tokens": 8282,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 5580,
+        "completion_tokens": 2117,
+        "total_tokens": 8135,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 10351,
+        "completion_tokens": 184,
+        "total_tokens": 10758,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 11657,
+        "completion_tokens": 80,
+        "total_tokens": 11863,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 6372,
+        "completion_tokens": 2232,
+        "total_tokens": 8768,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4345,
+        "completion_tokens": 919,
+        "total_tokens": 12881,
+        "call_count": 12
+      },
+      "scope_refine:section_3": {
+        "prompt_tokens": 9770,
+        "completion_tokens": 2026,
+        "total_tokens": 17411,
+        "call_count": 1
+      },
+      "scope_refine:section_4": {
+        "prompt_tokens": 38151,
+        "completion_tokens": 3430,
+        "total_tokens": 77870,
+        "call_count": 5
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2592,
+        "completion_tokens": 268,
+        "total_tokens": 12460,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2669,
+        "completion_tokens": 484,
+        "total_tokens": 8163,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3137,
+        "completion_tokens": 342,
+        "total_tokens": 7131,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 2580,
+        "completion_tokens": 340,
+        "total_tokens": 5463,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3160,
+        "completion_tokens": 428,
+        "total_tokens": 12566,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 3049,
+        "completion_tokens": 407,
+        "total_tokens": 12455,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 156715,
+        "completion_tokens": 19169,
+        "total_tokens": 267767,
+        "call_count": 36
+      }
+    }
+  }
+}

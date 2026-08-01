@@ -1,0 +1,941 @@
+{
+  "topic": "The Transformational View of Derivatives: Scaling Space",
+  "target_audience": "Undergraduate STEM students or advanced high school calculus students",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup data from storyboard\n        title = \"Introduction: Beyond the Slope\"\n        lecture_lines = [\n            \"Think of functions as maps between number lines.\",\n            \"Input space connects to output space with elastic strings.\",\n            \"Derivatives represent the dynamic movement of these strings.\"\n        ]\n        self.setup_layout(title, lecture_lines)\n\n        # Asset path\n        string_asset_path = \"/scratch/pawsey1357/jthen/Code2Video/assets/icon/string.svg\"\n\n        # === Animation for Lecture Line 1 ===\n        # \"Think of functions as maps between number lines.\"\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        \n        # Create Input and Output number lines\n        # Using B2-B6 for Input and E2-E6 for Output as per standard parallel lines view\n        input_line = Line(self.grid[\"B2\"], self.grid[\"B6\"], color=WHITE)\n        output_line = Line(self.grid[\"E2\"], self.grid[\"E6\"], color=WHITE)\n        \n        # Labels for the spaces\n        input_label = Text(\"Input x\", font_size=20, color=\"#BBBBBB\")\n        output_label = Text(\"Output f(x)\", font_size=20, color=\"#BBBBBB\")\n        \n        # Resolve Issue 22: use place_in_area for input_label at B1\n        self.place_in_area(input_label, \"B1\", \"B1\", scale_factor=0.7)\n        # Resolve Issue 23: use place_in_area for output_label at E1\n        self.place_in_area(output_label, \"E1\", \"E1\", scale_factor=0.6)\n        \n        self.play(Create(input_line), Create(output_line))\n        self.play(Write(input_label), Write(output_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"Input space connects to output space with elastic strings.\"\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW)\n        )\n        \n        # Define source dots on Input line\n        src_keys = [\"B2\", \"B3\", \"B4\", \"B5\"]\n        # Define target dots on Output line (showing scaling/transformation)\n        tgt_keys = [\"E2\", \"E4\", \"E5\", \"E6\"]\n        \n        dots_top = VGroup(*[Dot(self.grid[k], color=BLUE_B) for k in src_keys])\n        dots_bottom = VGroup(*[Dot(self.grid[k], color=BLUE_B) for k in tgt_keys])\n        \n        # Helper to align SVG to points without using put_start_and_end_on (which can fail on VGroups)\n        def safe_align_svg(svg, start, end):\n            # Check if SVG has points to avoid empty object errors\n            has_points = any(len(sub.points) > 0 for sub in svg.family_members_with_points())\n            if not has_points:\n                # Fallback to a simple line if asset loading fails or is empty\n                return Line(start, end)\n            \n            # Reset position\n            svg.move_to(ORIGIN)\n            # Calculate transformation\n            vec = end - start\n            angle = np.arctan2(vec[1], vec[0])\n            dist = np.linalg.norm(vec)\n            \n            # Apply transformations\n            # Assume default asset orientation is horizontal.\n            if svg.width > 0:\n                svg.scale(dist / svg.width)\n            svg.rotate(angle)\n            svg.move_to((start + end) / 2)\n            return svg\n\n        # Resolve Issue 19: Use SVGMobject [Asset: .../string.svg] for \"elastic strings\"\n        strings = VGroup()\n        for s_key, t_key in zip(src_keys, tgt_keys):\n            s_svg_raw = SVGMobject(string_asset_path)\n            s_svg = safe_align_svg(s_svg_raw, self.grid[s_key], self.grid[t_key])\n            s_svg.set_color(WHITE).set_stroke(opacity=0.5)\n            strings.add(s_svg)\n        \n        self.play(FadeIn(dots_top))\n        self.play(Create(strings), FadeIn(dots_bottom))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"Derivatives represent the dynamic movement of these strings.\"\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW)\n        )\n        \n        # Highlight one mapping: f(x)\n        # Highlight B3 -> E4\n        hl_index = 1\n        start_p = self.grid[src_keys[hl_index]]\n        end_p = self.grid[tgt_keys[hl_index]]\n        \n        hl_circle_top = Circle(radius=0.15, color=\"#FFFF00\").move_to(start_p)\n        hl_circle_bottom = Circle(radius=0.15, color=\"#FFFF00\").move_to(end_p)\n        \n        # Resolve Issue 19: Use SVGMobject [Asset: .../string.svg] for the highlighted string\n        hl_svg_raw = SVGMobject(string_asset_path)\n        hl_string = safe_align_svg(hl_svg_raw, start_p, end_p)\n        hl_string.set_color(\"#FFFF00\")\n        # Ensure it's visually distinct\n        if isinstance(hl_string, VMobject):\n            hl_string.set_stroke(width=4)\n        \n        mapping_label = Text(\"f(x)\", font_size=20, color=\"#FFFF00\")\n        # Resolve Issue 24: Move mapping_label from C4 to C5 to avoid clutter\n        self.place_at_grid(mapping_label, \"C5\", scale_factor=0.7)\n\n        self.play(\n            Create(hl_circle_top),\n            Create(hl_circle_bottom),\n            Create(hl_string),\n            Write(mapping_label)\n        )\n        self.wait(2)\n        \n        # Cleanup colors\n        self.play(self.lecture[2].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Data from storyboard\n        title_text = \"The Local Linearization Principle\"\n        lecture_lines = [\n            \"Zooming into a smooth curve reveals a line.\",\n            \"Microscopic behavior acts like a simple multiplier.\",\n            \"Every smooth map looks linear at high magnification.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Reference center of the right-side animation area\n        area_center = (self.grid['A1'] + self.grid['F6']) / 2\n\n        # === Animation for Lecture Line 1 ===\n        # Initial state: highlight Line 1\n        for line in self.lecture:\n            line.set_color(GRAY)\n        self.lecture[0].set_color(WHITE)\n        \n        # Draw curved line segment in #FFFFFF\n        # Using a smooth curve with visible curvature\n        curve = ParametricFunction(\n            lambda t: np.array([t, 0.4 * np.sin(1.5 * t) + 0.2 * t**2, 0]),\n            t_range=[-2, 2],\n            color=WHITE\n        ).set_stroke(width=4)\n        \n        # Place in right side area - Fix per Issue 25\n        self.place_in_area(curve, 'B2', 'F6', scale_factor=0.8)\n        \n        # Ant asset [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ant.svg]\n        ant_proportion = 0.65\n        ant_pos_initial = curve.point_from_proportion(ant_proportion)\n        \n        # Using SVGMobject for the ant as per Issue 20\n        ant = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/ant.svg\", color=RED).scale(0.15)\n        ant.move_to(ant_pos_initial)\n        \n        self.play(Create(curve), run_time=1.5)\n        self.play(FadeIn(ant))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight Line 2\n        self.play(\n            self.lecture[0].animate.set_color(GRAY),\n            self.lecture[1].animate.set_color(WHITE),\n            run_time=0.5\n        )\n        \n        # Zoom logic:\n        # We need the stroke width to stay consistent even when zooming in.\n        # However, ParametricFunction doesn't naturally keep stroke constant with .scale()\n        # unless we clear the updater or use always_redraw (which we want to avoid).\n        # We'll use an updater for the stroke_width only.\n        curve.add_updater(lambda m: m.set_stroke(width=4))\n        \n        zoom_factor = 40 # High zoom to make the curve appear linear\n        \n        # Zoom in on the ant [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ant.svg]\n        # centering the ant in the animation area\n        self.play(\n            curve.animate.scale(zoom_factor, about_point=ant_pos_initial).shift(area_center - ant_pos_initial),\n            ant.animate.move_to(area_center),\n            run_time=4,\n            rate_func=smooth\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Highlight Line 3 with corresponding color #00FF00\n        self.play(\n            self.lecture[1].animate.set_color(GRAY),\n            self.lecture[2].animate.set_color(\"#00FF00\"),\n            run_time=0.5\n        )\n        \n        # Label local straight segment 'Linear Approximation' in #00FF00.\n        approx_label = Text(\"Linear Approximation\", font_size=24, color=\"#00FF00\")\n        # Place near the line - Fix per Issue 26 (E5, scale 0.6)\n        self.place_at_grid(approx_label, 'E5', scale_factor=0.6)\n        \n        self.play(Write(approx_label))\n        self.wait(2)\n        \n        # Cleanup updaters\n        curve.clear_updaters()\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"Derivative as a Scaling Factor\", [\n            \"The derivative is a local scaling factor.\",\n            \"Moving dx in input moves f'(x)*dx in output.\",\n            \"It measures how much space stretches or squishes.\",\n            \"f'(x) = 3 means the segment stretches threefold.\",\n            \"Mapping transforms the local density of the input.\"\n        ])\n\n        # === Animation for Lecture Line 1 ===\n        # Display Input and Output number lines\n        self.lecture[0].set_color(YELLOW)\n        \n        input_line = NumberLine(x_range=[-2, 2, 1], length=4, include_tip=True, color=GRAY)\n        output_line = NumberLine(x_range=[-2, 2, 1], length=4, include_tip=True, color=GRAY)\n        \n        input_label = Text(\"Input\", font_size=18, color=GRAY)\n        output_label = Text(\"Output\", font_size=18, color=GRAY)\n        \n        self.place_in_area(input_line, 'B1', 'B6')\n        self.place_in_area(output_line, 'E1', 'E6')\n        \n        input_label.next_to(input_line, LEFT, buff=0.2)\n        output_label.next_to(output_line, LEFT, buff=0.2)\n        \n        # Small interval 'dx' on Input line\n        dx_val = 0.4\n        x_tracker = ValueTracker(-1.0)\n        \n        # Start points don't matter much because updater takes over\n        dx_interval = Line(\n            input_line.number_to_point(-0.2), \n            input_line.number_to_point(0.2), \n            color=\"#00FFFF\", stroke_width=8\n        )\n        dx_interval.add_updater(lambda m: m.move_to(input_line.number_to_point(x_tracker.get_value())))\n        \n        dx_label = MathTex(\"dx\", color=\"#00FFFF\", font_size=24)\n        dx_label.add_updater(lambda m: m.next_to(dx_interval, UP, buff=0.1))\n        \n        self.play(Create(input_line), Create(output_line), Write(input_label), Write(output_label))\n        self.play(Create(dx_interval), Write(dx_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Show the mapped interval on the Output line\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Derivative value tracker (f'(x))\n        deriv_tracker = ValueTracker(3.0)\n        \n        df_interval = Line(\n            output_line.number_to_point(-0.6), \n            output_line.number_to_point(0.6), \n            color=\"#FF00FF\", stroke_width=8\n        )\n        \n        def update_df(m):\n            center_x = x_tracker.get_value()\n            half_len = (dx_val * deriv_tracker.get_value()) / 2\n            # Use set_points_as_corners to redraw the segment with new length\n            m.set_points_as_corners([\n                output_line.number_to_point(center_x - half_len),\n                output_line.number_to_point(center_x + half_len)\n            ])\n\n        df_interval.add_updater(update_df)\n        \n        df_label = MathTex(\"df = f'(x)dx\", color=\"#FF00FF\", font_size=24)\n        df_label.add_updater(lambda m: m.next_to(df_interval, DOWN, buff=0.1))\n        \n        self.play(Create(df_interval), Write(df_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Display the equation 'f'(x) = df / dx'\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        eqn = MathTex(\"f'(x) = \\\\frac{df}{dx}\", color=\"#FFFF00\", font_size=32)\n        # Fix for Issue #27: Moving equation to D5 to avoid obstruction\n        self.place_at_grid(eqn, 'D5', scale_factor=0.9)\n        \n        # Connecting lines (visual mapping)\n        mapping_line_l = Line(color=GRAY, stroke_width=1, stroke_opacity=0.5)\n        mapping_line_r = Line(color=GRAY, stroke_width=1, stroke_opacity=0.5)\n        \n        mapping_line_l.add_updater(lambda m: m.set_points_as_corners([dx_interval.get_left(), df_interval.get_left()]))\n        mapping_line_r.add_updater(lambda m: m.set_points_as_corners([dx_interval.get_right(), df_interval.get_right()]))\n        \n        self.play(Write(eqn), Create(mapping_line_l), Create(mapping_line_r))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # f'(x) = 3 means the segment stretches threefold.\n        # Animate dx moving and f'(x) changing.\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        # Move dx and vary derivative\n        self.play(\n            x_tracker.animate.set_value(1.0),\n            deriv_tracker.animate.set_value(0.5),\n            run_time=2,\n            rate_func=linear\n        )\n        self.play(\n            x_tracker.animate.set_value(-0.5),\n            deriv_tracker.animate.set_value(4.0),\n            run_time=2,\n            rate_func=linear\n        )\n        \n        # === Animation for Lecture Line 5 ===\n        # Flash 'Scaling Factor' when stretching is most prominent\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        scaling_text = Text(\"Scaling Factor\", color=\"#FF8800\", font_size=36)\n        # Fix for Issue #28: Moving scaling_text to A5 for better composition\n        self.place_at_grid(scaling_text, 'A5', scale_factor=0.8)\n        \n        self.play(\n            deriv_tracker.animate.set_value(5.0),\n            Flash(scaling_text, color=\"#FF8800\", flash_radius=1.5),\n            Write(scaling_text),\n            run_time=1\n        )\n        self.play(FadeOut(scaling_text))\n        \n        self.play(\n            x_tracker.animate.set_value(0),\n            deriv_tracker.animate.set_value(3.0),\n            run_time=2\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        title = \"Visualizing Magnitude and Direction\"\n        lines = [\n            \"Magnitude greater than one indicates local expansion.\",\n            \"Magnitude less than one shows local compression.\",\n            \"A negative derivative flips the orientation of space.\",\n            \"Imagine an accordion stretching or squeezing.\",\n            \"Values determine the strength and direction of transform.\"\n        ]\n        self.setup_layout(title, lines)\n        \n        # Colors\n        COLOR_EXP = \"#00FF00\"\n        COLOR_COMP = \"#FF0000\"\n        COLOR_FLIP = \"#BB88FF\"\n        COLOR_ACC = \"#FFFF00\"\n        ASSET_PATH = \"/scratch/pawsey1357/jthen/Code2Video/assets/icon/accordion.svg\"\n        \n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(COLOR_EXP))\n        \n        inp_1 = Line(LEFT, RIGHT, color=WHITE).scale(0.5)\n        out_1 = Line(LEFT, RIGHT, color=COLOR_EXP).scale(1.0)\n        arr_1 = Arrow(UP*0.5, DOWN*0.5, buff=0.1, color=GRAY, stroke_width=2)\n        lab_1 = MathTex(\"|f'(x)| > 1\", color=COLOR_EXP, font_size=24)\n        sub_lab_1 = Text(\"Expansion\", font_size=16, color=COLOR_EXP).next_to(lab_1, DOWN, buff=0.05)\n        lab_group_1 = VGroup(lab_1, sub_lab_1)\n        acc_1 = SVGMobject(ASSET_PATH).set_color(COLOR_EXP).stretch_to_fit_width(1.5).scale(0.3)\n        \n        # Relative positioning before placing group\n        inp_1.shift(UP*0.8)\n        arr_1.next_to(inp_1, DOWN, buff=0.2)\n        out_1.next_to(arr_1, DOWN, buff=0.2)\n        lab_group_1.next_to(out_1, DOWN, buff=0.2)\n        acc_1.next_to(out_1, UP, buff=0.1) # Place accordion on top of the output segment\n        \n        expansion_group = VGroup(inp_1, out_1, arr_1, lab_group_1, acc_1)\n        # Issue 29 fix\n        self.place_in_area(expansion_group, 'A2', 'B5', scale_factor=0.8)\n        \n        self.play(Create(inp_1))\n        self.play(GrowArrow(arr_1))\n        self.play(Create(out_1), Write(lab_group_1), FadeIn(acc_1))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(COLOR_COMP)\n        )\n        \n        inp_2 = Line(LEFT, RIGHT, color=WHITE).scale(0.5)\n        out_2 = Line(LEFT, RIGHT, color=COLOR_COMP).scale(0.25)\n        arr_2 = Arrow(UP*0.5, DOWN*0.5, buff=0.1, color=GRAY, stroke_width=2)\n        lab_2 = MathTex(\"|f'(x)| < 1\", color=COLOR_COMP, font_size=24)\n        sub_lab_2 = Text(\"Compression\", font_size=16, color=COLOR_COMP).next_to(lab_2, DOWN, buff=0.05)\n        lab_group_2 = VGroup(lab_2, sub_lab_2)\n        acc_2 = SVGMobject(ASSET_PATH).set_color(COLOR_COMP).stretch_to_fit_width(0.5).scale(0.3)\n        \n        inp_2.shift(UP*0.8)\n        arr_2.next_to(inp_2, DOWN, buff=0.2)\n        out_2.next_to(arr_2, DOWN, buff=0.2)\n        lab_group_2.next_to(out_2, DOWN, buff=0.2)\n        acc_2.next_to(out_2, UP, buff=0.1)\n        \n        compression_group = VGroup(inp_2, out_2, arr_2, lab_group_2, acc_2)\n        # Issue 30 fix\n        self.place_in_area(compression_group, 'C2', 'D5', scale_factor=0.8)\n        \n        self.play(Create(inp_2))\n        self.play(GrowArrow(arr_2))\n        self.play(Create(out_2), Write(lab_group_2), FadeIn(acc_2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(COLOR_FLIP)\n        )\n        \n        inp_3 = Arrow(LEFT, RIGHT, color=WHITE, buff=0).scale(0.5)\n        out_3 = Arrow(RIGHT, LEFT, color=COLOR_FLIP, buff=0).scale(0.5)\n        arr_3 = Arrow(UP*0.5, DOWN*0.5, buff=0.1, color=GRAY, stroke_width=2)\n        lab_3 = MathTex(\"f'(x) < 0\", color=COLOR_FLIP, font_size=24)\n        sub_lab_3 = Text(\"Flip\", font_size=16, color=COLOR_FLIP).next_to(lab_3, DOWN, buff=0.05)\n        lab_group_3 = VGroup(lab_3, sub_lab_3)\n        \n        inp_3.shift(UP*0.8)\n        arr_3.next_to(inp_3, DOWN, buff=0.2)\n        out_3.next_to(arr_3, DOWN, buff=0.2)\n        lab_group_3.next_to(out_3, DOWN, buff=0.2)\n        \n        flip_group = VGroup(inp_3, out_3, arr_3, lab_group_3)\n        # Issue 31 fix\n        self.place_in_area(flip_group, 'E2', 'F5', scale_factor=0.8)\n        \n        self.play(Create(inp_3))\n        self.play(GrowArrow(arr_3))\n        self.play(Create(out_3), Write(lab_group_3))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(COLOR_ACC)\n        )\n        # Accordion effect: stretch/squeeze\n        self.play(\n            acc_1.animate.scale(1.3),\n            acc_2.animate.scale(0.7),\n            run_time=1.0,\n            rate_func=there_and_back\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(WHITE)\n        )\n        self.play(\n            Indicate(lab_group_1, color=COLOR_EXP),\n            Indicate(lab_group_2, color=COLOR_COMP),\n            Indicate(lab_group_3, color=COLOR_FLIP)\n        )\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"The Chain Rule: Composition of Scaling\", [\n            \"Chain rule is a composition of transformations.\",\n            \"If first map scales by three, space expands.\",\n            \"If second map scales by two, expansion continues.\",\n            \"Scaling factors multiply through the composite function.\",\n            \"Total scaling is the product of individual derivatives.\"\n        ])\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(WHITE)\n        \n        def create_axis(label_text):\n            line = Line(LEFT*2, RIGHT*2, color=WHITE)\n            label = MathTex(label_text, color=WHITE).next_to(line, LEFT, buff=0.2)\n            return VGroup(line, label)\n\n        axis_x = create_axis(\"x\")\n        axis_u = create_axis(\"u\")\n        axis_y = create_axis(\"y\")\n\n        # Fixed axis_y placement (Issue 32)\n        self.place_in_area(axis_x, \"B1\", \"B6\", scale_factor=0.8)\n        self.place_in_area(axis_u, \"D1\", \"D6\", scale_factor=0.8)\n        self.place_in_area(axis_y, \"F1\", \"F6\", scale_factor=0.8)\n\n        self.play(Create(axis_x), Create(axis_u), Create(axis_y))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(\"#00FFFF\")\n        \n        center_x = axis_x[0].get_center()\n        center_u = axis_u[0].get_center()\n        \n        seg_x = Line(center_x + LEFT*0.2, center_x + RIGHT*0.2, color=\"#00FFFF\", stroke_width=6)\n        seg_u = Line(center_u + LEFT*0.6, center_u + RIGHT*0.6, color=\"#00FFFF\", stroke_width=6)\n        \n        map_arrow_1 = CurvedArrow(self.grid[\"B4\"] + DOWN*0.2, self.grid[\"D4\"] + UP*0.2, angle=-TAU/8, color=\"#00FFFF\")\n        label_g = MathTex(\"g'(x) = 3\", color=\"#00FFFF\", font_size=24)\n        self.place_at_grid(label_g, \"C5\", scale_factor=1.0)\n\n        self.play(Create(seg_x))\n        self.play(ReplacementTransform(seg_x.copy(), seg_u), Create(map_arrow_1), Write(label_g))\n        self.add(seg_x) \n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(\"#00FF00\")\n        \n        center_y = axis_y[0].get_center()\n        seg_y = Line(center_y + LEFT*1.2, center_y + RIGHT*1.2, color=\"#00FF00\", stroke_width=6)\n        \n        map_arrow_2 = CurvedArrow(self.grid[\"D5\"] + DOWN*0.2, self.grid[\"F5\"] + UP*0.2, angle=-TAU/8, color=\"#00FF00\")\n        label_f = MathTex(\"f'(u) = 2\", color=\"#00FF00\", font_size=24)\n        # Fixed label_f placement (Issue 34)\n        self.place_at_grid(label_f, \"E2\", scale_factor=0.8)\n\n        self.play(ReplacementTransform(seg_u.copy(), seg_y), Create(map_arrow_2), Write(label_f))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(\"#FF00FF\")\n        \n        total_arrow = CurvedArrow(self.grid[\"B1\"] + LEFT*0.3, self.grid[\"F1\"] + LEFT*0.3, angle=TAU/4, color=\"#FF00FF\")\n        label_total = MathTex(\"Total: \\\\times 6\", color=\"#FF00FF\", font_size=24)\n        # Fixed label_total placement (Issue 33)\n        self.place_at_grid(label_total, \"D2\", scale_factor=0.8)\n\n        self.play(Create(total_arrow), Write(label_total))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(\"#FF00FF\")\n        \n        formula = MathTex(\n            \"(f(g(x)))' = f'(g(x)) \\\\cdot g'(x) = 2 \\\\cdot 3 = 6\",\n            color=\"#FF00FF\", font_size=28\n        )\n        self.place_in_area(formula, \"A1\", \"A6\", scale_factor=1.0)\n        \n        self.play(Write(formula))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"Derivatives measure the change in local spatial density.\",\n            \"This transformational view extends to higher dimensions.\",\n            \"Visualize calculus as the geometry of moving space.\"\n        ]\n        self.setup_layout(\"Conclusion: The Dynamic Viewpoint\", lecture_lines)\n        \n        # Colors\n        highlight_color_dense = \"#0000FF\" # Blue\n        highlight_color_sparse = \"#FF0000\" # Red\n        concluding_text_color = \"#FFFFFF\"\n        string_color = GRAY\n\n        # === Animation for Lecture Line 1 ===\n        # Derivatives measure the change in local spatial density.\n        self.lecture[0].set_color(YELLOW)\n        \n        # Create Input and Output lines using the grid\n        # Horizontal lines\n        input_line = Line(self.grid[\"B2\"], self.grid[\"B6\"], color=WHITE)\n        output_line = Line(self.grid[\"E2\"], self.grid[\"E6\"], color=WHITE)\n        \n        input_label = Text(\"Input\", font_size=18)\n        self.place_at_grid(input_label, \"B2\", scale_factor=0.8) # Fixed Issue 36\n        \n        output_label = Text(\"Output\", font_size=18)\n        self.place_at_grid(output_label, \"E2\", scale_factor=0.8) # Fixed Issue 37\n        \n        self.add(input_line, output_line, input_label, output_label)\n        \n        # Create mapping strings\n        # Create dense points in the middle and sparse at ends on the input line\n        input_points_list = []\n        \n        # Sparse side 1 (0.1 to 0.3)\n        for i in range(10):\n            alpha = 0.1 + 0.2 * (i / 9)\n            input_points_list.append(input_line.point_from_proportion(alpha))\n            \n        # Dense middle (0.4 to 0.6)\n        for i in range(40):\n            alpha = 0.4 + 0.2 * (i / 39)\n            input_points_list.append(input_line.point_from_proportion(alpha))\n            \n        # Sparse side 2 (0.7 to 0.9)\n        for i in range(10):\n            alpha = 0.7 + 0.2 * (i / 9)\n            input_points_list.append(input_line.point_from_proportion(alpha))\n            \n        input_points_list.sort(key=lambda p: p[0])\n            \n        # Output points (regularly spaced)\n        num_points = len(input_points_list)\n        output_points = [output_line.point_from_proportion(0.1 + 0.8 * (i/(num_points-1))) for i in range(num_points)]\n        \n        mapping_strings = VGroup()\n        for i in range(num_points):\n            line = Line(input_points_list[i], output_points[i], stroke_width=0.5, color=string_color, stroke_opacity=0.4)\n            mapping_strings.add(line)\n            \n        self.play(Create(mapping_strings), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # This transformational view extends to higher dimensions.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Create a colored input line using segments to show density gradient\n        num_segments = 60\n        colored_input_line = VGroup(*[\n            Line(\n                input_line.point_from_proportion(i/num_segments),\n                input_line.point_from_proportion((i+1)/num_segments),\n                stroke_width=6\n            ) for i in range(num_segments)\n        ])\n        \n        # Red (sparse) at ends, Blue (dense) in middle\n        colored_input_line.set_color_gradient([highlight_color_sparse, highlight_color_dense, highlight_color_sparse])\n        \n        self.play(\n            Transform(input_line, colored_input_line),\n            mapping_strings.animate.set_color(WHITE).set_stroke(opacity=0.2),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Visualize calculus as the geometry of moving space.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Display concluding text\n        concluding_text = Text(\"Derivative =\\nLocal Spatial Density Change\", \n                               font_size=28, \n                               color=concluding_text_color,\n                               t2c={\"Derivative\": YELLOW})\n        \n        # Clear specific elements\n        self.play(\n            FadeOut(input_line),\n            FadeOut(output_line),\n            FadeOut(mapping_strings),\n            FadeOut(input_label),\n            FadeOut(output_label),\n            run_time=1\n        )\n        \n        # Position concluding text\n        self.place_in_area(concluding_text, \"C1\", \"D6\", scale_factor=1.0) # Fixed Issue 35\n        \n        self.play(Write(concluding_text), run_time=2)\n        self.wait(3)\n\n        # Final state\n        self.lecture[2].set_color(WHITE)\n        self.wait(1)\n"
+  ],
+  "outline": {
+    "topic": "The Transformational View of Derivatives: Scaling Space",
+    "target_audience": "Undergraduate STEM students or advanced high school calculus students",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "Introduction: Beyond the Slope",
+        "content": "Introduce the prerequisite concept of a function as a map between two number lines (Input Space and Output Space) rather than a static graph. This sets the stage for seeing derivatives as a dynamic process of movement.",
+        "example": "Imagine two parallel number lines. A function 'f' is like a bundle of elastic strings connecting points on the top line (Input x) to points on the bottom line (Output f(x))."
+      },
+      {
+        "id": "section_2",
+        "title": "The Local Linearization Principle",
+        "content": "Explain that 'zooming in' on a smooth function reveals a linear relationship. At a microscopic level, any curve looks like a straight line, which means it acts like a simple multiplier.",
+        "example": "An ant walking on a massive circular balloon. To the ant, the surface feels like a flat, predictable plane where every step forward results in a consistent change in height."
+      },
+      {
+        "id": "section_3",
+        "title": "Derivative as a Scaling Factor",
+        "content": "Define the derivative f'(x) not as the 'rise over run', but as the 'local scaling factor'. If you move a tiny distance 'dx' in the input space, the output space moves 'f'(x) * dx'. The derivative tells us how much the input space is stretched or squished as it maps to the output.",
+        "example": "If f'(x) = 3, think of a small segment of a rubber band at that point being stretched to 3 times its original length when mapped to the output line."
+      },
+      {
+        "id": "section_4",
+        "title": "Visualizing Magnitude and Direction",
+        "content": "Interpret the values of the derivative through the lens of transformation: |f'(x)| > 1 is an expansion; |f'(x)| < 1 is a compression. A negative derivative indicates a 'flip' or reversal of the number line orientation.",
+        "example": "Consider a digital 'Accordion' device. When f'(x) = 0.5, the accordion is being squeezed (compression). If f'(x) = -2, the accordion is being stretched to double its size and flipped upside down."
+      },
+      {
+        "id": "section_5",
+        "title": "The Chain Rule: Composition of Scaling",
+        "content": "Re-contextualize the Chain Rule. If function 'g' scales space by 3, and function 'f' scales that result by 2, the total transformation is a scaling of 3 * 2 = 6. Derivatives multiply because scaling factors multiply.",
+        "example": "A 'Zoom Lens' mechanism: The first lens (inner function) magnifies an image by 2x, and the second lens (outer function) magnifies that result by 4x. The total magnification (derivative of the composition) is 8x."
+      },
+      {
+        "id": "section_6",
+        "title": "Conclusion: The Dynamic Viewpoint",
+        "content": "Summarize by reinforcing that the derivative is a measure of local 'spatial density' change. This perspective is vital for understanding higher-level concepts like Jacobians in multivariable calculus.",
+        "example": "A heatmap where 'hot' areas represent points where the input space is being heavily stretched (high derivative) and 'cold' areas where it is being compressed (low derivative)."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "Introduction: Beyond the Slope",
+      "lecture_lines": [
+        "Think of functions as maps between number lines.",
+        "Input space connects to output space with elastic strings.",
+        "Derivatives represent the dynamic movement of these strings."
+      ],
+      "animations": [
+        "Draw two parallel horizontal lines: 'Input Space' (top) and 'Output Space' (bottom) in #FFFFFF.",
+        "Add labels 'Input x' and 'Output f(x)' next to the lines in #BBBBBB.",
+        "Show several dots on the top line representing different x values.",
+        "Animate 'elastic strings' [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/string.svg] connecting dots on the top line to corresponding dots on the bottom line.",
+        "Highlight one specific pair of points and their connecting string [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/string.svg] in #FFFF00 to show the mapping f(x)."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "The Local Linearization Principle",
+      "lecture_lines": [
+        "Zooming into a smooth curve reveals a line.",
+        "Microscopic behavior acts like a simple multiplier.",
+        "Every smooth map looks linear at high magnification."
+      ],
+      "animations": [
+        "Draw a curved line segment representing a smooth function in #FFFFFF.",
+        "Place the ant asset [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ant.svg] at a point on the curve.",
+        "Zoom in on the position of the ant [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ant.svg] until the curve appears as a perfectly straight line segment.",
+        "Label this local straight segment 'Linear Approximation' in #00FF00."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "Derivative as a Scaling Factor",
+      "lecture_lines": [
+        "The derivative is a local scaling factor.",
+        "Moving dx in input moves f'(x)*dx in output.",
+        "It measures how much space stretches or squishes.",
+        "f'(x) = 3 means the segment stretches threefold.",
+        "Mapping transforms the local density of the input."
+      ],
+      "animations": [
+        "Display Input and Output number lines with a small interval 'dx' on the Input line in #00FFFF.",
+        "Show the mapped interval on the Output line, stretched to 3x the length of 'dx', labeled 'df'.",
+        "Display the equation 'f'(x) = df / dx' in #FFFF00 near the transformation.",
+        "Animate the 'dx' interval moving along the Input line while 'df' dynamically stretches and shrinks.",
+        "Flash the text 'Scaling Factor' in #FF8800 when the stretching is most prominent."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Visualizing Magnitude and Direction",
+      "lecture_lines": [
+        "Magnitude greater than one indicates local expansion.",
+        "Magnitude less than one shows local compression.",
+        "A negative derivative flips the orientation of space.",
+        "Imagine an accordion stretching or squeezing.",
+        "Values determine the strength and direction of transform."
+      ],
+      "animations": [
+        "Show an Input segment mapping to a 2x larger Output segment, labeled '|f'(x)| > 1: Expansion' in #00FF00, incorporating [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/accordion.svg] to represent the stretching.",
+        "Show an Input segment mapping to a 0.5x smaller Output segment, labeled '|f'(x)| < 1: Compression' in #FF0000, incorporating [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/accordion.svg] to represent the squeezing.",
+        "Show a directed Input segment mapping to an Output segment with reversed direction, labeled 'f'(x) < 0: Flip' in #BB88FF."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Chain Rule: Composition of Scaling",
+      "lecture_lines": [
+        "Chain rule is a composition of transformations.",
+        "If first map scales by three, space expands.",
+        "If second map scales by two, expansion continues.",
+        "Scaling factors multiply through the composite function.",
+        "Total scaling is the product of individual derivatives."
+      ],
+      "animations": [
+        "Draw three horizontal number lines: Input (x), Intermediate (u), and Output (y) in #FFFFFF.",
+        "Animate a mapping from x to u with a scaling factor of 3, labeled 'g'(x) = 3' in #00FFFF.",
+        "Animate a mapping from u to y with a scaling factor of 2, labeled 'f'(u) = 2' in #00FF00.",
+        "Show a single jump from x to y, illustrating the total scaling factor of 6.",
+        "Display '(f(g(x)))' = f'(g(x)) * g'(x) = 2 * 3 = 6' in #FF00FF."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Conclusion: The Dynamic Viewpoint",
+      "lecture_lines": [
+        "Derivatives measure the change in local spatial density.",
+        "This transformational view extends to higher dimensions.",
+        "Visualize calculus as the geometry of moving space."
+      ],
+      "animations": [
+        "Show the input-to-output mapping strings from Section 1 again, but more densely packed.",
+        "Apply a color gradient to the Input line: #0000FF where strings are dense, #FF0000 where they are sparse.",
+        "Display the concluding text 'Derivative = Local Spatial Density Change' in #FFFFFF center screen."
+      ]
+    }
+  ],
+  "turns_run": 3,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted initial animation steps based on section outline and title. Ready for review. May require refinement once lecture lines are finalized."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 1 according to the storyboard and teaching script. Implemented the 6x6 grid system for positioning and used appropriate HEX colors. Added animations for the 'elastic strings' mapping between Input and Output spaces."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted initial animation steps based on section outline and title. Ready for review. May require refinement once lecture lines are finalized."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_2 using the TeachingScene base class. Implemented the zoom animation from a curved line to a linear approximation centered on an 'ant' mobject. Followed the 6x6 grid system and color matching requirements."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for Section 3 (Key Section)."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted initial animation steps based on section outline and title. Ready for review. May require refinement once lecture lines are finalized."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented section_3 with Input/Output number lines, dynamic dx/df intervals, and 'Scaling Factor' animation. Used ValueTrackers for smooth movement and stretching. Fixed grid positions and lecture line highlighting."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for Section 4 (Key Section)."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted initial animation steps based on section outline and title. Ready for review. May require refinement once lecture lines are finalized."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated complete Manim code for section_4 using the 6x6 grid system, addressing expansion, compression, and flip orientations with appropriate labels and colors. Accordion effect added for line 4."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for Section 5 (Key Section)."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted initial animation steps based on section outline and title. Ready for review. May require refinement once lecture lines are finalized."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section 5. Implemented number lines for x, u, and y, and visualized the scaling factors (3 and 2) using segment expansions and curved arrows. Added the final chain rule formula with a total scaling factor of 6. Corrected lecture line colors to match animation elements."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted initial animation steps based on section outline and title. Ready for review. May require refinement once lecture lines are finalized."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Fixed TypeError by passing a list of colors to set_color_gradient instead of separate arguments. Also improved the gradient visualization by using a VGroup of line segments for the input line. Adjusted positioning of labels to use the grid (B1, E1) and ensured the concluding text is properly placed."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Animate 'elastic strings' [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/string.svg] connecting dots on the top line to corresponding dots on the bottom line.\", 'Highlight one specific pair of points and their connecting string [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/string.svg] in #FFFF00 to show the mapping f(x).']",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated string.svg asset for all elastic string animations and the highlighted mapping, using a robust alignment helper to avoid 'no points' errors."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Place the ant asset [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ant.svg] at a point on the curve.', 'Zoom in on the position of the ant [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ant.svg] until the curve appears as a perfectly straight line segment.']",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated the ant asset [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ant.svg] as an SVGMobject and used it in the zooming animation."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Show an Input segment mapping to a 2x larger Output segment, labeled '|f'(x)| > 1: Expansion' in #00FF00, incorporating [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/accordion.svg] to represent the stretching.\", \"Show an Input segment mapping to a 0.5x smaller Output segment, labeled '|f'(x)| < 1: Compression' in #FF0000, incorporating [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/accordion.svg] to represent the squeezing.\"]",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated accordion.svg asset into expansion and compression visualizations and animated its scale."
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The multi-word label 'input_label' ('Input x') at B1 uses place_at_grid, which may cause it to overflow into the lecture notes area. Fix: Line 69: self.place_in_area(input_label, 'B1', 'B1', scale_factor=0.7) (line=69, object=input_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated input_label to use place_in_area at B1 with scale_factor 0.7 to prevent overflow."
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The long label 'output_label' ('Output f(x)') at E1 risks overlapping both the left-side lecture notes and the horizontal output axis. Fix: Line 70: self.place_in_area(output_label, 'E1', 'E1', scale_factor=0.6) (line=70, object=output_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated output_label to use place_in_area at E1 with scale_factor 0.6 to prevent overflow."
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'mapping_label' ('f(x)') at C4 is positioned directly over the mapping strings, causing visual clutter and overlap. Fix: Line 117: self.place_at_grid(mapping_label, 'C5', scale_factor=0.7) (line=117, object=mapping_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved mapping_label to C5 to avoid visual clutter with the mapping strings."
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'curve' is currently utilizing the entire grid area (A1-F6), which causes it to crowd the title in Row A and potentially conflict with long lecture notes near Column 1. Fix: Line 74: self.place_in_area(curve, 'B2', 'F6', scale_factor=0.8) (line=74, object=curve)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated the curve positioning to 'B2'-'F6' to avoid crowding the title and lecture lines."
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'approx_label' at E4 is centrally located and its high scale factor (0.8) makes the long text 'Linear Approximation' risk overlapping with the zoomed-in line. Fix: Line 122: self.place_at_grid(approx_label, 'E5', scale_factor=0.6) (line=122, object=approx_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated 'approx_label' positioning to 'E5' and reduced scale factor to 0.6 to prevent overlap with the zoomed-in line."
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The derivative equation 'eqn' at D3 is obstructed by the dynamic mapping lines as they sweep across the center of the diagram. Fix: Line 126: self.place_at_grid(eqn, 'D5', scale_factor=0.9) (line=126, object=eqn)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved equation 'eqn' from D3 to D5 and scaled to 0.9 to prevent obstruction by dynamic mapping lines."
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'scaling_text' ('Scaling') at A4 is positioned too high and centrally, feeling disjointed from the transformation visual. Fix: Line 164: self.place_at_grid(scaling_text, 'A5', scale_factor=0.8) (line=164, object=scaling_text)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved 'scaling_text' from A4 to A5 and scaled to 0.8 to improve visual composition and alignment with the transformation."
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The expansion visualization (top diagram) is floating without precise grid alignment, which could lead to crowding as more elements appear. Fix: Line 4: self.place_in_area(expansion_group, 'A2', 'B5', scale_factor=0.8) (line=4, object=expansion_group)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Placed expansion_group in area A2-B5 as requested."
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The compression visualization is positioned too closely to the top element, reducing vertical clarity between the two distinct states. Fix: Line 10: self.place_in_area(compression_group, 'C2', 'D5', scale_factor=0.8) (line=10, object=compression_group)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Placed compression_group in area C2-D5 as requested."
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The flip orientation diagram is squeezed at the bottom of the screen, making the 'Flip' label and arrow harder to distinguish. Fix: Line 16: self.place_in_area(flip_group, 'E2', 'F5', scale_factor=0.8) (line=16, object=flip_group)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Placed flip_group in area E2-F5 as requested."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The axis_y is incorrectly placed in the area E6-F6, making it extremely short and misaligned compared to the other horizontal axes (axis_x and axis_u). Fix: Line 71: self.place_in_area(axis_y, 'F1', 'F6', scale_factor=0.8) (line=71, object=axis_y)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Corrected axis_y placement to F1-F6 area to match horizontal alignment of other axes."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The label_total ('Total: x6') is placed at D1, which directly overlaps with the 'u' axis label at the start of axis_u. Fix: Line 117: self.place_at_grid(label_total, 'D2', scale_factor=0.8) (line=117, object=label_total)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved label_total to D2 to avoid overlap with axis_u label as requested."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The label_f ('f'(u)=2') at E1 is crowded vertically between the axis labels 'u' (D1) and 'y' (F1) and is too close to the lecture text divider. Fix: Line 106: self.place_at_grid(label_f, 'E2', scale_factor=0.8) (line=106, object=label_f)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved label_f to E2 for better spacing between axes and lecture text."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The concluding_text is assigned to the entire grid height (A1-F6) with an excessive scale (1.2), which crowds the screen and risks overlap with the title in the A row. Fix: Line 151: self.place_in_area(concluding_text, 'C1', 'D6', scale_factor=1.0) (line=151, object=concluding_text)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated concluding_text positioning to area 'C1'-'D6' and reduced scale to 1.0 as requested."
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The input_label is placed at B1, which is too close to the lecture notes on the left, creating a cluttered visual transition between text and diagram. Fix: Line 70: self.place_at_grid(input_label, 'B2', scale_factor=0.8) (line=70, object=input_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated input_label position to 'B2' and set scale to 0.8 to prevent overlap with lecture notes."
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The output_label is placed at E1, mirroring the proximity issue of the input label and making the right-side visual appear squeezed against the left-side text. Fix: Line 73: self.place_at_grid(output_label, 'E2', scale_factor=0.8) (line=73, object=output_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated output_label position to 'E2' and set scale to 0.8 to match the input label's offset and improve visual balance."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    null,
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 191960,
+        "video_mtime_ns": 1785205884000000000,
+        "code_sha1": "0e4ddd51c1c35d0815c8415de945f651cee76aaf"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'curve' is currently utilizing the entire grid area (A1-F6), which causes it to crowd the title in Row A and potentially conflict with long lecture notes near Column 1.",
+              "solution": "Line 74: self.place_in_area(curve, 'B2', 'F6', scale_factor=0.8)",
+              "line_number": 74,
+              "object_affected": "curve"
+            },
+            {
+              "problem": "The 'approx_label' at E4 is centrally located and its high scale factor (0.8) makes the long text 'Linear Approximation' risk overlapping with the zoomed-in line.",
+              "solution": "Line 122: self.place_at_grid(approx_label, 'E5', scale_factor=0.6)",
+              "line_number": 122,
+              "object_affected": "approx_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        25,
+        26
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 332271,
+        "video_mtime_ns": 1785205892000000000,
+        "code_sha1": "334ff26944273e09e04e0c39c755ca5d39e2e858"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The derivative equation 'eqn' at D3 is obstructed by the dynamic mapping lines as they sweep across the center of the diagram.",
+              "solution": "Line 126: self.place_at_grid(eqn, 'D5', scale_factor=0.9)",
+              "line_number": 126,
+              "object_affected": "eqn"
+            },
+            {
+              "problem": "The 'scaling_text' ('Scaling') at A4 is positioned too high and centrally, feeling disjointed from the transformation visual.",
+              "solution": "Line 164: self.place_at_grid(scaling_text, 'A5', scale_factor=0.8)",
+              "line_number": 164,
+              "object_affected": "scaling_text"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        27,
+        28
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 552044,
+        "video_mtime_ns": 1785205915000000000,
+        "code_sha1": "02590cb45be3992da0abcdb7f9bb120fe5a79405"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The expansion visualization (top diagram) is floating without precise grid alignment, which could lead to crowding as more elements appear.",
+              "solution": "Line 4: self.place_in_area(expansion_group, 'A2', 'B5', scale_factor=0.8)",
+              "line_number": 4,
+              "object_affected": "expansion_group"
+            },
+            {
+              "problem": "The compression visualization is positioned too closely to the top element, reducing vertical clarity between the two distinct states.",
+              "solution": "Line 10: self.place_in_area(compression_group, 'C2', 'D5', scale_factor=0.8)",
+              "line_number": 10,
+              "object_affected": "compression_group"
+            },
+            {
+              "problem": "The flip orientation diagram is squeezed at the bottom of the screen, making the 'Flip' label and arrow harder to distinguish.",
+              "solution": "Line 16: self.place_in_area(flip_group, 'E2', 'F5', scale_factor=0.8)",
+              "line_number": 16,
+              "object_affected": "flip_group"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        29,
+        30,
+        31
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 291894,
+        "video_mtime_ns": 1785205897000000000,
+        "code_sha1": "8bc0b82eda8a4b4d57abb97882789ad98c6eb1ab"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The axis_y is incorrectly placed in the area E6-F6, making it extremely short and misaligned compared to the other horizontal axes (axis_x and axis_u).",
+              "solution": "Line 71: self.place_in_area(axis_y, 'F1', 'F6', scale_factor=0.8)",
+              "line_number": 71,
+              "object_affected": "axis_y"
+            },
+            {
+              "problem": "The label_total ('Total: x6') is placed at D1, which directly overlaps with the 'u' axis label at the start of axis_u.",
+              "solution": "Line 117: self.place_at_grid(label_total, 'D2', scale_factor=0.8)",
+              "line_number": 117,
+              "object_affected": "label_total"
+            },
+            {
+              "problem": "The label_f ('f'(u)=2') at E1 is crowded vertically between the axis labels 'u' (D1) and 'y' (F1) and is too close to the lecture text divider.",
+              "solution": "Line 106: self.place_at_grid(label_f, 'E2', scale_factor=0.8)",
+              "line_number": 106,
+              "object_affected": "label_f"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 204972,
+        "video_mtime_ns": 1785205992000000000,
+        "code_sha1": "0a929cfca2108f7eb952425dbdd9544bc894652a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The concluding_text is assigned to the entire grid height (A1-F6) with an excessive scale (1.2), which crowds the screen and risks overlap with the title in the A row.",
+              "solution": "Line 151: self.place_in_area(concluding_text, 'C1', 'D6', scale_factor=1.0)",
+              "line_number": 151,
+              "object_affected": "concluding_text"
+            },
+            {
+              "problem": "The input_label is placed at B1, which is too close to the lecture notes on the left, creating a cluttered visual transition between text and diagram.",
+              "solution": "Line 70: self.place_at_grid(input_label, 'B2', scale_factor=0.8)",
+              "line_number": 70,
+              "object_affected": "input_label"
+            },
+            {
+              "problem": "The output_label is placed at E1, mirroring the proximity issue of the input label and making the right-side visual appear squeezed against the left-side text.",
+              "solution": "Line 73: self.place_at_grid(output_label, 'E2', scale_factor=0.8)",
+              "line_number": 73,
+              "object_affected": "output_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35,
+        36,
+        37
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260728_101242/5-The_Transformational_View_of_Derivatives_Scaling_Space",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 596290,
+      "completion_tokens": 72716,
+      "total_tokens": 787504,
+      "call_count": 45
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 276,
+        "completion_tokens": 838,
+        "total_tokens": 1919,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 19445,
+        "completion_tokens": 988,
+        "total_tokens": 21554,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 25528,
+        "completion_tokens": 1474,
+        "total_tokens": 28173,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 79492,
+        "completion_tokens": 1172,
+        "total_tokens": 84512,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 62071,
+        "completion_tokens": 10092,
+        "total_tokens": 75094,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 71148,
+        "completion_tokens": 10534,
+        "total_tokens": 91835,
+        "call_count": 3
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 66676,
+        "completion_tokens": 8458,
+        "total_tokens": 83591,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 49944,
+        "completion_tokens": 9659,
+        "total_tokens": 68574,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 106178,
+        "completion_tokens": 13091,
+        "total_tokens": 133329,
+        "call_count": 3
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 64200,
+        "completion_tokens": 6964,
+        "total_tokens": 84820,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 4366,
+        "completion_tokens": 861,
+        "total_tokens": 15251,
+        "call_count": 12
+      },
+      "scope_refine:section_6": {
+        "prompt_tokens": 10888,
+        "completion_tokens": 4206,
+        "total_tokens": 19044,
+        "call_count": 4
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2799,
+        "completion_tokens": 351,
+        "total_tokens": 7743,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2778,
+        "completion_tokens": 256,
+        "total_tokens": 10511,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3043,
+        "completion_tokens": 223,
+        "total_tokens": 4736,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3462,
+        "completion_tokens": 325,
+        "total_tokens": 5796,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2918,
+        "completion_tokens": 372,
+        "total_tokens": 8444,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2733,
+        "completion_tokens": 361,
+        "total_tokens": 6606,
+        "call_count": 1
+      },
+      "scope_refine:section_1": {
+        "prompt_tokens": 18345,
+        "completion_tokens": 2491,
+        "total_tokens": 35972,
+        "call_count": 4
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 596290,
+        "completion_tokens": 72716,
+        "total_tokens": 787504,
+        "call_count": 45
+      }
+    }
+  }
+}

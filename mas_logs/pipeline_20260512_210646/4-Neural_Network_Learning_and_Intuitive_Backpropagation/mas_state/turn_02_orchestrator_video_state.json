@@ -1,0 +1,1300 @@
+{
+  "topic": "Neural Network Learning and Intuitive Backpropagation",
+  "target_audience": "University students and beginner AI enthusiasts",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Initial layout\n        lines = [\n            'Meet Nero, a robot learning to recognize images.',\n            'Inside Nero are adjustable knobs called weights.',\n            'Nero sees a dog but incorrectly guesses muffin.',\n            'This mismatch creates an error signal to learn.',\n            'We must adjust knobs to get correct guesses.'\n        ]\n        self.setup_layout(\"The Big Picture: Nero the Robot Learns to See\", lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Meet Nero, a robot learning to recognize images.\n        self.lecture[0].set_color(\"#ADD8E6\")\n        \n        # Nero Robot Mobject\n        nero_body = RoundedRectangle(height=1.5, width=1.2, color=\"#ADD8E6\", fill_opacity=0.3)\n        nero_head = Square(side_length=0.6, color=\"#ADD8E6\", fill_opacity=0.3).next_to(nero_body, UP, buff=0.1)\n        nero_eye_l = Dot(color=WHITE).move_to(nero_head.get_center() + LEFT*0.15 + UP*0.05)\n        nero_eye_r = Dot(color=WHITE).move_to(nero_head.get_center() + RIGHT*0.15 + UP*0.05)\n        nero = VGroup(nero_body, nero_head, nero_eye_l, nero_eye_r)\n        self.place_in_area(nero, 'A1', 'B2', scale_factor=0.8)\n\n        # Input Image Grid\n        image_grid = VGroup(*[\n            Square(side_length=0.2, color=GRAY, fill_opacity=0.1) for _ in range(9)\n        ]).arrange_in_grid(rows=3, cols=3, buff=0.05)\n        # Add some random pixel values\n        for i, sq in enumerate(image_grid):\n            if i % 2 == 0: sq.set_fill(WHITE, opacity=0.8)\n        self.place_at_grid(image_grid, 'C1', scale_factor=1.2)\n        \n        self.play(FadeIn(nero), FadeIn(image_grid))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Inside Nero are adjustable knobs called weights.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(\"#FFFFFF\")\n        \n        # Simple Network inside/near Nero\n        # Nodes\n        node_in = Circle(radius=0.15, color=WHITE).move_to(self.grid['C2'])\n        node_h1 = Circle(radius=0.15, color=WHITE).move_to(self.grid['B3'])\n        node_h2 = Circle(radius=0.15, color=WHITE).move_to(self.grid['D3'])\n        node_out = Circle(radius=0.15, color=WHITE).move_to(self.grid['C4'])\n        nodes = VGroup(node_in, node_h1, node_h2, node_out)\n\n        # Edges (Weights) with Knobs\n        def get_knob(start, end):\n            center = (start + end) / 2\n            knob_circ = Circle(radius=0.1, color=WHITE, fill_opacity=0.2).move_to(center)\n            knob_line = Line(knob_circ.get_center(), knob_circ.get_top(), color=WHITE)\n            return VGroup(knob_circ, knob_line)\n\n        edge1 = Line(node_in.get_right(), node_h1.get_left(), color=GRAY)\n        edge2 = Line(node_in.get_right(), node_h2.get_left(), color=GRAY)\n        edge3 = Line(node_h1.get_right(), node_out.get_left(), color=GRAY)\n        edge4 = Line(node_h2.get_right(), node_out.get_left(), color=GRAY)\n        edges = VGroup(edge1, edge2, edge3, edge4)\n\n        knobs = VGroup(\n            get_knob(node_in.get_center(), node_h1.get_center()),\n            get_knob(node_in.get_center(), node_h2.get_center()),\n            get_knob(node_h1.get_center(), node_out.get_center()),\n            get_knob(node_h2.get_center(), node_out.get_center())\n        )\n\n        self.play(Create(edges), Create(nodes))\n        self.play(FadeIn(knobs))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Nero sees a dog but incorrectly guesses muffin.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(\"#FF0000\")\n        \n        # Pulses\n        pulse1 = Dot(radius=0.08, color=WHITE).move_to(node_in.get_center())\n        pulse2 = Dot(radius=0.08, color=WHITE).move_to(node_in.get_center())\n        \n        muffin_label = Text(\"Muffin\", font_size=18, color=\"#FF0000\")\n        self.place_at_grid(muffin_label, 'B5')\n\n        self.play(\n            pulse1.animate.move_to(node_h1.get_center()),\n            pulse2.animate.move_to(node_h2.get_center()),\n            run_time=1\n        )\n        self.play(\n            pulse1.animate.move_to(node_out.get_center()),\n            pulse2.animate.move_to(node_out.get_center()),\n            run_time=1\n        )\n        self.play(\n            node_out.animate.set_color(\"#FF0000\").set_fill(\"#FF0000\", opacity=0.5),\n            Write(muffin_label),\n            FadeOut(pulse1), FadeOut(pulse2)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # This mismatch creates an error signal to learn.\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(\"#FF0000\")\n\n        truth_label = Text(\"Truth: Dog\", font_size=18, color=WHITE)\n        self.place_at_grid(truth_label, 'D5')\n        \n        x_mark = VGroup(\n            Line(UP+LEFT, DOWN+RIGHT, color=RED),\n            Line(UP+RIGHT, DOWN+LEFT, color=RED)\n        ).scale(0.2)\n        self.place_at_grid(x_mark, 'C6')\n\n        self.play(Write(truth_label), Create(x_mark))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # We must adjust knobs to get correct guesses.\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(\"#FF4500\")\n\n        error_bar_bg = Line(self.grid['B5'], self.grid['D5'], color=GRAY, stroke_width=2)\n        error_bar = Line(self.grid['B5'], self.grid['D5'], color=\"#FF4500\", stroke_width=6)\n        error_text = Text(\"Error\", font_size=16, color=\"#FF4500\")\n        self.place_at_grid(error_text, 'C5', scale_factor=0.8).shift(RIGHT*0.5)\n\n        self.play(Create(error_bar_bg))\n        self.play(GrowFromCenter(error_bar), FadeIn(error_text))\n        \n        # Adjustment animation: Rotate knobs and shrink error bar\n        self.play(\n            *[Rotate(k[1], angle=PI/4) for k in knobs],\n            error_bar.animate.scale(0.2),\n            error_text.animate.set_opacity(0.5),\n            run_time=2\n        )\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with Title and Lecture Lines\n        self.setup_layout(\n            \"Prerequisite: The Error Landscape (Loss Function)\", \n            [\n                \"Imagine Nero's error as a hilly 3D terrain.\", \n                \"Peaks mean high error; valleys mean perfect accuracy.\", \n                \"We need to find the path downwards.\"\n            ]\n        )\n\n        # Colors\n        BLUE_CONTOUR = \"#1E90FF\"\n        RED_PEAK = \"#FF0000\"\n        GREEN_VALLEY = \"#00FF00\"\n        HIGHLIGHT_YELLOW = \"#FFFF00\"\n        INACTIVE_GREY = \"#888888\"\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(HIGHLIGHT_YELLOW))\n        \n        # Create 2D landscape with blue contour lines\n        # Peak Contours\n        peak_contours = VGroup(*[\n            Ellipse(width=2.5-i*0.5, height=1.8-i*0.4, color=BLUE_CONTOUR, stroke_width=2)\n            for i in range(4)\n        ])\n        self.place_at_grid(peak_contours, \"B5\")\n        \n        # Valley Contours\n        valley_contours = VGroup(*[\n            Ellipse(width=2.2-i*0.4, height=1.5-i*0.3, color=BLUE_CONTOUR, stroke_width=2)\n            for i in range(4)\n        ])\n        self.place_at_grid(valley_contours, \"E2\")\n        \n        # Larger background contours connecting them\n        bg_contour = Ellipse(width=5, height=4, color=BLUE_CONTOUR, stroke_width=1, stroke_opacity=0.5)\n        self.place_in_area(bg_contour, \"A1\", \"F6\")\n\n        self.play(\n            Create(peak_contours),\n            Create(valley_contours),\n            Create(bg_contour),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(INACTIVE_GREY),\n            self.lecture[1].animate.set_color(HIGHLIGHT_YELLOW)\n        )\n\n        # Place a red dot on a high 'Error Peak'\n        error_dot = Dot(color=RED_PEAK, radius=0.12)\n        self.place_at_grid(error_dot, \"B5\")\n        \n        peak_label = Text(\"Error Peak\", font_size=18, color=RED_PEAK)\n        self.place_at_grid(peak_label, \"A5\") # Above B5\n\n        self.play(\n            FadeIn(error_dot, scale=1.5),\n            Write(peak_label)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(INACTIVE_GREY),\n            self.lecture[2].animate.set_color(HIGHLIGHT_YELLOW)\n        )\n\n        # Highlight the 'Optimal Valley' with a pulsing green circle\n        valley_highlight = Circle(radius=0.5, color=GREEN_VALLEY, stroke_width=4)\n        self.place_at_grid(valley_highlight, \"E2\")\n        \n        valley_label = Text(\"Optimal Valley\", font_size=18, color=GREEN_VALLEY)\n        self.place_at_grid(valley_label, \"F2\") # Below E2\n\n        self.play(\n            FadeIn(valley_highlight),\n            Write(valley_label)\n        )\n        \n        # Path Arrow\n        path_arrow = CurvedArrow(\n            self.grid[\"B5\"], self.grid[\"E2\"], \n            angle=-TAU/8, color=WHITE, stroke_width=2\n        )\n        \n        # Simple pulsing animation loop using succession for discrete keyframes\n        self.play(\n            valley_highlight.animate.scale(1.2),\n            Create(path_arrow),\n            run_time=0.8\n        )\n        self.play(\n            valley_highlight.animate.scale(1/1.2),\n            run_time=0.8\n        )\n\n        self.wait(2)\n        \n        # Reset colors for final state\n        self.play(self.lecture[2].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\nimport os\n\n# Pre-emptively handle potential race condition for the 'media/texts' directory\ntry:\n    os.makedirs(os.path.join(\"media\", \"texts\"), exist_ok=True)\nexcept Exception:\n    pass\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"If Nero is wrong, which knob is responsible?\",\n            \"Consider a bucket brigade passing water to a tub.\",\n            \"If water is missing, we look back for spills.\",\n            \"We trace blame backward from the final output.\",\n            \"The chain rule connects these layers of blame.\"\n        ]\n        self.setup_layout(\"The Problem: The Chain of Blame\", lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        # Visualizing a 'knob'\n        knob_base = Circle(radius=0.5, color=WHITE)\n        knob_pointer = Line(start=ORIGIN, end=UP * 0.4, color=YELLOW).rotate(-45, about_point=ORIGIN)\n        knob = VGroup(knob_base, knob_pointer)\n        self.place_in_area(knob, \"B2\", \"D4\", scale_factor=1.2)\n        \n        wrong_mark = Text(\"?\", color=RED, font_size=60)\n        self.place_at_grid(wrong_mark, \"B4\")\n        \n        self.play(FadeIn(knob), FadeIn(wrong_mark))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(BLUE)\n        \n        # Remove first step visual\n        self.play(FadeOut(knob), FadeOut(wrong_mark))\n\n        # Bucket brigade: 5 blue circles\n        circles = VGroup(*[Circle(radius=0.25, color=\"#ADD8E6\", fill_opacity=0.8) for _ in range(5)])\n        for i, circle in enumerate(circles):\n            self.place_at_grid(circle, f\"C{i+1}\")\n            \n        tub = Rectangle(height=0.6, width=0.8, color=WHITE, stroke_width=2)\n        self.place_at_grid(tub, \"C6\")\n        tub_label = Text(\"Tub\", font_size=16, color=WHITE)\n        self.place_at_grid(tub_label, \"D6\")\n        \n        self.play(\n            AnimationGroup(*[FadeIn(c) for c in circles], lag_ratio=0.2),\n            FadeIn(tub),\n            FadeIn(tub_label)\n        )\n        \n        # Passing data animation (dots representing water)\n        water_drops = VGroup(*[Dot(radius=0.06, color=BLUE) for _ in range(5)])\n        for i, drop in enumerate(water_drops):\n            self.place_at_grid(drop, f\"C{i+1}\")\n        \n        self.play(\n            *[drop.animate.move_to(self.grid[f\"C{i+2}\"]) for i, drop in enumerate(water_drops[:-1])],\n            water_drops[-1].animate.move_to(self.grid[\"C6\"]),\n            run_time=1.5\n        )\n        self.play(FadeOut(water_drops))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(BLUE_A)\n        \n        # Visualize a \"spill\" at circle 3\n        spill = VGroup(\n            Dot(radius=0.04, color=BLUE).shift(DOWN*0.1 + LEFT*0.05),\n            Dot(radius=0.04, color=BLUE).shift(DOWN*0.15 + RIGHT*0.05),\n            Dot(radius=0.03, color=BLUE).shift(DOWN*0.2)\n        )\n        self.place_at_grid(spill, \"C3\")\n        spill.shift(DOWN*0.4)\n        \n        spill_label = Text(\"Spill!\", font_size=16, color=RED)\n        self.place_at_grid(spill_label, \"D3\")\n        \n        self.play(FadeIn(spill), FadeIn(spill_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(RED)\n        \n        # Trace arrow backward from tub to origin\n        back_arrow = Arrow(\n            start=self.grid[\"C6\"],\n            end=self.grid[\"C1\"],\n            color=\"#FF0000\",\n            buff=0.4,\n            stroke_width=6\n        )\n        \n        self.play(GrowArrow(back_arrow))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        # Highlight circle 3 as the source of blame\n        highlight = Circle(radius=0.35, color=YELLOW, stroke_width=6).move_to(circles[2])\n        blame_text = Text(\"Blame!\", font_size=20, color=YELLOW)\n        self.place_at_grid(blame_text, \"B3\")\n        \n        self.play(\n            circles[2].animate.set_color(YELLOW),\n            Create(highlight),\n            FadeIn(blame_text)\n        )\n        self.play(Flash(circles[2], color=YELLOW))\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Initialize Scene\n        lecture_lines = [\n            'Backpropagation calculates the gradient for every internal weight.',\n            'Gradients show the direction of the steepest descent.',\n            'We flow backward from the output toward the input.',\n            'Large arrows indicate weights needing major adjustments.',\n            'Tiny arrows point to weights that are nearly correct.'\n        ]\n        self.setup_layout(\"Intuitive Backpropagation: Working Backward\", lecture_lines)\n\n        # Helper to create nodes\n        def create_node():\n            return Circle(radius=0.35, color=BLUE, fill_color=BLACK, fill_opacity=1)\n\n        # --- Define Network Components ---\n        # Layer 1 (Input)\n        n11 = create_node()\n        n12 = create_node()\n        self.place_at_grid(n11, \"B2\")\n        self.place_at_grid(n12, \"D2\")\n        \n        # Layer 2 (Hidden)\n        n21 = create_node()\n        n22 = create_node()\n        self.place_at_grid(n21, \"B4\")\n        self.place_at_grid(n22, \"D4\")\n        \n        # Layer 3 (Output)\n        n31 = create_node()\n        self.place_at_grid(n31, \"C6\")\n        \n        nodes = VGroup(n11, n12, n21, n22, n31)\n\n        # Connections (Lines)\n        def get_line(c1, c2):\n            return Line(c1.get_center(), c2.get_center(), stroke_width=2, color=GRAY)\n\n        w1 = get_line(n11, n21)\n        w2 = get_line(n11, n22)\n        w3 = get_line(n12, n21)\n        w4 = get_line(n12, n22)\n        w5 = get_line(n21, n31)\n        w6 = get_line(n22, n31)\n        weights = VGroup(w1, w2, w3, w4, w5, w6)\n\n        # === Animation for Lecture Line 1 ===\n        # 'Backpropagation calculates the gradient for every internal weight.'\n        self.lecture[0].set_color(YELLOW)\n        self.play(Create(nodes), Create(weights), run_time=1.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # 'Gradients show the direction of the steepest descent.'\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Display dL/dw symbols next to connections\n        lbl_grad1 = Text(\"dL/dw\", font_size=18, color=WHITE)\n        lbl_grad2 = Text(\"dL/dw\", font_size=18, color=WHITE)\n        self.place_at_grid(lbl_grad1, \"A3\", scale_factor=0.8) # Near weight w1\n        self.place_at_grid(lbl_grad2, \"B5\", scale_factor=0.8) # Near weight w5\n        \n        self.play(FadeIn(lbl_grad1), FadeIn(lbl_grad2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # 'We flow backward from the output toward the input.'\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Gradients (red arrows) flowing backward\n        # Layer 3 -> Layer 2\n        arr5 = Arrow(n31.get_center(), n21.get_center(), color=\"#FF0000\", buff=0.4, stroke_width=4)\n        arr6 = Arrow(n31.get_center(), n22.get_center(), color=\"#FF0000\", buff=0.4, stroke_width=4)\n        \n        # Layer 2 -> Layer 1\n        arr1 = Arrow(n21.get_center(), n11.get_center(), color=\"#FF0000\", buff=0.4, stroke_width=4)\n        arr3 = Arrow(n21.get_center(), n12.get_center(), color=\"#FF0000\", buff=0.4, stroke_width=4)\n        \n        self.play(GrowArrow(arr5), GrowArrow(arr6))\n        self.play(GrowArrow(arr1), GrowArrow(arr3))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # 'Large arrows indicate weights needing major adjustments.'\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        # Flash weight 5 (high gradient) in bright white\n        self.play(w5.animate.set_color(WHITE).set_stroke_width(8), run_time=0.4)\n        self.play(w5.animate.set_color(GRAY).set_stroke_width(2), run_time=0.4)\n        \n        # Scale arrow thickness to represent high magnitude\n        big_arr5 = Arrow(n31.get_center(), n21.get_center(), color=\"#FF0000\", buff=0.4, stroke_width=15)\n        self.play(ReplacementTransform(arr5, big_arr5))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # 'Tiny arrows point to weights that are nearly correct.'\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        # Scale arrow thickness to represent low magnitude\n        tiny_arr6 = Arrow(n31.get_center(), n22.get_center(), color=\"#FF0000\", buff=0.4, stroke_width=1)\n        self.play(ReplacementTransform(arr6, tiny_arr6))\n        \n        # Show internal 'blame' values updating inside nodes\n        blame_val1 = Text(\"0.9\", font_size=20, color=WHITE)\n        blame_val2 = Text(\"0.1\", font_size=20, color=WHITE)\n        self.place_at_grid(blame_val1, \"B4\", scale_factor=0.8)\n        self.place_at_grid(blame_val2, \"D4\", scale_factor=0.8)\n        \n        self.play(Write(blame_val1), Write(blame_val2))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Data\n        title_text = \"The Adjustment: Turning the Knobs (Gradient Descent)\"\n        lecture_lines = [\n            \"We adjust weights using the calculated gradient direction.\",\n            \"The learning rate sets our step size down.\",\n            \"Optimal steps lead Nero straight to the bottom.\"\n        ]\n        \n        self.setup_layout(title_text, lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Description: Show a robotic hand turning a grey knob (#C0C0C0).\n        self.lecture[0].set_color(\"#C0C0C0\")\n        \n        knob_base = Circle(radius=0.5, color=\"#C0C0C0\", stroke_width=4)\n        knob_indicator = Line(ORIGIN, UP * 0.45, color=\"#C0C0C0\", stroke_width=6)\n        knob = VGroup(knob_base, knob_indicator)\n        self.place_at_grid(knob, \"B3\", scale_factor=1.0)\n        \n        # Simple robotic hand\n        hand_arm = Rectangle(width=1.0, height=0.25, color=GRAY_B, fill_opacity=1)\n        hand_palm = Circle(radius=0.2, color=GRAY_B, fill_opacity=1)\n        hand = VGroup(hand_arm, hand_palm)\n        hand.next_to(knob, RIGHT, buff=0.1)\n        \n        self.play(FadeIn(knob), FadeIn(hand))\n        # Turning the knob\n        self.play(\n            Rotate(knob, angle=-PI/2, about_point=knob.get_center()),\n            Rotate(hand, angle=-PI/2, about_point=knob.get_center()),\n            run_time=1.5\n        )\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 2 ===\n        # Description: Display the update formula W = W - ηG (#FFFFFF).\n        self.lecture[1].set_color(\"#FFFFFF\")\n        \n        # Note: η is \\u03b7\n        formula = Text(\"W = W - ηG\", font_size=36, color=\"#FFFFFF\")\n        self.place_at_grid(formula, \"D3\")\n        \n        formula_label = Text(\"Update Rule\", font_size=18, color=GRAY_A)\n        formula_label.next_to(formula, UP, buff=0.2)\n        \n        self.play(Write(formula), FadeIn(formula_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Description: Animate a small step (#00FF00) moving down the error slope.\n        self.lecture[2].set_color(\"#00FF00\")\n        \n        # Error slope (simple parabola)\n        slope = FunctionGraph(\n            lambda x: 0.25 * x**2 - 1, \n            x_range=[-2.5, 2.5], \n            color=WHITE\n        )\n        self.place_in_area(slope, \"E1\", \"F6\", scale_factor=0.8)\n        \n        # Positions on slope\n        start_pt = slope.point_from_proportion(0.2)\n        mid_pt = slope.point_from_proportion(0.35)\n        bottom_pt = slope.point_from_proportion(0.5)\n        \n        nero = Dot(start_pt, color=YELLOW, radius=0.15)\n        nero_tag = Text(\"Nero\", font_size=16, color=YELLOW).next_to(nero, UP, buff=0.1)\n        \n        # Steps\n        step_arrow = Arrow(start_pt, mid_pt, color=\"#00FF00\", buff=0, stroke_width=5)\n        \n        self.play(Create(slope))\n        self.play(FadeIn(nero), FadeIn(nero_tag))\n        \n        # Show steps\n        self.play(GrowArrow(step_arrow))\n        self.play(\n            nero.animate.move_to(mid_pt),\n            nero_tag.animate.next_to(mid_pt, UP, buff=0.1),\n            run_time=1\n        )\n        \n        step_arrow_2 = Arrow(mid_pt, bottom_pt, color=\"#00FF00\", buff=0, stroke_width=5)\n        self.play(GrowArrow(step_arrow_2))\n        self.play(\n            nero.animate.move_to(bottom_pt),\n            nero_tag.animate.next_to(bottom_pt, UP, buff=0.1),\n            run_time=1\n        )\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Setup layout with title and lecture lines\n        self.setup_layout(\n            \"The Result: Iteration and Convergence\", \n            [\n                \"Training involves repeating this process many thousands of times.\", \n                \"Each pass through data is called an epoch.\", \n                \"Now Nero recognizes the dog with high confidence.\"\n            ]\n        )\n\n        # === Animation for Lecture Line 1 ===\n        # Color change for current lecture line\n        self.lecture[0].set_color(WHITE)\n        \n        # Create a representation of Nero's Neural Network\n        net_box = RoundedRectangle(corner_radius=0.2, width=1.8, height=1.5, color=BLUE_B)\n        net_label = Text(\"Nero's Net\", font_size=18, color=BLUE_B)\n        network = VGroup(net_box, net_label)\n        self.place_at_grid(network, \"B3\")\n        \n        self.play(FadeIn(network))\n        \n        # Show a fast sequence of images passing through\n        image_types = [\"DOG\", \"MUFFIN\", \"DOG\", \"DOG\", \"MUFFIN\", \"DOG\"]\n        for img_text in image_types:\n            img_rect = Rectangle(width=0.8, height=0.6, color=WHITE, fill_opacity=0.2)\n            img_label = Text(img_text, font_size=14, color=WHITE)\n            img_grp = VGroup(img_rect, img_label)\n            \n            self.place_at_grid(img_grp, \"B1\")\n            self.play(\n                img_grp.animate.move_to(self.grid[\"B3\"]),\n                run_time=0.2,\n                rate_func=linear\n            )\n            self.play(\n                img_grp.animate.move_to(self.grid[\"B5\"]).set_opacity(0),\n                run_time=0.2,\n                rate_func=linear\n            )\n            self.remove(img_grp)\n\n        # === Animation for Lecture Line 2 ===\n        # Color change for second lecture line matching elements\n        self.lecture[1].set_color(\"#00FF00\")\n        \n        # Plot a green line graph decreasing toward zero\n        # X-axis (Epochs) from F4 to F6, Y-axis (Error) from F4 to D4\n        axis_x = Line(self.grid[\"F4\"], self.grid[\"F6\"], color=WHITE)\n        axis_y = Line(self.grid[\"F4\"], self.grid[\"D4\"], color=WHITE)\n        graph_label = Text(\"Error / Loss\", font_size=16, color=\"#00FF00\")\n        self.place_at_grid(graph_label, \"D5\")\n        \n        # Curve points for a converging (decreasing) function\n        p1 = self.grid[\"D4\"] + UP*0.4  # Start high\n        p2 = self.grid[\"E5\"] + UP*0.1  # Curve down\n        p3 = self.grid[\"F6\"] + UP*0.2  # Nearly zero (shifted slightly up from axis)\n        \n        convergence_curve = VMobject(color=\"#00FF00\")\n        convergence_curve.set_points_as_corners([p1, p2, p3])\n        convergence_curve.make_smooth()\n        \n        self.play(Create(axis_x), Create(axis_y), FadeIn(graph_label))\n        self.play(Create(convergence_curve), run_time=2.5)\n\n        # === Animation for Lecture Line 3 ===\n        # Color change for third lecture line\n        self.lecture[2].set_color(\"#00FF00\")\n        \n        # Define Nero as a simple character\n        nero_head = Circle(radius=0.5, color=\"#00FF00\")\n        eye_l = Dot(radius=0.06, color=\"#00FF00\").shift(LEFT*0.18 + UP*0.15)\n        eye_r = Dot(radius=0.06, color=\"#00FF00\").shift(RIGHT*0.18 + UP*0.15)\n        # Neutral mouth initially\n        mouth_neutral = Line(LEFT*0.2, RIGHT*0.2, color=\"#00FF00\").shift(DOWN*0.15)\n        nero = VGroup(nero_head, eye_l, eye_r, mouth_neutral)\n        self.place_at_grid(nero, \"B5\")\n        \n        # Happy expression: Smile\n        mouth_happy = Arc(radius=0.25, start_angle=PI, angle=PI, color=\"#00FF00\").shift(DOWN*0.1)\n        \n        # Display '99% Dog' in large, bold green text\n        confidence_text = Text(\"99% DOG\", font_size=32, color=\"#00FF00\", weight=BOLD)\n        self.place_at_grid(confidence_text, \"C5\")\n        \n        # Fade in a 'Model Trained' banner at the top\n        banner_rect = Rectangle(width=4, height=0.6, fill_color=BLACK, fill_opacity=0.8, stroke_color=WHITE)\n        banner_text = Text(\"MODEL TRAINED\", font_size=24, color=WHITE, weight=BOLD)\n        banner_grp = VGroup(banner_rect, banner_text)\n        self.place_in_area(banner_grp, \"A3\", \"A4\")\n        \n        # Final sequence\n        self.play(FadeIn(nero))\n        self.wait(0.5)\n        self.play(\n            ReplacementTransform(mouth_neutral, mouth_happy),\n            Write(confidence_text)\n        )\n        self.play(FadeIn(banner_grp))\n        \n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "Neural Network Learning and Intuitive Backpropagation",
+    "target_audience": "University students and beginner AI enthusiasts",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Big Picture: Nero the Robot Learns to See",
+        "content": "Introduce a neural network as a machine with adjustable knobs (weights). The goal of learning is to adjust these knobs so the output matches the truth. Use a 45-second hook to explain the 'Forward Pass' where data flows from input to a guess.",
+        "example": "Nero the Robot is shown a picture of a 'Dog.' He processes it through his layers and incorrectly guesses 'Muffin.' This mismatch creates an 'Error Signal.'"
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Error Landscape (Loss Function)",
+        "content": "Visualize the 'Loss Function' as a hilly 3D terrain. The height represents the size of the error. High peaks mean Nero is very wrong; the bottom of the valley represents perfect accuracy. This section establishes the objective: find the path to the bottom.",
+        "example": "A topographical map animation where Nero stands on a high mountain (Wrong Answer) and needs to find the fastest way down to the valley floor (Correct Answer)."
+      },
+      {
+        "id": "section_3",
+        "title": "The Problem: The 'Chain of Blame'",
+        "content": "Transition to the core problem: If the output is wrong, which specific 'knob' (weight) inside Nero's brain is responsible? Introduce the intuition of the Chain Rule: the final error is a result of a sequence of connected choices.",
+        "example": "A 'Bucket Brigade' analogy: 5 people are passing water to fill a tub. If the tub isn't full, we look backward from the tub to the last person, then the person before them, to see who spilled the most water."
+      },
+      {
+        "id": "section_4",
+        "title": "Intuitive Backpropagation: Working Backward",
+        "content": "Explain the math of Backpropagation through gradients. Instead of random guessing, we calculate the 'Gradient'—the direction of the steepest descent. Show how we move from the output layer back toward the input, calculating how much each weight contributed to the error.",
+        "example": "Animated arrows (Gradients) flowing backward through the network. A large arrow points to a 'weight' that was very wrong, while a tiny arrow points to a 'weight' that was mostly correct."
+      },
+      {
+        "id": "section_5",
+        "title": "The Adjustment: Turning the Knobs (Gradient Descent)",
+        "content": "Explain the update rule: Weight = Weight - (Learning Rate * Gradient). Introduce the 'Learning Rate' as the size of the step Nero takes down the mountain. Too large, and he overshoots; too small, and it takes forever.",
+        "example": "Nero uses a wrench to turn a physical knob. A 'Learning Rate' slider appears: set to 'High,' Nero jumps wildly across the valley; set to 'Optimal,' he steps gracefully toward the center."
+      },
+      {
+        "id": "section_6",
+        "title": "The Result: Iteration and Convergence",
+        "content": "Wrap up by explaining that learning is an iterative process. One 'Epoch' (one pass through the data) isn't enough. Thousands of tiny adjustments lead to a 'trained' model.",
+        "example": "A time-lapse montage: Nero sees thousands of dog/muffin photos. The error mountain flattens, his knobs stop turning, and finally, he points at a puppy and correctly shouts 'DOG!' with 99% confidence."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Big Picture: Nero the Robot Learns to See",
+      "lecture_lines": [
+        "Meet Nero, a robot learning to recognize images.",
+        "Inside Nero are adjustable knobs called weights.",
+        "Nero sees a dog but incorrectly guesses muffin.",
+        "This mismatch creates an error signal to learn.",
+        "We must adjust knobs to get correct guesses."
+      ],
+      "animations": [
+        "Display Nero [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/robot.svg] (#ADD8E6) and an input image grid representing data.",
+        "Zoom into Nero's brain to show nodes with grey adjustable knobs (#C0C0C0).",
+        "Show data pulses (#FFFFFF) flowing to a red 'Muffin' output node (#FF0000).",
+        "Display a 'Truth: Dog' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/dog.svg] label (#FFFFFF) and a large red 'Error' bar (#FF4500).",
+        "Flash the grey knobs (#C0C0C0) in bright white (#FFFFFF) to signal adjustment."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Error Landscape (Loss Function)",
+      "lecture_lines": [
+        "Imagine Nero's error as a hilly 3D terrain.",
+        "Peaks mean high error; valleys mean perfect accuracy.",
+        "We need to find the path downwards."
+      ],
+      "animations": [
+        "Draw a 2D landscape with blue contour lines (#1E90FF).",
+        "Place the nero icon [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/nero.svg] and a red dot (#FF0000) on a high 'Error Peak'.",
+        "Highlight the 'Optimal Valley' with a pulsing green circle (#00FF00)."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Problem: The 'Chain of Blame'",
+      "lecture_lines": [
+        "If Nero is wrong, which knob is responsible?",
+        "Consider a bucket brigade passing water to a tub.",
+        "If water is missing, we look back for spills.",
+        "We trace blame backward from the final output.",
+        "The chain rule connects these layers of blame."
+      ],
+      "animations": [
+        "Display a zoomed-in view of Nero's network nodes (#ADD8E6) and highlight a specific grey knob [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/knob.svg] (#C0C0C0).",
+        "Show a line of 5 blue circles (#ADD8E6) passing data pulses (#FFFFFF) toward a blue tub (#1E90FF).",
+        "Animate the tub's water level dropping and show small red 'spill' icons (#FF4500) between the circles.",
+        "Trace a thick red arrow (#FF0000) backward from the tub through each circle to show blame flow.",
+        "Display 'Chain Rule' text (#FFFFFF) and '×' symbols (#FFFFFF) connecting the layers of blame."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Intuitive Backpropagation: Working Backward",
+      "lecture_lines": [
+        "Backpropagation calculates the gradient for every internal weight.",
+        "Gradients show the direction of the steepest descent.",
+        "We flow backward from the output toward the input.",
+        "Large arrows indicate weights needing major adjustments.",
+        "Tiny arrows point to weights that are nearly correct."
+      ],
+      "animations": [
+        "Animate red 'Gradient' arrows (#FF0000) flowing backward through the network layers.",
+        "Display mathematical symbols 'dL/dw' (#FFFFFF) next to connection lines.",
+        "Draw large, thick red arrows (#FF0000) for connections with high error contribution.",
+        "Draw tiny, thin red arrows (#FF0000) for connections with low error contribution.",
+        "Flash the thickest arrows in bright white (#FFFFFF) to signal a major weight update."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Adjustment: Turning the Knobs (Gradient Descent)",
+      "lecture_lines": [
+        "We adjust weights using the calculated gradient direction.",
+        "The learning rate sets our step size down.",
+        "Optimal steps lead Nero straight to the bottom."
+      ],
+      "animations": [
+        "Show a robotic hand turning the knob [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/knob.svg] (#C0C0C0).",
+        "Display the update formula W = W - ηG (#FFFFFF).",
+        "Animate a small step (#00FF00) moving down the error slope."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "The Result: Iteration and Convergence",
+      "lecture_lines": [
+        "Training involves repeating this process many thousands of times.",
+        "The total error drops closer to zero each epoch.",
+        "Nero finally masters the patterns within the data.",
+        "He identifies the dog with high confidence.",
+        "The model is now fully trained and accurate."
+      ],
+      "animations": [
+        "Show a fast sequence of images [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/dog.svg] passing through the network to represent thousands of iterations.",
+        "Plot a green line graph (#00FF00) labeled 'Loss' decreasing toward zero to visualize epoch progress.",
+        "Change Nero's [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/nero.svg] expression to happy (#00FF00) and display '99% Dog [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/dog.svg]' and 'Model Trained' (#FFFFFF)."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section 1 introducing Nero and weights."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation stages for section_1. ScriptWriter needs to provide matching lines."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Superseded by issue 33. Code being generated now."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section 2 describing the error landscape."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation stages for section_2. ScriptWriter needs to provide matching lines."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Superseded by issue 34."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section 3 using the bucket brigade analogy."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation stages for section_3. ScriptWriter needs to provide matching lines."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Code for section_3 generated. Implemented bucket brigade analogy with 5 circles, a tub, a spill, and backward tracing arrow using the mandatory 6x6 grid system and TeachingScene base class."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section 4 explaining gradients and backflow."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation stages for section_4. ScriptWriter needs to provide matching lines."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Superseded by issue 35."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section 5 explaining the weight update rule and learning rate."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation stages for section_5. ScriptWriter needs to provide matching lines."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Superseded by issue 36."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section 6 regarding iteration and final convergence."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation stages for section_6. ScriptWriter needs to provide matching lines."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 6 focusing on iteration and convergence. Implemented sequence of training images, a converging error graph, and a happy Nero with high confidence score. All elements are positioned using the mandatory 6x6 grid system."
+    },
+    {
+      "id": 19,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Lecture lines are now available. Please design 5 animation steps that align with these lines and the high-level plan (Nero the robot, weights as knobs, muffin/dog error).",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Orchestrator acknowledged. Content is being aligned."
+    },
+    {
+      "id": 20,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Lecture lines are now available. Please design 3 animation steps that align with these lines and the high-level plan (3D error terrain, peaks/valleys).",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Orchestrator acknowledged. Content is being aligned."
+    },
+    {
+      "id": 21,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Lecture lines are now available. Please design 5 animation steps that align with these lines and the high-level plan (Bucket brigade, tracing blame backward, chain rule).",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Orchestrator acknowledged. Content is being aligned."
+    },
+    {
+      "id": 22,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Lecture lines are now available. Please design 5 animation steps that align with these lines and the high-level plan (Gradients as arrows flowing backward, large vs small adjustments).",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Orchestrator acknowledged. Content is being aligned."
+    },
+    {
+      "id": 23,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Lecture lines are now available. Please design 3 animation steps that align with these lines and the high-level plan (Updating weights, learning rate slider/steps).",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Orchestrator acknowledged. Content is being aligned."
+    },
+    {
+      "id": 24,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Lecture lines are now available. Please design 3 animation steps that align with these lines and the high-level plan (Epochs, time-lapse, final recognition).",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Orchestrator acknowledged. Content is being aligned."
+    },
+    {
+      "id": 25,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Generated 5 animation stages for section_1. Please provide 5 matching lecture lines (max 10 words each).",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Orchestrator acknowledged. Content is being aligned."
+    },
+    {
+      "id": 26,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Generated 3 animation stages for section_2. Please provide 3 matching lecture lines (max 10 words each).",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Orchestrator acknowledged. Content is being aligned."
+    },
+    {
+      "id": 27,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Generated 3 animation stages for section_3. Please provide 3 matching lecture lines (max 10 words each).",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Orchestrator acknowledged. Content is being aligned."
+    },
+    {
+      "id": 28,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Generated 5 animation stages for section_4. Please provide 5 matching lecture lines (max 10 words each).",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Orchestrator acknowledged. Content is being aligned."
+    },
+    {
+      "id": 29,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Generated 3 animation stages for section_5. Please provide 3 matching lecture lines (max 10 words each).",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Orchestrator acknowledged. Content is being aligned."
+    },
+    {
+      "id": 30,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Generated 5 animation stages for section_6. Please provide 5 matching lecture lines (max 10 words each).",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Orchestrator acknowledged. Content is being aligned."
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] There is a mismatch: ScriptWriter provided 5 lines but AnimationPlanner only provided 3 stages. AnimationPlanner: please expand the animation plan to 5 distinct, codable stages to match the script.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Expanded section_3 animation plan to 5 distinct stages to match the 5 lecture lines provided by ScriptWriter. Also consolidated section_6 animations into 3 stages to match its 3 lecture lines."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] There is a mismatch: AnimationPlanner provided 5 stages but ScriptWriter only provided 3 lines. ScriptWriter: please provide 2 additional lines to ensure every animation stage has a matching line (5 total).",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated section_6 to have 5 lecture lines matching the 5 animation stages. Each line is under 10 words."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[section_1] The script and animation plan are ready and aligned (5 stages). Please implement the Manim code for this introduction involving Nero the robot and weights as knobs. Ensure the animation stages progress one-by-one with the lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implementing Section1Scene with Nero robot, image grid, weight knobs, data pulses, and error signal animations following the 6x6 grid system."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[section_2] The script and animation plan are ready and aligned (3 stages). Please implement the Manim code for the 3D error landscape. Ensure smooth transitions between peaks and valleys as described in the plan.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented 3D terrain representation using 2D contours, red dot for error peak, and pulsing green highlight for the optimal valley as per the animation plan. All constraints regarding TeX, positioning, and lecture line animations were followed."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[section_4] The script and animation plan are ready and aligned (5 stages). Please implement the Manim code for 'Intuitive Backpropagation'. Focus on the visual flow of gradients as arrows moving backward through the network.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for Section 4: Intuitive Backpropagation. Created a 3-layer neural network, animated backward gradient flow with red arrows of varying thickness, included dL/dw labels, flashed high-gradient weights, and updated node blame values. Used the 6x6 grid system for positioning."
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[section_5] The script and animation plan are ready and aligned (3 stages). Please implement the Manim code for weight updates and the learning rate slider. ensure the 'turning knobs' analogy is visually clear.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 5 with 3 animation stages: knob turning, update formula display, and learning rate step on a slope. Used grid system and unicode symbols as requested."
+    },
+    {
+      "id": 37,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Display Nero [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/robot.svg] (#ADD8E6) and an input image grid representing data.', \"Display a 'Truth: Dog' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/dog.svg] label (#FFFFFF) and a large red 'Error' bar (#FF4500).\"]",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 60"
+    },
+    {
+      "id": 38,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Place the nero icon [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/nero.svg] and a red dot (#FF0000) on a high 'Error Peak'.\"]",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 61"
+    },
+    {
+      "id": 39,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Display a zoomed-in view of Nero's network nodes (#ADD8E6) and highlight a specific grey knob [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/knob.svg] (#C0C0C0).\"]",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 62"
+    },
+    {
+      "id": 40,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a robotic hand turning the knob [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/knob.svg] (#C0C0C0).']",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 64"
+    },
+    {
+      "id": 41,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a fast sequence of images [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/dog.svg] passing through the network to represent thousands of iterations.', \"Change Nero's [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/nero.svg] expression to happy (#00FF00) and display '99% Dog [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/dog.svg]' and 'Model Trained' (#FFFFFF).\"]",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 65"
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The error_text at C5 overlaps the vertical red error line connecting the muffin and truth labels. Fix: Line 173: self.place_at_grid(error_text, 'C6', scale_factor=0.8) (line=173, object=error_text)",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 60"
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The x_mark at C6 overlaps with the optimized position for the error_text label. Fix: Line 160: self.place_at_grid(x_mark, 'D6') (line=160, object=x_mark)",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 60"
+    },
+    {
+      "id": 44,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The image_grid at C1 is scaled too large (1.2), appearing cramped next to the Nero robot asset. Fix: Line 77: self.place_at_grid(image_grid, 'C1', scale_factor=0.8) (line=77, object=image_grid)",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 60"
+    },
+    {
+      "id": 45,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The multi-word label 'peak_label' uses place_at_grid and is positioned at the extreme top edge (A5), creating a cramped top margin and risk of off-screen clipping. Fix: Line 106: self.place_in_area(peak_label, 'B5', 'B6', scale_factor=0.8) (line=106, object=peak_label)",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 61"
+    },
+    {
+      "id": 46,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The peak's visual elements (contours and error dot) at B5 need to be shifted down to accommodate the relocated label and balance the vertical space. Fix: Line 74: self.place_at_grid(peak_contours, 'C5'); Line 103: self.place_at_grid(error_dot, 'C5') (line=74, object=peak_contours)",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 61"
+    },
+    {
+      "id": 47,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'valley_label' is a multi-word label incorrectly using place_at_grid and is positioned at the extreme bottom edge of the frame (F2). Fix: Line 125: self.place_in_area(valley_label, 'F2', 'F3', scale_factor=0.8) (line=125, object=valley_label)",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 61"
+    },
+    {
+      "id": 48,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'wrong_mark' (?) is positioned at B4, which resides within the 3x3 grid area occupied by the 'knob' (B2-D4), causing an overlap. Fix: Line 73: self.place_at_grid(self.wrong_mark, 'B5') (line=73, object=wrong_mark)",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 62"
+    },
+    {
+      "id": 49,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'spill' water graphic is at C3, which overlaps directly with the bucket brigade circle at that same grid coordinate. Fix: Line 124: self.place_at_grid(self.spill, 'D3') (line=124, object=spill)",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 62"
+    },
+    {
+      "id": 50,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'spill_label' at D3 overlaps the relocated spill graphic, and the 'tub_label' at D6 is vertically inconsistent with a lower spill label. Fix: Line 128: self.place_at_grid(self.spill_label, 'E3'); Line 93: self.place_at_grid(self.tub_label, 'E6') (line=128, object=spill_label, tub_label)",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 62"
+    },
+    {
+      "id": 51,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The numerical label 'blame_val1' (0.9) is placed exactly on top of neuron 'n21' at grid position B4, causing a visual overlap and obscuring the neuron shape. Fix: Line 157: self.place_at_grid(blame_val1, 'A4', scale_factor=0.8) (line=157, object=blame_val1)",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 63"
+    },
+    {
+      "id": 52,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The numerical label 'blame_val2' (-0.1) overlaps with neuron 'n22' at grid position D4, making the text and the neuron object difficult to distinguish. Fix: Line 158: self.place_at_grid(blame_val2, 'E4', scale_factor=0.8) (line=158, object=blame_val2)",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 63"
+    },
+    {
+      "id": 53,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The gradient label 'lbl_grad2' (dL/dw) at B5 is positioned very close to the hidden layer neurons; moving it slightly improves the flow visualization. Fix: Line 108: self.place_at_grid(lbl_grad2, 'A5', scale_factor=0.8) (line=108, object=lbl_grad2)",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 63"
+    },
+    {
+      "id": 54,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'Update Rule' label above the formula overlaps with the vertical stem of the knob asset at B3. Fix: Line 65: self.place_at_grid(self.knob, 'B4', scale_factor=0.8) (line=65, object=knob)",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 64"
+    },
+    {
+      "id": 55,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The formula is positioned too close to the lecture notes (Column 3), risking obstruction for longer labels and creating an unbalanced layout. Fix: Line 88: self.place_at_grid(self.formula, 'D4', scale_factor=0.9) (line=88, object=formula)",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 64"
+    },
+    {
+      "id": 56,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The slope (parabola) spans the entire bottom grid width (E1-F6), making the visualization feel cluttered and unfocused compared to the centered elements above. Fix: Line 106: self.place_in_area(self.slope, 'E3', 'F5', scale_factor=0.8) (line=106, object=slope)",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 64"
+    },
+    {
+      "id": 57,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'confidence_text' at C5 and 'graph_label' at D5 are overlapping, making the numerical accuracy and graph title difficult to read. Fix: Line 99: self.place_at_grid(graph_label, 'E5', scale_factor=0.8) (line=99, object=graph_label)",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 65"
+    },
+    {
+      "id": 58,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'img_grp' at B1 is positioned too close to the left-side lecture notes, violating clear margins between text and animations. Fix: Line 77: self.place_at_grid(img_grp, 'B2', scale_factor=0.8) (line=77, object=img_grp)",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 65"
+    },
+    {
+      "id": 59,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'confidence_text' at C5 is scaled too large for a single grid cell, causing it to visually crowd the 'nero' icon above it. Fix: Line 131: self.place_at_grid(confidence_text, 'C5', scale_factor=0.7) (line=131, object=confidence_text)",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Consolidated into issue 65"
+    },
+    {
+      "id": 60,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[section_1] Final Refinement: 1) Integrate Assets: Use robot.svg (/mmfs1/data/home/jthen/Code2Video/assets/icon/robot.svg) for Nero and dog.svg (/mmfs1/data/home/jthen/Code2Video/assets/icon/dog.svg) for the 'Truth' label. 2) Layout Fixes: Move error_text to C6 (scale 0.8), x_mark to D6, and scale image_grid to 0.8 at C1. Ensure all 5 animation stages align with the script.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 61,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[section_2] Final Refinement: 1) Integrate Assets: Use nero.svg (/mmfs1/data/home/jthen/Code2Video/assets/icon/nero.svg) at the error peak. 2) Layout Fixes: Position peak_label in area B5-B6 (scale 0.8), move peak_contours and error_dot to C5, and place valley_label in area F2-F3 (scale 0.8). Ensure 3D terrain transitions remain smooth.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 62,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[section_3] Final Refinement: 1) Integrate Assets: Use knob.svg (/mmfs1/data/home/jthen/Code2Video/assets/icon/knob.svg) for the highlighted weight. 2) Layout Fixes: Move wrong_mark (?) to B5, spill to D3, spill_label to E3, and tub_label to E6. Ensure the bucket brigade analogy progresses through all 5 script lines.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 63,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[section_4] Final Refinement: Layout Fixes: Move blame_val1 to A4 (scale 0.8), blame_val2 to E4 (scale 0.8), and lbl_grad2 (dL/dw) to A5 (scale 0.8). Maintain the backward flow of red arrows and node updates across 5 stages.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 64,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[section_5] Final Refinement: 1) Integrate Assets: Use knob.svg (/mmfs1/data/home/jthen/Code2Video/assets/icon/knob.svg) for the turning knob animation. 2) Layout Fixes: Move knob to B4 (scale 0.8), formula to D4 (scale 0.9), and restrict slope (parabola) to area E3-F5 (scale 0.8). Ensure 3 animation stages match the script.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 65,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[section_6] Final Refinement: 1) Integrate Assets: Use dog.svg (/mmfs1/data/home/jthen/Code2Video/assets/icon/dog.svg) for the training sequence and final result. Use nero.svg (/mmfs1/data/home/jthen/Code2Video/assets/icon/nero.svg) for the happy robot. 2) Layout Fixes: Move graph_label to E5 (scale 0.8), img_grp to B2 (scale 0.8), and scale confidence_text to 0.7 at C5. Ensure 5 animation stages align with the expanded script.",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 306632,
+        "video_mtime_ns": 1778594397308903715,
+        "code_sha1": "f4f70c4ee433786b0cd91af181b0df6070499c84"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The error_text at C5 overlaps the vertical red error line connecting the muffin and truth labels.",
+              "solution": "Line 173: self.place_at_grid(error_text, 'C6', scale_factor=0.8)",
+              "line_number": 173,
+              "object_affected": "error_text"
+            },
+            {
+              "problem": "The x_mark at C6 overlaps with the optimized position for the error_text label.",
+              "solution": "Line 160: self.place_at_grid(x_mark, 'D6')",
+              "line_number": 160,
+              "object_affected": "x_mark"
+            },
+            {
+              "problem": "The image_grid at C1 is scaled too large (1.2), appearing cramped next to the Nero robot asset.",
+              "solution": "Line 77: self.place_at_grid(image_grid, 'C1', scale_factor=0.8)",
+              "line_number": 77,
+              "object_affected": "image_grid"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        42,
+        43,
+        44
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 318863,
+        "video_mtime_ns": 1778594396398520089,
+        "code_sha1": "d006a419e0b034c833221d189aac4c5eb1cb809a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The multi-word label 'peak_label' uses place_at_grid and is positioned at the extreme top edge (A5), creating a cramped top margin and risk of off-screen clipping.",
+              "solution": "Line 106: self.place_in_area(peak_label, 'B5', 'B6', scale_factor=0.8)",
+              "line_number": 106,
+              "object_affected": "peak_label"
+            },
+            {
+              "problem": "The peak's visual elements (contours and error dot) at B5 need to be shifted down to accommodate the relocated label and balance the vertical space.",
+              "solution": "Line 74: self.place_at_grid(peak_contours, 'C5'); Line 103: self.place_at_grid(error_dot, 'C5')",
+              "line_number": 74,
+              "object_affected": "peak_contours"
+            },
+            {
+              "problem": "The 'valley_label' is a multi-word label incorrectly using place_at_grid and is positioned at the extreme bottom edge of the frame (F2).",
+              "solution": "Line 125: self.place_in_area(valley_label, 'F2', 'F3', scale_factor=0.8)",
+              "line_number": 125,
+              "object_affected": "valley_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        45,
+        46,
+        47
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 254188,
+        "video_mtime_ns": 1778594492387453554,
+        "code_sha1": "4c094d2157e239b33a1b454c280fd5a2e7a5a5f4"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'wrong_mark' (?) is positioned at B4, which resides within the 3x3 grid area occupied by the 'knob' (B2-D4), causing an overlap.",
+              "solution": "Line 73: self.place_at_grid(self.wrong_mark, 'B5')",
+              "line_number": 73,
+              "object_affected": "wrong_mark"
+            },
+            {
+              "problem": "The 'spill' water graphic is at C3, which overlaps directly with the bucket brigade circle at that same grid coordinate.",
+              "solution": "Line 124: self.place_at_grid(self.spill, 'D3')",
+              "line_number": 124,
+              "object_affected": "spill"
+            },
+            {
+              "problem": "The 'spill_label' at D3 overlaps the relocated spill graphic, and the 'tub_label' at D6 is vertically inconsistent with a lower spill label.",
+              "solution": "Line 128: self.place_at_grid(self.spill_label, 'E3'); Line 93: self.place_at_grid(self.tub_label, 'E6')",
+              "line_number": 128,
+              "object_affected": "spill_label, tub_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        48,
+        49,
+        50
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 343410,
+        "video_mtime_ns": 1778594397298969829,
+        "code_sha1": "ef6d17da195403635f267ec06390dce6af2cd375"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The numerical label 'blame_val1' (0.9) is placed exactly on top of neuron 'n21' at grid position B4, causing a visual overlap and obscuring the neuron shape.",
+              "solution": "Line 157: self.place_at_grid(blame_val1, 'A4', scale_factor=0.8)",
+              "line_number": 157,
+              "object_affected": "blame_val1"
+            },
+            {
+              "problem": "The numerical label 'blame_val2' (-0.1) overlaps with neuron 'n22' at grid position D4, making the text and the neuron object difficult to distinguish.",
+              "solution": "Line 158: self.place_at_grid(blame_val2, 'E4', scale_factor=0.8)",
+              "line_number": 158,
+              "object_affected": "blame_val2"
+            },
+            {
+              "problem": "The gradient label 'lbl_grad2' (dL/dw) at B5 is positioned very close to the hidden layer neurons; moving it slightly improves the flow visualization.",
+              "solution": "Line 108: self.place_at_grid(lbl_grad2, 'A5', scale_factor=0.8)",
+              "line_number": 108,
+              "object_affected": "lbl_grad2"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        51,
+        52,
+        53
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 203239,
+        "video_mtime_ns": 1778594394665086331,
+        "code_sha1": "d8efab90560da5e851874385a7083588af606f94"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'Update Rule' label above the formula overlaps with the vertical stem of the knob asset at B3.",
+              "solution": "Line 65: self.place_at_grid(self.knob, 'B4', scale_factor=0.8)",
+              "line_number": 65,
+              "object_affected": "knob"
+            },
+            {
+              "problem": "The formula is positioned too close to the lecture notes (Column 3), risking obstruction for longer labels and creating an unbalanced layout.",
+              "solution": "Line 88: self.place_at_grid(self.formula, 'D4', scale_factor=0.9)",
+              "line_number": 88,
+              "object_affected": "formula"
+            },
+            {
+              "problem": "The slope (parabola) spans the entire bottom grid width (E1-F6), making the visualization feel cluttered and unfocused compared to the centered elements above.",
+              "solution": "Line 106: self.place_in_area(self.slope, 'E3', 'F5', scale_factor=0.8)",
+              "line_number": 106,
+              "object_affected": "slope"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        54,
+        55,
+        56
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 273872,
+        "video_mtime_ns": 1778594397046218370,
+        "code_sha1": "0a373b76624c33aef491cdfc6dae67b533defe48"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'confidence_text' at C5 and 'graph_label' at D5 are overlapping, making the numerical accuracy and graph title difficult to read.",
+              "solution": "Line 99: self.place_at_grid(graph_label, 'E5', scale_factor=0.8)",
+              "line_number": 99,
+              "object_affected": "graph_label"
+            },
+            {
+              "problem": "The 'img_grp' at B1 is positioned too close to the left-side lecture notes, violating clear margins between text and animations.",
+              "solution": "Line 77: self.place_at_grid(img_grp, 'B2', scale_factor=0.8)",
+              "line_number": 77,
+              "object_affected": "img_grp"
+            },
+            {
+              "problem": "The 'confidence_text' at C5 is scaled too large for a single grid cell, causing it to visually crowd the 'nero' icon above it.",
+              "solution": "Line 131: self.place_at_grid(confidence_text, 'C5', scale_factor=0.7)",
+              "line_number": 131,
+              "object_affected": "confidence_text"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        57,
+        58,
+        59
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_210646/4-Neural_Network_Learning_and_Intuitive_Backpropagation",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 146115,
+      "completion_tokens": 19493,
+      "total_tokens": 226831,
+      "call_count": 33
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 278,
+        "completion_tokens": 857,
+        "total_tokens": 1916,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 10075,
+        "completion_tokens": 413,
+        "total_tokens": 10580,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 16750,
+        "completion_tokens": 533,
+        "total_tokens": 17518,
+        "call_count": 2
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 25084,
+        "completion_tokens": 514,
+        "total_tokens": 25687,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 5878,
+        "completion_tokens": 2125,
+        "total_tokens": 8062,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 6437,
+        "completion_tokens": 1929,
+        "total_tokens": 8629,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 7622,
+        "completion_tokens": 2863,
+        "total_tokens": 10545,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 11385,
+        "completion_tokens": 270,
+        "total_tokens": 11887,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 9632,
+        "completion_tokens": 2200,
+        "total_tokens": 11972,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 15635,
+        "completion_tokens": 2282,
+        "total_tokens": 18074,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4392,
+        "completion_tokens": 1010,
+        "total_tokens": 12889,
+        "call_count": 12
+      },
+      "scope_refine:section_3": {
+        "prompt_tokens": 15379,
+        "completion_tokens": 2405,
+        "total_tokens": 35243,
+        "call_count": 2
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3085,
+        "completion_tokens": 305,
+        "total_tokens": 7958,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2953,
+        "completion_tokens": 378,
+        "total_tokens": 11638,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3036,
+        "completion_tokens": 360,
+        "total_tokens": 9137,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 2952,
+        "completion_tokens": 380,
+        "total_tokens": 9420,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2734,
+        "completion_tokens": 329,
+        "total_tokens": 7597,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2808,
+        "completion_tokens": 340,
+        "total_tokens": 8079,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 146115,
+        "completion_tokens": 19493,
+        "total_tokens": 226831,
+        "call_count": 33
+      }
+    }
+  }
+}

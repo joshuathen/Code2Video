@@ -1176,6 +1176,9 @@ class CoderRuntime:
         max_code_token_length: int = 10000,
         assets_dir: Optional[Path] = None,
         belief_prompt_text: str = "",
+        reactive_belief_prompt_fn: Optional[
+            Callable[[str, str, str, str, str, List[str]], str]
+        ] = None,
     ):
         self.runtime_dir = runtime_dir
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
@@ -1192,6 +1195,7 @@ class CoderRuntime:
         self.max_code_token_length = max_code_token_length
         self.assets_dir = assets_dir.resolve() if assets_dir is not None else None
         self.belief_prompt_text = belief_prompt_text.strip()
+        self.reactive_belief_prompt_fn = reactive_belief_prompt_fn
 
     def _scene_name(self, section_id: str) -> str:
         return _scene_name_from_section_id(section_id)
@@ -1401,10 +1405,20 @@ class CoderRuntime:
                             }
 
                 last_error = (result.stderr or "").strip()
+                active_belief_prompt = self.belief_prompt_text
+                if self.reactive_belief_prompt_fn is not None:
+                    active_belief_prompt = self.reactive_belief_prompt_fn(
+                        section_id,
+                        current_code,
+                        last_error,
+                        topic,
+                        section_title,
+                        list(lecture_lines or []),
+                    ).strip()
                 scope_refine_fixer = ScopeRefineFixer(
                     self.request_fn,
                     self.max_code_token_length,
-                    belief_prompt_text=self.belief_prompt_text,
+                    belief_prompt_text=active_belief_prompt,
                 )
                 fixed_code = scope_refine_fixer.fix_code_smart(section_id, current_code, result.stderr, self.runtime_dir)
 
@@ -1524,6 +1538,232 @@ class CoderRuntime:
         return failure_result
 
 
+def _build_runtime_reactive_belief_prompt_fn(
+    *,
+    runtime_path: Path,
+    section_id: str,
+    belief_library_path: str,
+    bbn_parameters_path: str,
+    belief_embedding_model: str,
+    top_k: int,
+    threshold: float,
+    candidate_limit: int,
+) -> Optional[Callable[[str, str, str, str, str, List[str]], str]]:
+    if not belief_library_path:
+        return None
+    library_path = Path(belief_library_path).expanduser().resolve()
+    selector_state: Dict[str, Any] = {}
+
+    def _compact_error_context(render_error: str) -> str:
+        """Extract terminal failures while discarding traceback machinery."""
+        ansi_escape = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+        raw_lines = ansi_escape.sub("", render_error or "").splitlines()
+
+        # Rich tracebacks surround content with box-drawing characters. Remove
+        # only the presentation layer so quoted paths and wrapped messages are
+        # still available to the extractor.
+        cleaned_lines = []
+        for raw_line in raw_lines:
+            line = raw_line.strip()
+            line = line.strip("│").strip()
+            if not line or set(line) <= set("─━═╭╮╰╯┌┐└┘"):
+                continue
+            cleaned_lines.append(line)
+
+        # Python's terminal exception summary starts with the exception class.
+        # Framework source lines such as ``except SomeException:`` do not match,
+        # so they are naturally discarded without knowing the framework.
+        exception_start = re.compile(
+            r"^(?:[A-Za-z_][\w.]*\.)?"
+            r"[A-Za-z_][\w]*(?:Error|Exception|Warning)"
+            r"(?:\s*:\s*.*)?$"
+        )
+        summary_indexes = [
+            index
+            for index, line in enumerate(cleaned_lines)
+            if exception_start.match(line)
+        ]
+        if summary_indexes:
+            # Preserve a short exception chain and any wrapped continuation
+            # lines belonging to its final message (for example a filename on
+            # the line after FileNotFoundError).
+            selected = []
+            for index in summary_indexes[-3:]:
+                if cleaned_lines[index] not in selected:
+                    selected.append(cleaned_lines[index])
+            final_index = summary_indexes[-1]
+            for line in cleaned_lines[final_index + 1 : final_index + 5]:
+                if exception_start.match(line):
+                    break
+                selected.append(line)
+            return "\n".join(selected)[-3000:]
+
+        # Non-Python tools may report failures without an exception class.
+        # Prefer terminal diagnostic lines and otherwise retain only the tail.
+        diagnostic = [
+            line
+            for line in cleaned_lines
+            if re.search(
+                r"(failed|failure|fatal|timed? ?out|not defined|"
+                r"no attribute|file not found|return(?:ed)? code)",
+                line,
+                flags=re.IGNORECASE,
+            )
+            and not re.search(r"\bexcept\b", line, flags=re.IGNORECASE)
+        ]
+        selected = diagnostic[-6:] if diagnostic else cleaned_lines[-6:]
+        return "\n".join(selected)[-3000:]
+
+    def _select(
+        current_section_id: str,
+        current_code: str,
+        render_error: str,
+        topic: str,
+        section_title: str,
+        lecture_lines: List[str],
+    ) -> str:
+        if "selector" not in selector_state:
+            try:
+                if not library_path.exists():
+                    raise FileNotFoundError(library_path)
+                payload = json.loads(library_path.read_text(encoding="utf-8"))
+                beliefs = payload.get("beliefs", payload.get("lessons", payload))
+                if isinstance(beliefs, dict):
+                    beliefs = list(beliefs.values())
+                if not isinstance(beliefs, list):
+                    raise ValueError("belief library does not contain a belief list")
+
+                embedding_index = None
+                embeddings_path = library_path.with_name("belief_embeddings.npz")
+                metadata_path = library_path.with_name(
+                    "belief_embedding_metadata.json"
+                )
+                if embeddings_path.exists() and metadata_path.exists():
+                    embedding_index = BeliefEmbeddingIndex.load(
+                        embeddings_path=embeddings_path,
+                        metadata_path=metadata_path,
+                        model_name_or_path=belief_embedding_model or None,
+                    )
+                    stale_ids = embedding_index.validate_beliefs(beliefs)
+                    if stale_ids:
+                        raise ValueError(
+                            "stored embedding cache is stale for "
+                            f"{len(stale_ids)} beliefs"
+                        )
+
+                parameters_path = (
+                    Path(bbn_parameters_path).expanduser().resolve()
+                    if bbn_parameters_path
+                    else library_path.with_name("bbn_parameters.json")
+                )
+                audit_dir = runtime_path / "coder_debugger" / section_id
+                audit_dir.mkdir(parents=True, exist_ok=True)
+                selector_state["selector"] = BeliefSelector(
+                    beliefs,
+                    parameters=BBNParameters.from_path(parameters_path),
+                    embedding_index=embedding_index,
+                    log_path=audit_dir / "belief_selections.jsonl",
+                )
+                selector_state["injection_path"] = (
+                    audit_dir / "belief_injections.jsonl"
+                )
+            except Exception as exc:
+                print(
+                    f"[CoderRuntime][{section_id}] Could not initialise "
+                    f"just-in-time reactive belief selection: {exc}",
+                    flush=True,
+                )
+                selector_state["selector"] = None
+        selector = selector_state.get("selector")
+        if selector is None:
+            return ""
+
+        compact_error = _compact_error_context(render_error)
+        problem_text = "\n\n".join(
+            [
+                f"Topic: {topic}",
+                f"Section: {current_section_id} — {section_title}",
+                "Current exception or failure:\n" + compact_error,
+            ]
+        )
+        print(
+            f"[CoderRuntime][{current_section_id}] Reactive belief selection "
+            f"context:\n{problem_text}\n"
+            f"[CoderRuntime][{current_section_id}] End reactive belief "
+            "selection context",
+            flush=True,
+        )
+        # Derive error tags only from the error. Code containing MathTex or an
+        # import must not by itself imply that either construct failed.
+        lowered = compact_error.lower()
+        context_tags = sorted(
+            tag
+            for tag, patterns in {
+                "render_timeout": ("timeout", "timed out"),
+                "repeated_render_timeout": ("repeated timeout", "timeouts"),
+                "dynamic_geometry_present": ("updater", "always_redraw", "dynamic"),
+                "render_error": ("render", "traceback", "exception", "error"),
+                "visual_quality_issue": ("layout", "overlap", "visual", "aesthetic"),
+                "latex_error": ("latex", "mathtex", "tex/", ".dvi"),
+                "missing_import": ("nameerror", "not defined", "importerror"),
+                "file_not_found": ("filenotfounderror", "file not found"),
+                "type_error": ("typeerror", "type error"),
+                "attribute_error": ("attributeerror", "has no attribute"),
+                "syntax_error": ("syntaxerror", "syntax error"),
+                "index_error": ("indexerror", "index error"),
+            }.items()
+            if any(pattern in lowered for pattern in patterns)
+        )
+        situation = BeliefSituation(
+            topic=topic,
+            agent_role=CODER,
+            pipeline_stage="coding",
+            problem_text=problem_text,
+            context_tags=context_tags,
+            section_ids=[current_section_id],
+            timing="reactive",
+        )
+        selected = selector.select(
+            situation,
+            top_k=top_k,
+            threshold=threshold,
+            candidate_limit=candidate_limit,
+        )
+        prompt_block = format_selected_beliefs(selected)
+        injection_path = selector_state["injection_path"]
+        with injection_path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {
+                        "timestamp": time.strftime(
+                            "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+                        ),
+                        "agent": CODER,
+                        "section_id": current_section_id,
+                        "timing": "reactive",
+                        "error_sha1": hashlib.sha1(
+                            render_error.encode("utf-8")
+                        ).hexdigest(),
+                        "error_excerpt": render_error[:2000],
+                        "selected_belief_ids": [
+                            item["belief_id"] for item in selected
+                        ],
+                        "rendered_prompt_block": prompt_block,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+        print(
+            f"[CoderRuntime][{current_section_id}] Just-in-time reactive beliefs "
+            f"for current error: {[item['belief_id'] for item in selected]}",
+            flush=True,
+        )
+        return prompt_block
+
+    return _select
+
+
 def _run_coder_runtime_worker(
     *,
     runtime_dir: str,
@@ -1537,6 +1777,12 @@ def _run_coder_runtime_worker(
     phase: str = "unspecified",
     assets_dir: str = "",
     belief_prompt_text: str = "",
+    belief_library_path: str = "",
+    bbn_parameters_path: str = "",
+    belief_embedding_model: str = "",
+    belief_top_k: int = 5,
+    belief_usefulness_threshold: float = 0.0,
+    belief_candidate_limit: int = 82,
 ) -> Tuple[str, Dict[str, object], Dict[str, object]]:
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
@@ -1555,6 +1801,16 @@ def _run_coder_runtime_worker(
         section_title=section_title,
         lecture_lines=lecture_lines,
     )
+    reactive_belief_prompt_fn = _build_runtime_reactive_belief_prompt_fn(
+        runtime_path=runtime_path,
+        section_id=section_id,
+        belief_library_path=belief_library_path,
+        bbn_parameters_path=bbn_parameters_path,
+        belief_embedding_model=belief_embedding_model,
+        top_k=belief_top_k,
+        threshold=belief_usefulness_threshold,
+        candidate_limit=belief_candidate_limit,
+    )
 
     runtime = CoderRuntime(
         runtime_dir=runtime_path,
@@ -1568,6 +1824,7 @@ def _run_coder_runtime_worker(
         max_code_token_length=max_code_token_length,
         assets_dir=Path(assets_dir).resolve() if assets_dir else None,
         belief_prompt_text=belief_prompt_text,
+        reactive_belief_prompt_fn=reactive_belief_prompt_fn,
     )
 
     try:
@@ -1842,7 +2099,7 @@ class MASRunConfig:
     top_general_beliefs: int = 10
     top_specialized_beliefs: int = 10
     contextual_belief_selection: bool = True
-    belief_usefulness_threshold: float = 0.60
+    belief_usefulness_threshold: float = 0.0
     belief_candidate_limit: int = 20
     bbn_parameters_path: Optional[str] = None
     belief_embedding_model: Optional[str] = None
@@ -3334,7 +3591,8 @@ class MASVideoRunner:
                     )
                     print(
                         "[VideoMAS] Contextual BBN belief selection enabled "
-                        f"(threshold={self.cfg.belief_usefulness_threshold:.2f})."
+                        f"(top_k={self.cfg.top_specialized_beliefs}; "
+                        "usefulness threshold disabled)."
                     )
                 except Exception as exc:
                     print(
@@ -3360,11 +3618,6 @@ class MASVideoRunner:
                 ),
                 max_code_token_length=self.cfg.max_code_token_length,
                 assets_dir=self.assets_dir,
-                belief_prompt_text=self._contextual_belief_prompt(
-                    CODER,
-                    [section_id],
-                    "reactive",
-                ),
             )
 
         self.script_writer_agent = VideoTeamBaseAgent(
@@ -3531,7 +3784,36 @@ class MASVideoRunner:
                 continue
             relevant_issues.append(issue.description)
 
-        problem_text = "\n".join(relevant_issues) or self.video_state.topic
+        situation_parts = [
+            f"Topic: {self.video_state.topic}",
+            f"Target audience: {self.video_state.target_audience}",
+        ]
+        if relevant_issues:
+            situation_parts.append("Active issues:\n" + "\n".join(relevant_issues))
+        for section_id in section_ids:
+            try:
+                section_index = self.video_state.section_index(section_id)
+                section = self.video_state.storyboard[section_index]
+            except (ValueError, IndexError):
+                continue
+            situation_parts.extend(
+                [
+                    f"Section: {section_id} — {section.title}",
+                    "Lecture lines:\n" + "\n".join(section.lecture_lines),
+                    "Planned animations:\n" + "\n".join(section.animations),
+                ]
+            )
+            code = self.video_state.code[section_index] or ""
+            if code.strip():
+                situation_parts.append(
+                    "Current section code:\n" + code[:4000]
+                )
+            render_error = self.video_state.render_error[section_index] or ""
+            if render_error.strip():
+                situation_parts.append("Current render error:\n" + render_error[:2000])
+        problem_text = "\n\n".join(
+            part for part in situation_parts if part.strip()
+        )[:16000]
         lowered = problem_text.lower()
         context_tags = {
             tag
@@ -3546,10 +3828,10 @@ class MASVideoRunner:
             if any(pattern in lowered for pattern in patterns)
         }
         stage_by_role = {
-            SCRIPT_WRITER: "writing" if timing == "preventative" else "revision",
-            ANIMATION_PLANNER: "planning" if timing == "preventative" else "revision",
-            CODER: "coding" if timing == "preventative" else "debugging",
-            ORCHESTRATOR: "coordination" if timing == "preventative" else "evaluation",
+            SCRIPT_WRITER: "planning",
+            ANIMATION_PLANNER: "planning",
+            CODER: "coding",
+            ORCHESTRATOR: "coordination",
         }
         situation = BeliefSituation(
             topic=self.video_state.topic,
@@ -4012,7 +4294,27 @@ class MASVideoRunner:
                     "lecture_lines": list(section.lecture_lines),
                     "phase": phase_label,
                     "assets_dir": str(self.assets_dir),
-                    "belief_prompt_text": self.coder_runtimes[section_id].belief_prompt_text,
+                    "belief_prompt_text": "",
+                    "belief_library_path": (
+                        str(self.belief_library_path)
+                        if self.cfg.inject_beliefs_into_prompts
+                        and self.cfg.contextual_belief_selection
+                        and self.belief_library_path is not None
+                        else ""
+                    ),
+                    "bbn_parameters_path": (
+                        str(Path(self.cfg.bbn_parameters_path).expanduser().resolve())
+                        if self.cfg.bbn_parameters_path
+                        else (
+                            str(self.belief_library_path.with_name("bbn_parameters.json"))
+                            if self.belief_library_path is not None
+                            else ""
+                        )
+                    ),
+                    "belief_embedding_model": self.cfg.belief_embedding_model or "",
+                    "belief_top_k": self.cfg.top_specialized_beliefs,
+                    "belief_usefulness_threshold": self.cfg.belief_usefulness_threshold,
+                    "belief_candidate_limit": self.cfg.belief_candidate_limit,
                 }
             )
 

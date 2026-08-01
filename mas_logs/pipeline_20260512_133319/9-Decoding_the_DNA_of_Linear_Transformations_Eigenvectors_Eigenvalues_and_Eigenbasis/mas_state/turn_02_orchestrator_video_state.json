@@ -1,0 +1,1009 @@
+{
+  "topic": "Decoding the DNA of Linear Transformations: Eigenvectors, Eigenvalues, and Eigenbasis",
+  "target_audience": "Undergraduate students in STEM or advanced high school students with a background in basic matrix multiplication.",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with title and lecture lines\n        self.setup_layout(\n            \"Prerequisite: Linear Transformations as Space Warping\",\n            [\n                'Linear transformations warp the entire 2D coordinate space.',\n                'Multiplying a matrix by a vector changes its position.',\n                'See our Elastic-Cat stretch across the grid.',\n                'Most vectors shift off their original path.',\n                'They land on entirely new lines after transformation.'\n            ]\n        )\n\n        # Colors\n        PLANE_COLOR = \"#1890FF\"\n        CAT_COLOR = \"#FAAD14\"\n        VECTOR_COLOR = \"#FFFFFF\"\n        HIGHLIGHT_COLOR = \"#FF4D4F\"\n\n        # Grid area constants\n        GRID_CENTER = np.array([3.0, -0.3, 0])\n        \n        # === Animation for Lecture Line 1 ===\n        # Linear transformations warp the entire 2D coordinate space.\n        self.play(self.lecture[0].animate.set_color(PLANE_COLOR))\n        \n        # Create a local coordinate system in the grid area\n        plane = NumberPlane(\n            x_range=[-3, 3, 1],\n            y_range=[-3, 3, 1],\n            background_line_style={\"stroke_color\": PLANE_COLOR, \"stroke_opacity\": 0.4},\n            axis_config={\"stroke_color\": PLANE_COLOR},\n        ).scale(0.7)\n        plane.move_to(GRID_CENTER)\n        \n        self.play(Create(plane))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Multiplying a matrix by a vector changes its position.\n        self.play(self.lecture[1].animate.set_color(VECTOR_COLOR))\n        \n        # Create vectors relative to GRID_CENTER\n        v_coords = [[1, 0, 0], [0, 1, 0], [-1, 1, 0]]\n        vectors = VGroup(*[\n            Arrow(\n                start=GRID_CENTER,\n                end=GRID_CENTER + plane.coords_to_point(c[0], c[1]) - plane.coords_to_point(0,0),\n                buff=0,\n                color=VECTOR_COLOR,\n                stroke_width=4\n            ) for c in v_coords\n        ])\n        \n        # Original paths (dashed) to show \"span\" later\n        spans = VGroup(*[\n            DashedLine(\n                GRID_CENTER - (plane.coords_to_point(c[0], c[1]) - plane.coords_to_point(0,0)) * 2,\n                GRID_CENTER + (plane.coords_to_point(c[0], c[1]) - plane.coords_to_point(0,0)) * 2,\n                color=WHITE,\n                stroke_opacity=0.3\n            ) for c in v_coords\n        ])\n\n        self.play(Create(vectors))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # See our Elastic-Cat stretch across the grid.\n        self.play(self.lecture[2].animate.set_color(CAT_COLOR))\n        \n        # Create a simple cat shape using lines\n        cat_lines = VGroup(\n            Line([-0.6, -0.4, 0], [0.6, -0.4, 0]), # bottom\n            Line([-0.6, -0.4, 0], [-0.6, 0.4, 0]), # left\n            Line([0.6, -0.4, 0], [0.6, 0.4, 0]),   # right\n            Line([-0.6, 0.4, 0], [-0.2, 0.4, 0]),  # top-left\n            Line([0.2, 0.4, 0], [0.6, 0.4, 0]),    # top-right\n            Line([-0.2, 0.4, 0], [-0.4, 0.8, 0]),  # left-ear 1\n            Line([-0.4, 0.8, 0], [0, 0.4, 0]),     # left-ear 2\n            Line([0, 0.4, 0], [0.4, 0.8, 0]),      # right-ear 1\n            Line([0.4, 0.8, 0], [0.2, 0.4, 0]),    # right-ear 2\n        ).set_color(CAT_COLOR).scale(0.8)\n        cat_lines.move_to(GRID_CENTER + UP * 0.5)\n        \n        self.play(Create(cat_lines))\n        self.wait(1)\n\n        # Apply transformation matrix [[1, 1], [0, 1]] (Shear)\n        shear_matrix = [[1, 1, 0], [0, 1, 0], [0, 0, 1]]\n        \n        # We transform the plane, cat, and vectors\n        # Note: apply_matrix usually works about the origin. \n        # We need to apply it relative to GRID_CENTER.\n        \n        self.play(\n            plane.animate.apply_matrix(shear_matrix, about_point=GRID_CENTER),\n            cat_lines.animate.apply_matrix(shear_matrix, about_point=GRID_CENTER),\n            vectors.animate.apply_matrix(shear_matrix, about_point=GRID_CENTER),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Most vectors shift off their original path.\n        self.play(self.lecture[3].animate.set_color(HIGHLIGHT_COLOR))\n        \n        # Show original spans to demonstrate the shift\n        self.add_foreground_mobjects(vectors)\n        self.play(FadeIn(spans))\n        \n        # Highlight vectors that are no longer on their dashed lines\n        # Vector 1 [1,0] -> [1,0] (Stays on span)\n        # Vector 2 [0,1] -> [1,1] (Shifts)\n        # Vector 3 [-1,1] -> [0,1] (Shifts)\n        self.play(\n            vectors[1].animate.set_color(HIGHLIGHT_COLOR),\n            vectors[2].animate.set_color(HIGHLIGHT_COLOR),\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # They land on entirely new lines after transformation.\n        self.play(self.lecture[4].animate.set_color(HIGHLIGHT_COLOR))\n        \n        # Small pulsing effect on the shifted vectors to emphasize the change\n        self.play(\n            vectors[1].animate.scale(1.2, about_point=GRID_CENTER),\n            vectors[2].animate.scale(1.2, about_point=GRID_CENTER),\n        )\n        self.play(\n            vectors[1].animate.scale(1/1.2, about_point=GRID_CENTER),\n            vectors[2].animate.scale(1/1.2, about_point=GRID_CENTER),\n        )\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x6 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\n    def construct(self):\n        # Data\n        title_text = \"Defining Eigenvectors: The Unchanging Directions\"\n        lecture_lines = [\n            'Some special vectors stay on their original span.',\n            'Watch the whisker as the cat stretches diagonally.',\n            'It stays horizontal while everything else tilts.',\n            'These unchanging directions are called eigenvectors.',\n            \"They define the transformation's fundamental axes.\"\n        ]\n        \n        self.setup_layout(title_text, lecture_lines)\n        \n        # Colors\n        CAT_COLOR = \"#FAAD14\"\n        PLANE_COLOR = \"#1890FF\"\n        EIGEN_COLOR = \"#52C41A\"\n        HIGHLIGHT_COLOR = YELLOW\n\n        # Reference center for transformations\n        center_point = (self.grid[\"A1\"] + self.grid[\"F6\"]) / 2\n\n        # === Animation for Lecture Line 1 ===\n        # Display the cat shape on the NumberPlane\n        plane = NumberPlane(\n            x_range=[-4, 4, 1], y_range=[-4, 4, 1],\n            x_length=6, y_length=6,\n            background_line_style={\"stroke_color\": PLANE_COLOR, \"stroke_opacity\": 0.4}\n        )\n        \n        # Create a simple stylized cat face\n        face = Circle(radius=0.6, color=CAT_COLOR, fill_opacity=0.2)\n        left_ear = Polygon([-0.4, 0.4, 0], [-0.6, 0.9, 0], [-0.1, 0.6, 0], color=CAT_COLOR)\n        right_ear = Polygon( [0.4, 0.4, 0], [0.6, 0.9, 0], [0.1, 0.6, 0], color=CAT_COLOR)\n        # Whiskers - w2 is the horizontal one that will be the eigenvector\n        w1 = Line([-0.3, 0.1, 0], [-0.9, 0.3, 0], color=CAT_COLOR)\n        w2 = Line([-0.3, 0, 0], [-1.0, 0, 0], color=CAT_COLOR) \n        w3 = Line([-0.3, -0.1, 0], [-0.9, -0.3, 0], color=CAT_COLOR)\n        w4 = Line([0.3, 0.1, 0], [0.9, 0.3, 0], color=CAT_COLOR)\n        w5 = Line([0.3, 0, 0], [0.9, 0, 0], color=CAT_COLOR)\n        w6 = Line([0.3, -0.1, 0], [0.9, -0.3, 0], color=CAT_COLOR)\n        \n        cat = VGroup(face, left_ear, right_ear, w1, w2, w3, w4, w5, w6)\n        \n        viz_group = VGroup(plane, cat)\n        self.place_in_area(viz_group, 'A1', 'F6', scale_factor=0.8)\n        \n        self.lecture[0].set_color(HIGHLIGHT_COLOR)\n        self.play(FadeIn(plane), FadeIn(cat))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(HIGHLIGHT_COLOR)\n        \n        # Convert w2 into a prominent vector\n        whisker_vector = Arrow(\n            start=w2.get_start(),\n            end=w2.get_end(),\n            buff=0,\n            color=EIGEN_COLOR,\n            stroke_width=6\n        )\n        \n        self.play(\n            FadeIn(whisker_vector),\n            w2.animate.set_stroke(opacity=0)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(HIGHLIGHT_COLOR)\n        \n        # Matrix to apply diagonal stretch/shear: [[2, 1], [0, 1]]\n        matrix = [[2, 1], [0, 1]]\n        \n        # Transform the cat and the whisker vector centered at the cat's center\n        self.play(\n            cat.animate.apply_matrix(matrix, about_point=center_point),\n            whisker_vector.animate.apply_matrix(matrix, about_point=center_point),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(HIGHLIGHT_COLOR)\n        \n        v_start = whisker_vector.get_start()\n        v_end = whisker_vector.get_end()\n        v_dir = v_end - v_start\n        v_dir_norm = v_dir / (np.linalg.norm(v_dir) + 1e-8)\n        \n        span_line = DashedLine(\n            start=v_start - 4 * v_dir_norm,\n            end=v_start + 2 * v_dir_norm,\n            color=EIGEN_COLOR,\n            stroke_width=2,\n            dash_length=0.1\n        )\n        \n        self.play(Create(span_line))\n        self.add(whisker_vector)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(HIGHLIGHT_COLOR)\n        \n        label = Text(\"Eigenvector\", font_size=20, color=EIGEN_COLOR)\n        self.place_at_grid(label, 'B3', scale_factor=1.0)\n        \n        pointer = Arrow(\n            start=label.get_bottom(),\n            end=whisker_vector.get_center() + UP*0.1,\n            buff=0.1,\n            color=EIGEN_COLOR,\n            stroke_width=3,\n            max_tip_length_to_length_ratio=0.15\n        )\n        \n        self.play(Write(label), GrowArrow(pointer))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (6x6 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1.0\n                y = 2.2 - i * 1.0\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\n    def construct(self):\n        # Setup layout\n        title_text = \"Defining Eigenvalues: The Scale of Change\"\n        lecture_lines = [\n            \"Eigenvalues measure how much eigenvectors stretch or shrink.\",\n            \"If the whisker triples in length, lambda is three.\",\n            \"Negative values mean the vector flips direction.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Vector styling\n        EIGENVECTOR_COLOR = \"#52C41A\"\n        SCALAR_COLOR = \"#F5222D\"\n        \n        # === Animation for Lecture Line 1 ===\n        # Line 1: Eigenvalues measure how much eigenvectors stretch or shrink.\n        self.lecture[0].set_color(YELLOW)\n        \n        # Base eigenvector (unit length)\n        # Using grid points: D2 is x=1.5, D3 is x=2.5. Vector points from D2 to D3 (length 1).\n        v_start = self.grid[\"D2\"]\n        v_end_1 = self.grid[\"D3\"]\n        vec = Arrow(v_start, v_end_1, color=EIGENVECTOR_COLOR, buff=0, stroke_width=6)\n        \n        # Labeling the vector with Text \"v\"\n        vec_label = Text(\"v\", color=EIGENVECTOR_COLOR, font_size=24, slant=ITALIC)\n        self.place_at_grid(vec_label, \"E2\", scale_factor=0.8) # Positioned near start\n        \n        self.play(GrowArrow(vec), FadeIn(vec_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Line 2: If the whisker triples in length, lambda is three.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Scale the vector from length 1 to length 3\n        # D2 is x=1.5. D5 is x=4.5. Distance = 3.0.\n        v_end_3 = self.grid[\"D5\"]\n        vec_3 = Arrow(v_start, v_end_3, color=EIGENVECTOR_COLOR, buff=0, stroke_width=6)\n        \n        # Label λ = 3 (Using Unicode Lambda)\n        lambda_3_label = Text(\"λ = 3\", color=SCALAR_COLOR, font_size=32)\n        self.place_at_grid(lambda_3_label, \"C4\")\n        \n        # Equation Av = 3v constructed via Text VGroup\n        eq_parts = VGroup(\n            Text(\"A\", color=WHITE, font_size=28, weight=BOLD),\n            Text(\"v\", color=EIGENVECTOR_COLOR, font_size=28, slant=ITALIC),\n            Text(\" = \", color=WHITE, font_size=28),\n            Text(\"3\", color=SCALAR_COLOR, font_size=32),\n            Text(\"v\", color=EIGENVECTOR_COLOR, font_size=28, slant=ITALIC)\n        ).arrange(RIGHT, buff=0.1)\n        self.place_at_grid(eq_parts, \"B4\")\n        \n        self.play(\n            ReplacementTransform(vec, vec_3),\n            FadeIn(lambda_3_label),\n            FadeIn(eq_parts)\n        )\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Line 3: Negative values mean the vector flips direction.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Flip the vector: Point to x=0.5 (D1). Start is x=1.5 (D2). Length is 1, but flipped.\n        v_end_neg = self.grid[\"D1\"]\n        vec_neg = Arrow(v_start, v_end_neg, color=EIGENVECTOR_COLOR, buff=0, stroke_width=6)\n        \n        # Label λ = -1\n        lambda_neg_label = Text(\"λ = -1\", color=SCALAR_COLOR, font_size=32)\n        self.place_at_grid(lambda_neg_label, \"C1\")\n        \n        # Update equation to Av = -1v\n        eq_neg_parts = VGroup(\n            Text(\"A\", color=WHITE, font_size=28, weight=BOLD),\n            Text(\"v\", color=EIGENVECTOR_COLOR, font_size=28, slant=ITALIC),\n            Text(\" = \", color=WHITE, font_size=28),\n            Text(\"-1\", color=SCALAR_COLOR, font_size=32),\n            Text(\"v\", color=EIGENVECTOR_COLOR, font_size=28, slant=ITALIC)\n        ).arrange(RIGHT, buff=0.1)\n        self.place_at_grid(eq_neg_parts, \"B1\")\n        \n        self.play(\n            ReplacementTransform(vec_3, vec_neg),\n            ReplacementTransform(lambda_3_label, lambda_neg_label),\n            ReplacementTransform(eq_parts, eq_neg_parts)\n        )\n        self.wait(3)\n\n        # Reset final color\n        self.lecture[2].set_color(WHITE)\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (6x6 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\n    def construct(self):\n        # Initial Setup\n        title = \"The Characteristic Equation: Finding the Secret Directions\"\n        lines = [\n            'We solve Av equals \\u03bbv for these vectors.', \n            'Rearranging gives the determinant of A minus \\u03bbI.', \n            'Setting the determinant to zero collapses the space.', \n            'This collapse identifies our valid eigenvalues.', \n            'Then, finding the null space yields eigenvectors.'\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        COLOR_EQ = \"#FFFFFF\"\n        COLOR_PLANE = \"#1890FF\"\n        COLOR_HIGHLIGHT = \"#F5222D\"\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        # Av = lambda v\n        eq1 = Text(\"A v = \\u03bb v\", font_size=36, color=COLOR_EQ)\n        self.place_at_grid(eq1, \"B3\", scale_factor=1.2)\n        self.play(FadeIn(eq1))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n\n        # (A - lambda I)v = 0\n        eq2 = Text(\"(A - \\u03bb I) v = 0\", font_size=36, color=COLOR_EQ)\n        self.place_at_grid(eq2, \"B3\", scale_factor=1.2)\n        \n        self.play(ReplacementTransform(eq1, eq2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n\n        # NumberPlane\n        plane = NumberPlane(\n            x_range=[-3, 3, 1],\n            y_range=[-3, 3, 1],\n            background_line_style={\"stroke_color\": COLOR_PLANE, \"stroke_opacity\": 0.4}\n        )\n        self.place_in_area(plane, \"D2\", \"F6\", scale_factor=0.6)\n        \n        mat_label = Text(\"A - \\u03bb I =\", font_size=24, color=WHITE)\n        self.place_at_grid(mat_label, \"D1\", scale_factor=0.8)\n        \n        def get_mat(lam_val):\n            m_txt = VGroup(\n                Text(f\"{3-lam_val:.1f}\", font_size=20), Text(\"1.0\", font_size=20),\n                Text(\"2.0\", font_size=20), Text(f\"{2-lam_val:.1f}\", font_size=20)\n            ).arrange_in_grid(rows=2, buff=0.4)\n            bracket_l = Text(\"[\", font_size=40).next_to(m_txt, LEFT, buff=0.1)\n            bracket_r = Text(\"]\", font_size=40).next_to(m_txt, RIGHT, buff=0.1)\n            return VGroup(bracket_l, m_txt, bracket_r).set_color(WHITE)\n\n        curr_mat = get_mat(0.0)\n        self.place_at_grid(curr_mat, \"D2\", scale_factor=1.0)\n        \n        self\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Setup layout\n        title = \"The Eigenbasis: A Better Point of View\"\n        lines = [\n            \"Eigenvectors can form a new, natural coordinate system.\",\n            \"This Eigenbasis makes complex transformations look simple.\",\n            \"It turns matrix powers into easy diagonal math.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        GRID_COLOR = \"#52C41A\"\n        VECTOR_COLOR = \"#FAAD14\"\n        POWER_COLOR = \"#F5222D\"\n        TEXT_COLOR = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(GRID_COLOR)\n        \n        # Create basis vectors\n        v1 = np.array([1.0, 0.4, 0])\n        v2 = np.array([-0.3, 0.8, 0])\n        \n        basis_v1 = Arrow(ORIGIN, v1, color=GRID_COLOR, buff=0)\n        basis_v2 = Arrow(ORIGIN, v2, color=GRID_COLOR, buff=0)\n        label_v1 = Text(\"v\\u2081\", font_size=18, color=GRID_COLOR).next_to(v1, RIGHT, buff=0.1)\n        label_v2 = Text(\"v\\u2082\", font_size=18, color=GRID_COLOR).next_to(v2, UP, buff=0.1)\n        \n        # Create tilted grid lines\n        tilted_grid = VGroup()\n        for i in range(-3, 4):\n            # Lines parallel to v1\n            start1 = i * v2 - 2.5 * v1\n            end1 = i * v2 + 2.5 * v1\n            line1 = Line(start1, end1, stroke_width=1, stroke_opacity=0.4, color=GRID_COLOR)\n            tilted_grid.add(line1)\n            \n            # Lines parallel to v2\n            start2 = i * v1 - 2.5 * v2\n            end2 = i * v1 + 2.5 * v2\n            line2 = Line(start2, end2, stroke_width=1, stroke_opacity=0.4, color=GRID_COLOR)\n            tilted_grid.add(line2)\n\n        grid_group = VGroup(tilted_grid, basis_v1, basis_v2, label_v1, label_v2)\n        self.place_in_area(grid_group, \"B2\", \"E6\", scale_factor=0.8)\n        \n        self.play(FadeIn(tilted_grid))\n        self.play(GrowArrow(basis_v1), GrowArrow(basis_v2), Write(label_v1), Write(label_v2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(VECTOR_COLOR)\n        \n        # A vector in eigenbasis coordinates: w = 1.0*v1 + 1.0*v2\n        # Transformed: Aw = 1.5*v1 + 0.5*v2\n        origin_point = grid_group.get_center() # The center where we placed it\n        vec_w = Arrow(origin_point, origin_point + v1*0.8 + v2*0.8, color=VECTOR_COLOR, buff=0)\n        label_w = Text(\"w\", font_size=18, color=VECTOR_COLOR).next_to(vec_w.get_end(), UR, buff=0.05)\n        \n        self.play(GrowArrow(vec_w), Write(label_w))\n        self.wait(1)\n        \n        # Show scaling transformation\n        vec_w_transformed = Arrow(origin_point, origin_point + 1.5*v1*0.8 + 0.5*v2*0.8, color=VECTOR_COLOR, buff=0)\n        \n        self.play(\n            ReplacementTransform(vec_w, vec_w_transformed),\n            label_w.animate.move_to(vec_w_transformed.get_end() + UR*0.15)\n        )\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(POWER_COLOR)\n        \n        # Matrix D\n        d_label = Text(\"D = \", font_size=24, color=TEXT_COLOR)\n        d_mat = VGroup(\n            Text(\"[\", font_size=40, color=TEXT_COLOR),\n            VGroup(\n                VGroup(Text(\"\\u03BB\\u2081\", color=POWER_COLOR), Text(\"0\", color=TEXT_COLOR)).arrange(RIGHT, buff=0.6),\n                VGroup(Text(\"0\", color=TEXT_COLOR), Text(\"\\u03BB\\u2082\", color=POWER_COLOR)).arrange(RIGHT, buff=0.6)\n            ).arrange(DOWN, buff=0.3),\n            Text(\"]\", font_size=40, color=TEXT_COLOR)\n        ).arrange(RIGHT, buff=0.1)\n        d_group = VGroup(d_label, d_mat).arrange(RIGHT, buff=0.2)\n        \n        self.place_at_grid(d_group, \"A4\", scale_factor=0.8)\n        \n        # Decomposition equation\n        decomp_eq = VGroup(\n            Text(\"A = P \", color=TEXT_COLOR),\n            Text(\"D\", color=POWER_COLOR),\n            Text(\" P\", color=TEXT_COLOR),\n            Text(\"-1\", font_size=16, color=TEXT_COLOR).shift(UP*0.2)\n        ).arrange(RIGHT, buff=0.05)\n        \n        self.place_at_grid(decomp_eq, \"F4\", scale_factor=1.0)\n        \n        self.play(FadeIn(d_group))\n        self.play(Write(decomp_eq))\n        self.wait(1)\n        \n        # Animate A^10\n        power_eq = Text(\"A\\u00B9\\u2070\", font_size=28, color=POWER_COLOR)\n        self.place_at_grid(power_eq, \"F2\", scale_factor=1.0)\n        \n        # Transformation: Basis v1 scales significantly, v2 shrinks\n        basis_v1_long = Arrow(origin_point, origin_point + v1*2.5, color=POWER_COLOR, buff=0)\n        basis_v2_short = Arrow(origin_point, origin_point + v2*0.1, color=POWER_COLOR, buff=0)\n        \n        self.play(Write(power_eq))\n        self.play(\n            ReplacementTransform(basis_v1, basis_v1_long),\n            ReplacementTransform(basis_v2, basis_v2_short),\n            FadeOut(vec_w_transformed),\n            FadeOut(label_w)\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (6x6 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\n    def construct(self):\n        # Initial layout setup\n        self.setup_layout(\n            \"Real-world Application & Summary\", \n            [\n                'Eigenvectors reveal the core DNA of transformations.', \n                \"They power Google's search and facial recognition systems.\", \n                'Understanding them unlocks the heart of linear algebra.'\n            ]\n        )\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(\"#52C41A\"))\n        \n        # Flow chart elements: Matrix -> Eigenvectors (#52C41A) -> Eigenvalues (#F5222D)\n        matrix_txt = Text(\"Matrix\", font_size=24)\n        arrow1 = Text(\"→\", font_size=24)\n        eigenvec_txt = Text(\"Eigenvectors\", font_size=24, color=\"#52C41A\")\n        arrow2 = Text(\"→\", font_size=24)\n        eigenval_txt = Text(\"Eigenvalues\", font_size=24, color=\"#F5222D\")\n        \n        flow_group = VGroup(matrix_txt, arrow1, eigenvec_txt, arrow2, eigenval_txt).arrange(RIGHT, buff=0.3)\n        self.place_in_area(flow_group, \"B1\", \"B6\", scale_factor=0.9)\n        \n        self.play(FadeIn(flow_group))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(\"#FAAD14\"))\n        \n        # Facial outline (#FAAD14) with arrows indicating primary 'directions'\n        face_outline = Circle(radius=1.2, color=\"#FAAD14\")\n        eye_l = Circle(radius=0.15, color=\"#FAAD14\").shift(LEFT * 0.4 + UP * 0.3)\n        eye_r = Circle(radius=0.15, color=\"#FAAD14\").shift(RIGHT * 0.4 + UP * 0.3)\n        mouth = Arc(radius=0.5, start_angle=TAU * 0.6, angle=TAU * 0.3, color=\"#FAAD14\").shift(DOWN * 0.4)\n        face = VGroup(face_outline, eye_l, eye_r, mouth)\n        \n        # Eigenface Arrows\n        arrow_v = Arrow(start=ORIGIN, end=UP * 1.0, color=\"#52C41A\", buff=0)\n        arrow_h = Arrow(start=ORIGIN, end=RIGHT * 0.8, color=\"#52C41A\", buff=0)\n        eigen_arrows = VGroup(arrow_v, arrow_h)\n        \n        face_viz = VGroup(face, eigen_arrows)\n        self.place_in_area(face_viz, \"D1\", \"F6\", scale_factor=0.7)\n        \n        self.play(Create(face))\n        self.play(GrowArrow(arrow_v), GrowArrow(arrow_h))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(\"#FFFFFF\"))\n        \n        # Final title centering\n        final_title = Text(\"The DNA of Linear Transformations\", font_size=36, color=\"#FFFFFF\")\n        final_title.move_to(ORIGIN)\n        \n        # Background box for clarity\n        final_bg = Rectangle(width=12, height=2, fill_color=BLACK, fill_opacity=0.8, stroke_width=0)\n        final_bg.move_to(ORIGIN)\n        \n        self.play(FadeIn(final_bg), FadeIn(final_title))\n        self.play(Flash(final_title, color=WHITE, line_length=0.3, flash_radius=2.5))\n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "Decoding the DNA of Linear Transformations: Eigenvectors, Eigenvalues, and Eigenbasis",
+    "target_audience": "Undergraduate students in STEM or advanced high school students with a background in basic matrix multiplication.",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "Prerequisite: Linear Transformations as Space Warping",
+        "content": "Introduce the concept that multiplying a vector by a matrix 'transforms' space. Use a 2D grid to show how space can stretch, rotate, or shear. Explain that most vectors knock off their original span (line) during this transformation.",
+        "example": "Visualize a character named 'Elastic-Cat' on a 2D coordinate plane. When a matrix is applied, the cat stretches diagonally. Most points on the cat move to entirely new directions relative to the origin."
+      },
+      {
+        "id": "section_2",
+        "title": "Defining Eigenvectors: The Unchanging Directions",
+        "content": "Define an eigenvector as a special vector that stays on its own span after the transformation. While the rest of the world rotates or tilts, these vectors only get longer, shorter, or flip direction—they never leave their original line.",
+        "example": "In the 'Elastic-Cat' stretch, notice a specific whisker pointing exactly along the X-axis. Even as the cat grows larger, that whisker stays perfectly horizontal. That whisker is an eigenvector."
+      },
+      {
+        "id": "section_3",
+        "title": "Defining Eigenvalues: The Scale of Change",
+        "content": "Introduce the eigenvalue (λ). It is the scalar factor by which the eigenvector is stretched or compressed. If λ > 1, it stretches; if 0 < λ < 1, it shrinks; if λ is negative, it flips direction.",
+        "example": "If the 'Horizontal Whisker' (eigenvector) was 1 unit long and becomes 3 units long after the transformation, the eigenvalue λ equals 3. If it stayed the same length, λ would be 1."
+      },
+      {
+        "id": "section_4",
+        "title": "The Characteristic Equation: Finding the Secret Directions",
+        "content": "Transition to the mathematical representation: Av = λv. Explain that we solve det(A - λI) = 0 to find the eigenvalues, and then find the null space to get the eigenvectors. Use a geometric intuition for 'determinant equals zero' (collapsing space).",
+        "example": "Show a 2x2 matrix A. Through an animation, subtract λ from the diagonal, showing how changing λ 'squashes' the transformation until it flattens space into a line—this specific λ is our eigenvalue."
+      },
+      {
+        "id": "section_5",
+        "title": "The Eigenbasis: A Better Point of View",
+        "content": "Explain that if we have enough eigenvectors, we can use them as a new coordinate system (a basis). In this 'Eigenbasis,' the complex matrix transformation becomes a simple diagonal matrix, making calculations like 'Matrix Power' (A^n) incredibly easy.",
+        "example": "Imagine a bird flying diagonally. Instead of describing its movement using awkward X and Y coordinates, we tilt our entire coordinate grid to align with the bird's path and its wings. This 'tilted grid' is the Eigenbasis, making the bird's flight math simple."
+      },
+      {
+        "id": "section_6",
+        "title": "Real-world Application & Summary",
+        "content": "Summarize the flow: Matrix -> Eigenvectors (Directions) -> Eigenvalues (Magnitude) -> Eigenbasis (Simplified Worldview). Mention real-world usage like PageRank (Google) or Facial Recognition (Eigenfaces).",
+        "example": "Show how 'Eigenfaces' uses these concepts to identify the most important features in a human face, ignoring the noise and focusing on the primary 'directions' of facial variance."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "Prerequisite: Linear Transformations as Space Warping",
+      "lecture_lines": [
+        "Matrix multiplication warps the entire coordinate space.",
+        "Watch our Elastic-Cat stretch under this linear transformation.",
+        "Most vectors shift away from their original lines."
+      ],
+      "animations": [
+        "Draw a 2D NumberPlane (#1890FF) and a cat [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/cat.png].",
+        "Animate the NumberPlane and the cat [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/cat.png] shearing via a linear transformation matrix [[1, 1], [0, 1]].",
+        "Highlight several white vectors (#FFFFFF) that have moved off their original span during the transformation."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Defining Eigenvectors: The Unchanging Directions",
+      "lecture_lines": [
+        "Some special vectors stay on their original span.",
+        "Watch the whisker as the cat stretches diagonally.",
+        "It stays horizontal while everything else tilts.",
+        "These unchanging directions are called eigenvectors.",
+        "They define the transformation's fundamental axes."
+      ],
+      "animations": [
+        "Display the sheared 'cat' shape [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/cat.png] (#FAAD14) on the NumberPlane (#1890FF) from the previous section.",
+        "Highlight a specific horizontal whisker vector (#52C41A) that still lies on the x-axis.",
+        "Animate the whisker scaling in length (factor of 2) while remaining strictly on its original line.",
+        "Draw a dashed line (#52C41A) extending through the whisker to represent its span.",
+        "Label the highlighted whisker \"Eigenvector\" (#52C41A) with a simple pointer."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "Defining Eigenvalues: The Scale of Change",
+      "lecture_lines": [
+        "Eigenvalues measure how much eigenvectors stretch or shrink.",
+        "If the whisker triples in length, lambda is three.",
+        "Negative values mean the vector flips direction."
+      ],
+      "animations": [
+        "Scale the horizontal eigenvector (#52C41A) from length 1 to length 3.",
+        "Display the label 'λ = 3' (#F5222D) prominently next to the stretching vector.",
+        "Show the equation 'Av = 3v' (#FFFFFF) with the scalar '3' highlighted in red (#F5222D) as Whis [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/whis.svg] points to the relationship."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Characteristic Equation: Finding the Secret Directions",
+      "lecture_lines": [
+        "We solve Av equals lambda v for these vectors.",
+        "Rearranging gives the determinant of A minus lambda I.",
+        "Setting the determinant to zero collapses the space.",
+        "This collapse identifies our valid eigenvalues.",
+        "Then, finding the null space yields eigenvectors."
+      ],
+      "animations": [
+        "Display the equation 'Av = λv' (#FFFFFF) and animate its transition to '(A - λI)v = 0' (#FFFFFF).",
+        "Show a 2D NumberPlane (#1890FF) warping dynamically as a λ slider [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/slider.svg] is adjusted.",
+        "Animate the NumberPlane squashing into a single line when λ reaches a specific value.",
+        "Flash the text 'det(A - λI) = 0' (#F5222D) in bold when the space collapses.",
+        "Display the resulting eigenvalue λ (#F5222D) next to the collapsed grid."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Eigenbasis: A Better Point of View",
+      "lecture_lines": [
+        "Eigenvectors can form a natural coordinate system.",
+        "In this Eigenbasis, transformations only scale vectors.",
+        "This turns complex matrices into simple diagonal ones.",
+        "We decompose the matrix using these fundamental directions.",
+        "Now, calculating high matrix powers becomes instant scaling."
+      ],
+      "animations": [
+        "Construct a new coordinate grid (#52C41A) using two eigenvectors as the basis vectors.",
+        "Transform a vector (#FAAD14) on this grid, showing it only scales along the new axes.",
+        "Display a diagonal matrix D (#FFFFFF) with eigenvalues on the main diagonal.",
+        "Show the matrix decomposition equation 'A = PDP⁻¹' (#FFFFFF) with 'D' highlighted.",
+        "Animate 'A^10' by showing the basis vectors scaling by 'λ^10' (#F5222D) instantly."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Real-world Application & Summary",
+      "lecture_lines": [
+        "Eigenvectors reveal the core DNA of transformations.",
+        "They power Google's search and facial recognition systems.",
+        "Understanding them unlocks the heart of linear algebra."
+      ],
+      "animations": [
+        "Display a summary flow chart: Matrix → Eigenvectors (#52C41A) → Eigenvalues (#F5222D).",
+        "Show a facial outline [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/face.svg] (#FAAD14) with arrows indicating primary 'directions' of facial features (Eigenfaces).",
+        "Fade in the final title: 'The DNA of Linear Transformations' (#FFFFFF) centered on screen."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Reduced section 1 to 3 concise lines (max 10 words) matching the 3 animation stages."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for Section 1 based on the high-level plan. Waiting for ScriptWriter to provide matching lecture lines."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section1Scene with teaching grid system, linear transformation animation (shearing), and visual markers for vectors shifting off their span. Verified use of Text instead of Tex and appropriate colors/grid positions."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 2 defining eigenvectors using the unchanging whisker example."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 codable animation steps for Section 2 (key section) focusing on the definition of eigenvectors."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 2. Created a 'Section2' class inheriting from 'TeachingScene'. Implemented the 5 animation steps:\n1. Displayed a stylized cat face on a NumberPlane.\n2. Highlighted a horizontal whisker using a green arrow.\n3. Applied a diagonal stretch/shear transformation matrix [[2, 1], [0, 1]] to the cat and whisker, demonstrating that the horizontal whisker stays on the x-axis and only scales in length.\n4. Added a dashed line representing the span of the eigenvector.\n5. Labeled the whisker as 'Eigenvector' with a pointer.\nAll elements are positioned using the 6x6 grid system. No 'Tex' or 'MathTex' was used."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 3 defining eigenvalues as scaling factors."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for Section 3 defining eigenvalues."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 3 following all constraints: no Tex, grid system for positioning, lecture line highlighting, and specific colors for eigenvalues and eigenvectors."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 4 explaining the characteristic equation and space collapse."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 codable animation steps for Section 4 (key section) explaining the characteristic equation."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Section4 Manim code with characteristic equation derivation, matrix visualization, and plane transformation. Using Unicode lambda and grid system."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Expanded section 5 to 5 concise lines (max 10 words) matching the 5 animation stages."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 codable animation steps for Section 5 (key section) demonstrating the eigenbasis and diagonalization."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 5: The Eigenbasis. Used the visual anchor system with a tilted grid constructed from eigenvectors. Displayed matrix decomposition A=PDP^-1 and animated A^10 by scaling basis vectors. Followed all constraints regarding color-coding and avoiding TeX."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 6 summarizing applications and core concepts."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for Section 6 summarizing the video and showing applications."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 6 including flowchart, facial recognition visualization, and final title summary. Adhered to grid system, color requirements, and base class constraints."
+    },
+    {
+      "id": 19,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "The AnimationPlanner has defined the animation stages for all sections (1-6). Please write concise lecture lines (max 10 words each) that align one-to-one with these stages. Section 1: 3 lines. Section 2: 5 lines (key). Section 3: 3 lines. Section 4: 5 lines (key). Section 5: 5 lines (key). Section 6: 3 lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated all sections (1-6) to ensure 1:1 alignment with animation stages and adherence to word count constraints. Section 1 (3), Section 2 (5), Section 3 (3), Section 4 (5), Section 5 (5), Section 6 (3)."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Draw a 2D NumberPlane (#1890FF) and a cat [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/cat.png].', 'Animate the NumberPlane and the cat [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/cat.png] shearing via a linear transformation matrix [[1, 1], [0, 1]].']",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Display the sheared 'cat' shape [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/cat.png] (#FAAD14) on the NumberPlane (#1890FF) from the previous section.\"]",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 22,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Show the equation 'Av = 3v' (#FFFFFF) with the scalar '3' highlighted in red (#F5222D) as Whis [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/whis.svg] points to the relationship.\"]",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a 2D NumberPlane (#1890FF) warping dynamically as a λ slider [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/slider.svg] is adjusted.']",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Show a facial outline [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/face.svg] (#FAAD14) with arrows indicating primary 'directions' of facial features (Eigenfaces).\"]",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The coordinate grid transformation causes grid lines to expand and obstruct the left-side lecture notes area. Fix: Line 12: self.place_in_area(grid, 'B2', 'F6', scale_factor=0.8) (line=12, object=grid)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The cat asset is scaled too large, causing it to obscure the grid lines and vectors during the transformation. Fix: Line 18: self.place_at_grid(cat, 'D4', scale_factor=0.4) (line=18, object=cat)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The vectors are not optimally centered within the right-side visual anchor system, leading to poor grid utilization. Fix: Line 24: self.place_in_area(vector_group, 'C3', 'E5', scale_factor=0.6) (line=24, object=vector_group)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'Eigenvector' label and its associated arrows overlap with the top of the cat visualization (ears and whiskers) as it transforms, creating visual clutter. Fix: Line 199: self.place_at_grid('A2', scale_factor=0.8) (line=199, object=label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The negative eigenvalue equation (Av = -1v) at B1 is horizontally inconsistent with the positive eigenvalue equation (Av = 3v) at B4, causing a distracting jump. Fix: Line 171: self.place_at_grid(eq_neg_parts, 'B4') (line=171, object=eq_neg_parts)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The label 'λ = -1' is positioned at C1, which is misaligned with the previous state's label at C4 and crowds the lecture text area. Fix: Line 161: self.place_at_grid(lambda_neg_label, 'C4') (line=161, object=lambda_neg_label)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The vector label 'v' at E2 is positioned at the very edge of the animation grid, which feels cramped against the lecture notes margin. Fix: Line 114: self.place_at_grid(vec_label, 'E3', scale_factor=0.8) (line=114, object=vec_label)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The current matrix (curr_mat) at D2 overlaps with the transformation plane which occupies the D2-F6 area. Fix: Line 149: self.place_at_grid(curr_mat, 'B5', scale_factor=1.0) (line=149, object=curr_mat)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The matrix label (mat_label) at D1 is positioned too close to the lecture notes on the left, risking visual clutter and poor boundary separation. Fix: Line 137: self.place_at_grid(mat_label, 'A5', scale_factor=0.8) (line=137, object=mat_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: Equations eq1 and eq2 at B3 are too central and large, which will crowd the upper-right space once the matrix elements are introduced. Fix: Line 109: self.place_at_grid(eq1, 'B2', scale_factor=1.0); Line 119: self.place_at_grid(eq2, 'B2', scale_factor=1.0) (line=109, object=eq1, eq2)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The power calculation equation (power_eq) at F2 is positioned too far to the left, which crowds the lecture notes and creates an unbalanced bottom row. Fix: Line 151: self.place_at_grid(power_eq, 'F3', scale_factor=1.0) (line=151, object=power_eq)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The diagonal matrix (d_group) at A4 is vertically cramped at the top of the frame, lacking sufficient margin. Fix: Line 133: self.place_in_area(d_group, 'A3', 'A5', scale_factor=0.8) (line=133, object=d_group)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The matrix decomposition equation (decomp_eq) at F4 is not optimally balanced horizontally once the power equation is shifted to F3. Fix: Line 143: self.place_at_grid(decomp_eq, 'F5', scale_factor=1.0) (line=143, object=decomp_eq)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The summary text 'The DNA of Linear Transformations' expands from the flow_group and obstructs the lecture notes on the left side of the screen. Fix: Line 110: self.place_in_area(flow_group, 'A1', 'C6', scale_factor=0.7) (line=110, object=flow_group)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The face_viz animation is positioned too low and is scaled too large, causing potential clipping at the bottom edge. Fix: Line 131: self.place_in_area(face_viz, 'D2', 'F5', scale_factor=0.6) (line=131, object=face_viz)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 499422,
+        "video_mtime_ns": 1778572057469411424,
+        "code_sha1": "48357eddc98ba13ff4d0935a5ad8d1367ec40cc0"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The coordinate grid transformation causes grid lines to expand and obstruct the left-side lecture notes area.",
+              "solution": "Line 12: self.place_in_area(grid, 'B2', 'F6', scale_factor=0.8)",
+              "line_number": 12,
+              "object_affected": "grid"
+            },
+            {
+              "problem": "The cat asset is scaled too large, causing it to obscure the grid lines and vectors during the transformation.",
+              "solution": "Line 18: self.place_at_grid(cat, 'D4', scale_factor=0.4)",
+              "line_number": 18,
+              "object_affected": "cat"
+            },
+            {
+              "problem": "The vectors are not optimally centered within the right-side visual anchor system, leading to poor grid utilization.",
+              "solution": "Line 24: self.place_in_area(vector_group, 'C3', 'E5', scale_factor=0.6)",
+              "line_number": 24,
+              "object_affected": "vector_group"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        25,
+        26,
+        27
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 247028,
+        "video_mtime_ns": 1778572157006076680,
+        "code_sha1": "5531960e30b0799c94bfa983f40f1fe6fff5f4b0"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'Eigenvector' label and its associated arrows overlap with the top of the cat visualization (ears and whiskers) as it transforms, creating visual clutter.",
+              "solution": "Line 199: self.place_at_grid('A2', scale_factor=0.8)",
+              "line_number": 199,
+              "object_affected": "label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        28
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 109692,
+        "video_mtime_ns": 1778572107103931423,
+        "code_sha1": "4f3bc04c66f056cbc7b95159286ed39b37ae03e6"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The negative eigenvalue equation (Av = -1v) at B1 is horizontally inconsistent with the positive eigenvalue equation (Av = 3v) at B4, causing a distracting jump.",
+              "solution": "Line 171: self.place_at_grid(eq_neg_parts, 'B4')",
+              "line_number": 171,
+              "object_affected": "eq_neg_parts"
+            },
+            {
+              "problem": "The label 'λ = -1' is positioned at C1, which is misaligned with the previous state's label at C4 and crowds the lecture text area.",
+              "solution": "Line 161: self.place_at_grid(lambda_neg_label, 'C4')",
+              "line_number": 161,
+              "object_affected": "lambda_neg_label"
+            },
+            {
+              "problem": "The vector label 'v' at E2 is positioned at the very edge of the animation grid, which feels cramped against the lecture notes margin.",
+              "solution": "Line 114: self.place_at_grid(vec_label, 'E3', scale_factor=0.8)",
+              "line_number": 114,
+              "object_affected": "vec_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        29,
+        30,
+        31
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 77513,
+        "video_mtime_ns": 1778572090894141537,
+        "code_sha1": "93bee5ffad903d1dabb9ca4942caf4b14597cfea"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The current matrix (curr_mat) at D2 overlaps with the transformation plane which occupies the D2-F6 area.",
+              "solution": "Line 149: self.place_at_grid(curr_mat, 'B5', scale_factor=1.0)",
+              "line_number": 149,
+              "object_affected": "curr_mat"
+            },
+            {
+              "problem": "The matrix label (mat_label) at D1 is positioned too close to the lecture notes on the left, risking visual clutter and poor boundary separation.",
+              "solution": "Line 137: self.place_at_grid(mat_label, 'A5', scale_factor=0.8)",
+              "line_number": 137,
+              "object_affected": "mat_label"
+            },
+            {
+              "problem": "Equations eq1 and eq2 at B3 are too central and large, which will crowd the upper-right space once the matrix elements are introduced.",
+              "solution": "Line 109: self.place_at_grid(eq1, 'B2', scale_factor=1.0); Line 119: self.place_at_grid(eq2, 'B2', scale_factor=1.0)",
+              "line_number": 109,
+              "object_affected": "eq1, eq2"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 327129,
+        "video_mtime_ns": 1778572048240123938,
+        "code_sha1": "a8b75f43883bf01be165d89656f619a31de2b06c"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The power calculation equation (power_eq) at F2 is positioned too far to the left, which crowds the lecture notes and creates an unbalanced bottom row.",
+              "solution": "Line 151: self.place_at_grid(power_eq, 'F3', scale_factor=1.0)",
+              "line_number": 151,
+              "object_affected": "power_eq"
+            },
+            {
+              "problem": "The diagonal matrix (d_group) at A4 is vertically cramped at the top of the frame, lacking sufficient margin.",
+              "solution": "Line 133: self.place_in_area(d_group, 'A3', 'A5', scale_factor=0.8)",
+              "line_number": 133,
+              "object_affected": "d_group"
+            },
+            {
+              "problem": "The matrix decomposition equation (decomp_eq) at F4 is not optimally balanced horizontally once the power equation is shifted to F3.",
+              "solution": "Line 143: self.place_at_grid(decomp_eq, 'F5', scale_factor=1.0)",
+              "line_number": 143,
+              "object_affected": "decomp_eq"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35,
+        36,
+        37
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 212918,
+        "video_mtime_ns": 1778572069599527533,
+        "code_sha1": "7391dc7c264f1ec2b6a51a1fb59386da976b284f"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The summary text 'The DNA of Linear Transformations' expands from the flow_group and obstructs the lecture notes on the left side of the screen.",
+              "solution": "Line 110: self.place_in_area(flow_group, 'A1', 'C6', scale_factor=0.7)",
+              "line_number": 110,
+              "object_affected": "flow_group"
+            },
+            {
+              "problem": "The face_viz animation is positioned too low and is scaled too large, causing potential clipping at the bottom edge.",
+              "solution": "Line 131: self.place_in_area(face_viz, 'D2', 'F5', scale_factor=0.6)",
+              "line_number": 131,
+              "object_affected": "face_viz"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        38,
+        39
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260512_133319/9-Decoding_the_DNA_of_Linear_Transformations_Eigenvectors_Eigenvalues_and_Eigenbasis",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 145040,
+      "completion_tokens": 28529,
+      "total_tokens": 257813,
+      "call_count": 37
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 279,
+        "completion_tokens": 893,
+        "total_tokens": 1891,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 11471,
+        "completion_tokens": 754,
+        "total_tokens": 12649,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 9302,
+        "completion_tokens": 269,
+        "total_tokens": 9717,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 18696,
+        "completion_tokens": 507,
+        "total_tokens": 19941,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 7976,
+        "completion_tokens": 2295,
+        "total_tokens": 10748,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 8481,
+        "completion_tokens": 2047,
+        "total_tokens": 10773,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 8289,
+        "completion_tokens": 2144,
+        "total_tokens": 10696,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 9651,
+        "completion_tokens": 1581,
+        "total_tokens": 11412,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 7914,
+        "completion_tokens": 2453,
+        "total_tokens": 10609,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 15526,
+        "completion_tokens": 2491,
+        "total_tokens": 18757,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4408,
+        "completion_tokens": 979,
+        "total_tokens": 13073,
+        "call_count": 12
+      },
+      "scope_refine:section_6": {
+        "prompt_tokens": 2457,
+        "completion_tokens": 1520,
+        "total_tokens": 6958,
+        "call_count": 1
+      },
+      "scope_refine:section_4": {
+        "prompt_tokens": 3114,
+        "completion_tokens": 1405,
+        "total_tokens": 13110,
+        "call_count": 1
+      },
+      "scope_refine:section_3": {
+        "prompt_tokens": 5535,
+        "completion_tokens": 2262,
+        "total_tokens": 21077,
+        "call_count": 2
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 15658,
+        "completion_tokens": 5200,
+        "total_tokens": 39382,
+        "call_count": 3
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3190,
+        "completion_tokens": 306,
+        "total_tokens": 6459,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2665,
+        "completion_tokens": 131,
+        "total_tokens": 5628,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2586,
+        "completion_tokens": 345,
+        "total_tokens": 11095,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 2207,
+        "completion_tokens": 368,
+        "total_tokens": 5763,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2915,
+        "completion_tokens": 339,
+        "total_tokens": 10570,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2720,
+        "completion_tokens": 240,
+        "total_tokens": 7505,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 145040,
+        "completion_tokens": 28529,
+        "total_tokens": 257813,
+        "call_count": 37
+      }
+    }
+  }
+}

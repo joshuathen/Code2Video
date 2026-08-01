@@ -1,0 +1,515 @@
+{
+  "topic": "The IMO Windmill Problem: Geometry in Motion",
+  "target_audience": "High school students interested in competitive mathematics and geometry.",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Define lecture lines\n        lecture_lines = [\n            \"Meet Willa and her rotating laser beam line.\",\n            \"She starts at an initial point on the plane.\",\n            \"The beam rotates clockwise around this pivot point.\",\n            \"When hitting another point, the pivot immediately switches.\",\n            \"This creates the \\\"Windmill\\\" motion through the points.\"\n        ]\n        \n        # Setup layout\n        self.setup_layout(\"Introduction to 'Willa the Windmill'\", lecture_lines)\n        \n        # Points positions (A1-F6 grid)\n        # Choosing spread out positions\n        pos_p = self.grid['C2']\n        pos_q = self.grid['D5']\n        pos_others = [self.grid['A4'], self.grid['B6'], self.grid['F1']]\n        \n        # === Animation for Lecture Line 1 ===\n        # Fade in 5 white points (#FFFFFF) at random positions. Label one 'P'.\n        self.lecture[0].set_color(YELLOW)\n        \n        dot_p = Dot(pos_p, color=WHITE)\n        dot_q = Dot(pos_q, color=WHITE)\n        dots_others = VGroup(*[Dot(pos, color=WHITE) for pos in pos_others])\n        all_dots = VGroup(dot_p, dot_q, dots_others)\n        \n        label_p = Text(\"P\", font_size=20, color=WHITE).next_to(dot_p, UP, buff=0.1)\n        \n        self.play(FadeIn(all_dots), FadeIn(label_p))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # She starts at an initial point. Draw a yellow line (#FFFF00) passing through point 'P'.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Pivot tracking\n        pivot_tracker = Dot(pos_p).set_opacity(0)\n        self.add(pivot_tracker)\n        \n        # Angle tracker (initial angle: 60 degrees)\n        angle_tracker = ValueTracker(60 * DEGREES)\n        \n        # Laser beam line\n        laser_line = Line(color=\"#FFFF00\")\n        \n        def laser_updater(mob):\n            p = pivot_tracker.get_center()\n            angle = angle_tracker.get_value()\n            direction = np.array([np.cos(angle), np.sin(angle), 0])\n            # Extend line far enough to cover the grid\n            mob.put_start_and_end_on(p - 5 * direction, p + 5 * direction)\n        \n        laser_line.add_updater(laser_updater)\n        \n        self.play(Create(laser_line))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # The beam rotates clockwise around this pivot point.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Calculate target angle to hit Q\n        vec_pq = pos_q - pos_p\n        # Clockwise rotation: angle decreases\n        # Current angle is 60 deg. \n        # Target angle for Q (from P)\n        target_angle = np.arctan2(vec_pq[1], vec_pq[0])\n        \n        # Ensure we rotate clockwise (angle decreases)\n        if target_angle > angle_tracker.get_value():\n            target_angle -= 2 * PI\n            \n        self.play(angle_tracker.animate.set_value(target_angle), run_time=3, rate_func=linear)\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 4 ===\n        # When hitting another point, the pivot immediately switches.\n        # Flash Q yellow.\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        label_q = Text(\"Q\", font_size=20, color=WHITE).next_to(dot_q, DOWN, buff=0.1)\n        \n        self.play(\n            dot_q.animate.set_color(\"#FFFF00\").scale(1.5),\n            FadeIn(label_q)\n        )\n        self.play(dot_q.animate.scale(1/1.5))\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 5 ===\n        # Change 'P' to white and set the green color (#2ECC71) to 'Q' as the new pivot.\n        # Continue rotation.\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        self.play(\n            dot_p.animate.set_color(WHITE),\n            dot_q.animate.set_color(\"#2ECC71\"),\n            pivot_tracker.animate.move_to(pos_q)\n        )\n        \n        # Continue rotating clockwise (further decrease angle)\n        self.play(angle_tracker.animate.increment_value(-60 * DEGREES), run_time=2, rate_func=linear)\n        \n        self.wait(2)\n        self.lecture[4].set_color(WHITE)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        title = \"Prerequisite: Discrete vs. Continuous Motion\"\n        lines = [\n            \"The beam's rotation angle changes continuously over time.\",\n            \"But the center of rotation jumps at discrete hits.\",\n            \"No three points are collinear to keep pivots unique.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        COLOR_PIVOT = \"#2ECC71\"  # Green\n        COLOR_LINE = YELLOW\n        COLOR_POINT = WHITE\n        COLOR_X = \"#E74C3C\"      # Red\n\n        # Points for the windmill part\n        p1_pos = self.grid[\"B3\"]\n        p2_pos = self.grid[\"D4\"]\n        \n        dot1 = Dot(p1_pos, color=COLOR_PIVOT, radius=0.1)\n        dot2 = Dot(p2_pos, color=COLOR_POINT, radius=0.1)\n        dots = VGroup(dot1, dot2)\n\n        # Labels for clarity\n        label1 = Text(\"P1\", font_size=16).next_to(dot1, UP, buff=0.1)\n        label2 = Text(\"P2\", font_size=16).next_to(dot2, DOWN, buff=0.1)\n        labels = VGroup(label1, label2)\n\n        # The line\n        line = Line(start=LEFT*2.5, end=RIGHT*2.5, color=COLOR_LINE)\n        line.move_to(p1_pos)\n        \n        # Angle tracker\n        angle_tracker = ValueTracker(0)\n        \n        # Line updater - rotates around a specific point\n        # Using a mutable list to hold the pivot since functions in updaters close over variables\n        pivot_data = [p1_pos]\n        line.add_updater(lambda m: m.set_angle(angle_tracker.get_value()).move_to(pivot_data[0]))\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        self.add(dots, labels, line)\n        self.play(angle_tracker.animate.set_value(PI/2), run_time=2, rate_func=linear)\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n\n        # Calculate target angle to hit P2\n        target_vector = p2_pos - p1_pos\n        target_angle = np.arctan2(target_vector[1], target_vector[0])\n        \n        # Rotate until hit (ensure we go in the positive direction if possible or just towards it)\n        self.play(angle_tracker.animate.set_value(target_angle), run_time=1.5, rate_func=linear)\n        \n        # Flash and jump pivot\n        flash = Circle(radius=0.3, color=COLOR_PIVOT, stroke_width=4).move_to(p2_pos)\n        self.play(\n            dot2.animate.set_color(COLOR_PIVOT),\n            dot1.animate.set_color(COLOR_POINT),\n            FadeIn(flash, scale=0.5),\n            run_time=0.3\n        )\n        self.play(FadeOut(flash), run_time=0.2)\n        \n        # Update pivot point for the line updater\n        pivot_data[0] = p2_pos\n        \n        # Continue rotating around P2\n        self.play(angle_tracker.animate.increment_value(PI/3), run_time=1.5, rate_func=linear)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n\n        # Clear windmill elements\n        self.play(FadeOut(dots, labels, line), run_time=0.5)\n\n        # Demonstrate collinearity issue\n        collinear_p1 = Dot(self.grid[\"C2\"], color=COLOR_POINT)\n        collinear_p2 = Dot(self.grid[\"C4\"], color=COLOR_POINT)\n        collinear_p3 = Dot(self.grid[\"C6\"], color=COLOR_POINT)\n        collinear_dots = VGroup(collinear_p1, collinear_p2, collinear_p3)\n        \n        dashed_line = DashedLine(\n            start=self.grid[\"C1\"], \n            end=self.grid[\"C6\"], \n            color=WHITE, \n            dash_length=0.1\n        )\n        \n        # Red X\n        cross_line1 = Line(self.grid[\"B2\"], self.grid[\"D6\"], color=COLOR_X, stroke_width=10)\n        cross_line2 = Line(self.grid[\"D2\"], self.grid[\"B6\"], color=COLOR_X, stroke_width=10)\n        red_x = VGroup(cross_line1, cross_line2)\n\n        self.play(Create(collinear_dots))\n        self.play(Create(dashed_line))\n        self.wait(0.5)\n        self.play(Create(red_x))\n        self.wait(2)\n\n        # Final cleanup/transition state\n        self.lecture[2].set_color(WHITE)\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Setup title and lines\n        title_text = \"The Magic Invariant: The Balancing Act\"\n        lecture_lines = [\n            \"The line divides the other points into two sets.\",\n            \"Let's color points on each side differently to see.\",\n            \"As the pivot switches, the side-counts remain perfectly balanced.\",\n            \"This invariant property holds throughout the entire rotation.\",\n            \"The number of points on each side never changes.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors\n        COLOR_LINE = \"#FFFF00\"\n        COLOR_PIVOT = \"#2ECC71\"\n        COLOR_LEFT = \"#3498DB\"\n        COLOR_RIGHT = \"#E74C3C\"\n\n        # Create points\n        p_pivot = Dot(color=COLOR_PIVOT)\n        p_l1 = Dot(color=WHITE)\n        p_l2 = Dot(color=WHITE)\n        p_r1 = Dot(color=WHITE)\n        p_r2 = Dot(color=WHITE)\n\n        # Position points on grid\n        self.place_at_grid(p_pivot, 'D3')\n        self.place_at_grid(p_l1, 'B2')\n        self.place_at_grid(p_l2, 'E2')\n        self.place_at_grid(p_r1, 'B4')\n        self.place_at_grid(p_r2, 'E4')\n\n        # === Animation for Lecture Line 1 ===\n        # Color match with the yellow line\n        self.lecture[0].set_color(COLOR_LINE)\n        pivot_pos = p_pivot.get_center()\n        # Initial vertical line (angle = PI/2)\n        line = Line(pivot_pos + 3.5*UP, pivot_pos + 3.5*DOWN, color=COLOR_LINE, stroke_width=2)\n        \n        self.add(p_pivot, p_l1, p_l2, p_r1, p_r2)\n        self.play(Create(line))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Color match with Blue points\n        self.lecture[1].set_color(COLOR_LEFT)\n        self.play(\n            p_l1.animate.set_color(COLOR_LEFT),\n            p_l2.animate.set_color(COLOR_LEFT),\n            p_r1.animate.set_color(COLOR_RIGHT),\n            p_r2.animate.set_color(COLOR_RIGHT),\n            run_time=1\n        )\n        \n        # Add labels for the counts (within 1 grid unit of objects)\n        label_left = Text(\"Left: 2\", font_size=24, color=COLOR_LEFT)\n        label_right = Text(\"Right: 2\", font_size=24, color=COLOR_RIGHT)\n        self.place_at_grid(label_left, 'A2')\n        self.place_at_grid(label_right, 'A4')\n        self.play(Write(label_left), Write(label_right))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Color match with the Green pivot\n        self.lecture[2].set_color(COLOR_PIVOT)\n        \n        # Setup rotation using ValueTracker for the angle\n        # Note: direction vector is [cos(angle), sin(angle), 0]\n        angle_tracker = ValueTracker(PI/2) \n        \n        # Track the current pivot object to allow for pivot switches\n        pivot_ref = [p_pivot]\n        \n        def update_line(m):\n            ang = angle_tracker.get_value()\n            center = pivot_ref[0].get_center()\n            direction = np.array([np.cos(ang), np.sin(ang), 0])\n            m.put_start_and_end_on(center - 4.0*direction, center + 4.0*direction)\n            \n        line.add_updater(update_line)\n        \n        # Target angle to hit p_r1 (at B4)\n        # Vector D3(2.5, -0.8) -> B4(3.5, 1.2) is (1, 2)\n        hit_angle = np.arctan2(2, 1)\n        \n        # Rotate clockwise (angle decreasing from PI/2 to hit_angle)\n        self.play(angle_tracker.animate.set_value(hit_angle), run_time=2.5, rate_func=linear)\n        \n        # Hit! Switch pivot as per instructions\n        # \"The old green pivot turns blue (#3498DB), and the hit red point turns green (#2ECC71).\"\n        old_p = pivot_ref[0]\n        new_p = p_r1\n        \n        self.play(\n            old_p.animate.set_color(COLOR_LEFT),\n            new_p.animate.set_color(COLOR_PIVOT),\n            run_time=0.5\n        )\n        # Update pivot reference for the updater\n        pivot_ref[0] = new_p\n        \n        # Emphasize the invariant labels\n        self.play(Indicate(label_left), Indicate(label_right))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(WHITE)\n        # Continue rotation to show stability\n        self.play(angle_tracker.animate.set_value(hit_angle - 0.5), run_time=1.5, rate_func=linear)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(WHITE)\n        # Final rotation and emphasis on the labels\n        self.play(angle_tracker.animate.set_value(hit_angle - 1.0), run_time=2, rate_func=linear)\n        self.play(Circumscribe(VGroup(label_left, label_right)))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Fetching storyboard data\n        title_str = \"The 180-Degree Flip\"\n        lecture_lines = [\n            \"Watch what happens after a full 180-degree rotation.\",\n            \"The line's orientation has completely flipped its direction.\",\n            \"Points once on the left are now on the right.\",\n            \"For this swap, the line must hit every point.\",\n            \"This proves the windmill visits every point eventually.\"\n        ]\n        \n        # Format with bullets for layout\n        bullet_lines = [\"- \" + line for line in lecture_lines]\n        self.setup_layout(title_str, bullet_lines)\n\n        # Colors\n        COLOR_LINE = \"#FFFF00\"\n        COLOR_PIVOT = \"#2ECC71\"\n        COLOR_RED = \"#E74C3C\"\n        COLOR_BLUE = \"#3498DB\"\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(COLOR_LINE))\n        \n        # Setup Grid Elements\n        pivot_dot = Dot(color=COLOR_PIVOT)\n        self.place_at_grid(pivot_dot, \"C4\")\n        \n        red_pts = VGroup(\n            Dot(color=COLOR_RED),\n            Dot(color=COLOR_RED)\n        )\n        self.place_at_grid(red_pts[0], \"B3\")\n        self.place_at_grid(red_pts[1], \"A3\")\n        \n        blue_pts = VGroup(\n            Dot(color=COLOR_BLUE),\n            Dot(color=COLOR_BLUE)\n        )\n        self.place_at_grid(blue_pts[0], \"D5\")\n        self.place_at_grid(blue_pts[1], \"E5\")\n        \n        all_dots = VGroup(pivot_dot, *red_pts, *blue_pts)\n        self.add(all_dots)\n\n        # Line and Orientation Arrow\n        line = Line(DOWN * 2.5, UP * 2.5, color=COLOR_LINE)\n        line.move_to(pivot_dot.get_center())\n        \n        arrow = Arrow(\n            start=pivot_dot.get_center(),\n            end=pivot_dot.get_center() + UP * 1.5,\n            buff=0,\n            color=WHITE,\n            stroke_width=6,\n            max_tip_length_to_length_ratio=0.25\n        )\n        \n        windmill = VGroup(line, arrow)\n        self.add(windmill)\n\n        # Full 180-degree rotation clockwise\n        self.play(Rotate(windmill, angle=-PI, about_point=pivot_dot.get_center()), run_time=4, rate_func=linear)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(WHITE))\n        self.play(Indicate(arrow, color=WHITE, scale_factor=1.3))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(COLOR_BLUE))\n        \n        # Labels for line-relative sides\n        label_line_left = Text(\"Line's Left\", font_size=16, color=WHITE)\n        label_line_right = Text(\"Line's Right\", font_size=16, color=WHITE)\n        \n        # When arrow is DOWN, Line's Left is Screen-Right\n        self.place_at_grid(label_line_left, \"C6\")\n        self.place_at_grid(label_line_right, \"C2\")\n        \n        self.play(FadeIn(label_line_left), FadeIn(label_line_right))\n        self.play(Indicate(blue_pts, color=COLOR_BLUE), Indicate(red_pts, color=COLOR_RED))\n        self.wait(2)\n        self.play(FadeOut(label_line_left), FadeOut(label_line_right))\n\n        # === Animation for Lecture Line 4 ===\n        self.play(self.lecture[3].animate.set_color(COLOR_LINE))\n        \n        # Reset rotation for segment display\n        self.play(Rotate(windmill, angle=PI, about_point=pivot_dot.get_center()), run_time=1)\n        \n        # Rotation in segments with flashes\n        # Sequence: A3 (26.5), B3 (45), D5 (135), E5 (153)\n        self.play(Rotate(windmill, angle=-26.5*DEGREES, about_point=pivot_dot.get_center()), run_time=0.8)\n        self.play(Indicate(red_pts[1], color=COLOR_LINE))\n        \n        self.play(Rotate(windmill, angle=-(45-26.5)*DEGREES, about_point=pivot_dot.get_center()), run_time=0.5)\n        self.play(Indicate(red_pts[0], color=COLOR_LINE))\n        \n        self.play(Rotate(windmill, angle=-(135-45)*DEGREES, about_point=pivot_dot.get_center()), run_time=1.2)\n        self.play(Indicate(blue_pts[0], color=COLOR_LINE))\n        \n        self.play(Rotate(windmill, angle=-(153-135)*DEGREES, about_point=pivot_dot.get_center()), run_time=0.5)\n        self.play(Indicate(blue_pts[1], color=COLOR_LINE))\n        \n        self.play(Rotate(windmill, angle=-(180-153)*DEGREES, about_point=pivot_dot.get_center()), run_time=0.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.play(self.lecture[4].animate.set_color(COLOR_PIVOT))\n        self.play(all_dots.animate.set_color(COLOR_PIVOT))\n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Initialize lecture lines\n        lecture_lines = [\n            \"Since the state is finite, the process is periodic.\",\n            \"The windmill returns to its start and repeats forever.\",\n            \"This beautiful cycle connects every point in the set.\"\n        ]\n        self.setup_layout(\"Summary and the Eternal Cycle\", lecture_lines)\n\n        # Points setup\n        # Use a spread of points in the right-side grid area\n        points_coords = [\"C2\", \"B4\", \"D5\", \"E3\", \"C5\", \"D1\"]\n        dots = VGroup(*[Dot(color=WHITE) for _ in points_coords])\n        for dot, coord in zip(dots, points_coords):\n            self.place_at_grid(dot, coord)\n        \n        self.add(dots)\n\n        # Windmill line setup\n        # Initial pivot is the first point (P)\n        pivot_p = dots[0].get_center()\n        # Line length 5.0 (2.5 on each side) to fit the right-side area comfortably\n        line = Line(start=pivot_p + 2.5*LEFT, end=pivot_p + 2.5*RIGHT, color=YELLOW, stroke_width=4)\n        # Start with an initial angle (e.g. 30 degrees)\n        initial_angle = 30 * DEGREES\n        line.rotate(initial_angle, about_point=pivot_p)\n        self.add(line)\n\n        # === Animation for Lecture Line 1 ===\n        # \"Since the state is finite, the process is periodic.\"\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        \n        # Fast-forward rotation, leaving thin gray (#808080) traces\n        num_traces = 40\n        traces = VGroup()\n        for i in range(num_traces):\n            # Vary angle and pivot to simulate the windmill movement\n            # We cover a lot of rotation to show periodicity\n            ang = initial_angle + i * (6 * PI / num_traces)\n            p_idx = (i // 7) % len(dots)\n            p = dots[p_idx].get_center()\n            t = Line(p + 2.5*LEFT, p + 2.5*RIGHT, color=\"#808080\", stroke_width=1).set_opacity(0.3)\n            t.rotate(ang, about_point=p)\n            traces.add(t)\n        \n        # Show traces appearing rapidly to represent \"fast-forward\"\n        self.play(Create(traces, lag_ratio=0.03), run_time=2.5)\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 2 ===\n        # \"The windmill returns to its start and repeats forever.\"\n        self.play(\n            self.lecture[1].animate.set_color(YELLOW),\n            self.lecture[0].animate.set_color(WHITE)\n        )\n        \n        # Return to starting point P and initial angle\n        # Fade out the traces and emphasize the line returning to its start\n        self.play(\n            FadeOut(traces),\n            line.animate.set_color(YELLOW).set_stroke(width=6),\n            run_time=1.5\n        )\n        \n        # Pulse the line to show it's \"back\" at start point P\n        self.play(line.animate.scale(1.2), run_time=0.2)\n        self.play(line.animate.scale(1/1.2), run_time=0.2)\n        \n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"This beautiful cycle connects every point in the set.\"\n        self.play(\n            self.lecture[2].animate.set_color(YELLOW),\n            self.lecture[1].animate.set_color(WHITE)\n        )\n        \n        # Pulse all points in green (#2ECC71) to signify cycle completion\n        pulse_color = \"#2ECC71\"\n        self.play(\n            *[dot.animate.set_color(pulse_color).scale(1.8) for dot in dots],\n            run_time=0.6\n        )\n        self.play(\n            *[dot.animate.scale(1/1.8) for dot in dots],\n            run_time=0.4\n        )\n        self.play(\n            *[dot.animate.scale(1.8) for dot in dots],\n            run_time=0.6\n        )\n        self.play(\n            *[dot.animate.scale(1/1.8) for dot in dots],\n            run_time=0.4\n        )\n        \n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "The IMO Windmill Problem: Geometry in Motion",
+    "target_audience": "High school students interested in competitive mathematics and geometry.",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "Introduction to 'Willa the Windmill'",
+        "content": "Introduce the setup: A set of 'S' points on a plane. A character, 'Willa the Robot', holds a long straight laser beam (the line L). The line starts at a point P and rotates clockwise. When the line hits another point Q, that point Q becomes the new pivot point (the center of rotation), and the line continues to rotate.",
+        "example": "Visual: A scattering of 5 dots (seeds) on a screen. Willa stands at one dot, her laser beam rotating like a clock hand. As it hits a second dot, the 'glow' transfers to that dot, and the beam keeps spinning."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: Discrete vs. Continuous Motion",
+        "content": "Explain the concept of a 'Pivot Switch'. Ensure the audience understands that the line's angle changes continuously, but the center of rotation changes at discrete moments (collisions). Explain that no three points are collinear to keep the transitions clean.",
+        "example": "Graphic: A side-by-side comparison. A standard clock (fixed center) vs. the 'Windmill' (center jumping from a blue dot to a red dot as the line sweeps across)."
+      },
+      {
+        "id": "section_3",
+        "title": "The Magic Invariant: The Balancing Act",
+        "content": "Introduce the 'k-points' concept. If there are 'n' points total, the line divides the rest of the points into two sets. Crucially, when the line rotates and hits a point, the number of points on either side of the line remains constant (except for the pivot point itself).",
+        "example": "Visual: Highlight 2 points in blue on the left of the line and 2 points in red on the right. As the line rotates 180 degrees and swaps pivots, show that there are always 2 points on each side, maintaining a '2-2 balance'."
+      },
+      {
+        "id": "section_4",
+        "title": "The 180-Degree Flip",
+        "content": "Demonstrate what happens when the line rotates exactly 180 degrees. Since the 'k-points' on the left must now be on the right (because the line has flipped its orientation), every point must have acted as a pivot at least once to allow the sets to 'permute'.",
+        "example": "Character Example: Willa starts with a 'North' pointing arrow on her head. After the beam rotates 180 degrees, her arrow points 'South'. To achieve this 'flip' while keeping the side-count constant, the line must have passed through every single point."
+      },
+      {
+        "id": "section_5",
+        "title": "Summary and the Eternal Cycle",
+        "content": "Conclude that the windmill process is periodic. Because there are a finite number of points and directions, the system will eventually return to its original state, proving that the 'Windmill' will visit every point infinitely often.",
+        "example": "Animation: Speed up the rotation. Watch as the laser traces a complex web connecting all dots, eventually returning to the starting point and starting the exact same pattern again."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "Introduction to 'Willa the Windmill'",
+      "lecture_lines": [
+        "Meet Willa and her rotating laser beam line.",
+        "She starts at an initial point on the plane.",
+        "The beam rotates clockwise around this pivot point.",
+        "When hitting another point, the pivot immediately switches.",
+        "This creates the \"Windmill\" motion through the points."
+      ],
+      "animations": [
+        "Fade in 5 white points (#FFFFFF) at random positions. Label one 'P'.",
+        "Draw a yellow line (#FFFF00) passing through point 'P' at a random angle.",
+        "Rotate the yellow line clockwise around 'P'.",
+        "As the line hits another white point, label it 'Q' and flash it yellow (#FFFF00).",
+        "Change 'P' to white and set the green color (#2ECC71) to 'Q' as the new pivot."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: Discrete vs. Continuous Motion",
+      "lecture_lines": [
+        "The beam's rotation angle changes continuously over time.",
+        "But the center of rotation jumps at discrete hits.",
+        "No three points are collinear to keep pivots unique."
+      ],
+      "animations": [
+        "Show the yellow line [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/beam.svg] rotating continuously around a green pivot (#2ECC71).",
+        "Flash the pivot point green (#2ECC71) as it jumps from one point to another.",
+        "Draw a red X (#E74C3C) over a dashed line connecting three points to show no three points are collinear."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Magic Invariant: The Balancing Act",
+      "lecture_lines": [
+        "The line divides the other points into two sets.",
+        "Let's color points on each side differently to see.",
+        "As the pivot switches, the side-counts remain perfectly balanced.",
+        "This invariant property holds throughout the entire rotation.",
+        "The number of points on each side never changes."
+      ],
+      "animations": [
+        "Display 5 points. Place a yellow line (#FFFF00) through a green pivot point (#2ECC71).",
+        "Color 2 points on the left blue (#3498DB) and 2 points on the right red (#E74C3C).",
+        "Rotate the line clockwise. As it hits a red point, the pivot moves to it.",
+        "The old green pivot turns blue (#3498DB), and the hit red point turns green (#2ECC71).",
+        "Label the counts: 'Left: 2' and 'Right: 2' to show the balance is preserved."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The 180-Degree Flip",
+      "lecture_lines": [
+        "Watch what happens after a full 180-degree rotation.",
+        "The line's orientation has completely flipped its direction.",
+        "Points once on the left are now on the right.",
+        "For this swap, the line must hit every point.",
+        "This proves the windmill visits every point eventually."
+      ],
+      "animations": [
+        "Start with a yellow line (#FFFF00) [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/windmill.svg] and an arrow pointing 'North' at the green pivot (#2ECC71).",
+        "Rotate the line 180 degrees clockwise. The arrow now points 'South'.",
+        "Show the blue (#3498DB) and red (#E74C3C) point sets have swapped sides.",
+        "Flash each point yellow (#FFFF00) as the line passes through it during the rotation.",
+        "Highlight all points in green (#2ECC71) to show every point has been a pivot once."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Summary and the Eternal Cycle",
+      "lecture_lines": [
+        "Since the state is finite, the process is periodic.",
+        "The windmill returns to its start and repeats forever.",
+        "This beautiful cycle connects every point in the set."
+      ],
+      "animations": [
+        "Fast-forward the rotation of the windmill [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/windmill.svg], leaving thin gray (#808080) traces of the line's path.",
+        "The yellow line (#FFFF00) returns to the initial point P and the initial angle.",
+        "Pulse all points in green (#2ECC71) to signify the cycle is complete and will repeat."
+      ]
+    }
+  ],
+  "turns_run": 1,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (all under 10 words) for Section 1, introducing Willa and the basic windmill motion."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Animation steps are present in the storyboard and look good."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Rewrote the Manim code for Section 1 using a robust pivot tracking system (Dot + get_center()) and angle tracker, avoiding the 'NoneType' and 'int' subtraction error likely caused by invalid ValueTracker usage in the previous attempt. Ensured 6x6 grid alignment and color-coded lecture line highlighting."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (all under 10 words) for Section 2, explaining the discrete vs continuous motion and non-collinearity assumption."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Animation steps are present in the storyboard and look good."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for Section 2 covering continuous rotation, pivot jumps, and non-collinearity."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (all under 10 words) for Section 3, explaining the balancing invariant."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Animation steps are present in the storyboard and look good."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Section3Scene with the requested animation: 5 points, yellow line, pivot switch logic, and side-count labels. Followed grid and color constraints."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (all under 10 words) for Section 4, explaining the 180-degree flip and the implication that every point is visited."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Animation steps are present in the storyboard and look good."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented Manim code for Section 4: The 180-Degree Flip. Includes 180-degree rotation animation, orientation flip, side swapping explanation, and point flashing."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (all under 10 words) for Section 5, concluding with the periodicity and the eternal cycle."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Animation steps are present in the storyboard and look good."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated complete Manim code for Section 5, including the fast-forward rotation, traces, reset to start, and pulsing green dots."
+    },
+    {
+      "id": 16,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[section_1] Implement Manim code for 'Introduction to Willa'. \nSteps: \n1. Fade in 5 white points at random positions. Label one 'P'.\n2. Draw a yellow line through 'P' at a random angle.\n3. Rotate the line clockwise around 'P'.\n4. On hitting another point 'Q', flash it yellow.\n5. Switch pivot to 'Q' (change color to green) and continue rotation.\nLecture lines: Meet Willa and her laser beam; she starts at a point; rotates clockwise; pivot switches on hit; creates the 'Windmill' motion.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented the introduction to Willa the Windmill with 5 points, rotating laser beam, pivot switching from P to Q, and matching lecture line highlights as per the storyboard."
+    },
+    {
+      "id": 17,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[section_2] Implement Manim code for 'Discrete vs. Continuous Motion'.\nSteps:\n1. Show continuous rotation of a yellow line around a green pivot.\n2. Flash the pivot green as it jumps between points.\n3. Use a red X over a dashed line connecting three points to demonstrate the 'no three points are collinear' rule.\nLecture lines: Angle changes continuously; center jumps at discrete hits; no three points are collinear for uniqueness.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented the discrete vs continuous motion visualization. 1. Continuous rotation of yellow line. 2. Pivot jump with flash. 3. Collinearity demonstration with Red X."
+    },
+    {
+      "id": 18,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[section_3] Implement Manim code for 'The Magic Invariant'.\nSteps:\n1. Show 5 points with a yellow line through a green pivot.\n2. Color points on sides: 2 blue (left), 2 red (right).\n3. Rotate clockwise; when hitting a red point, pivot moves.\n4. Old pivot becomes blue, new pivot becomes green.\n5. Display 'Left: 2' and 'Right: 2' labels to show invariant balance.\nLecture lines: Line divides points into two sets; color points to see; side-counts remain balanced during pivot switches; this invariant holds throughout.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented the balancing act animation: 5 points (2 blue, 2 red, 1 green pivot), clockwise rotation hitting a red point, pivot switch (red to green, old green to blue), and invariant labels 'Left: 2' and 'Right: 2'."
+    },
+    {
+      "id": 19,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[section_4] Implement Manim code for 'The 180-Degree Flip'.\nSteps:\n1. Start with yellow line and North-pointing arrow at green pivot.\n2. Rotate 180 degrees clockwise; arrow flips to South.\n3. Show blue and red sets have swapped sides.\n4. Flash each point yellow as the line hits it.\n5. Highlight all points green at the end.\nLecture lines: 180-degree rotation flips orientation; sides swap; line must hit every point to achieve this; proves windmill visits every point.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented Section 4 with 180-degree flip, orientation change, and side-swapping visualization. Handled point flashing and final state highlight."
+    },
+    {
+      "id": 20,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[section_5] Implement Manim code for 'Summary and the Eternal Cycle'.\nSteps:\n1. Fast-forward rotation with thin gray traces of the line's path.\n2. Return to starting point P and original angle.\n3. Pulse all points in green to show cycle completion.\nLecture lines: Process is periodic due to finite states; returns to start and repeats; connects every point in a cycle.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented animations: fast-forward with gray traces, return to start point P, and green pulsing dots. Followed TeachingScene and grid constraints."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show the yellow line [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/beam.svg] rotating continuously around a green pivot (#2ECC71).']",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 22,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Start with a yellow line (#FFFF00) [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/windmill.svg] and an arrow pointing 'North' at the green pivot (#2ECC71).\"]",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Fast-forward the rotation of the windmill [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/windmill.svg], leaving thin gray (#808080) traces of the line's path.\"]",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_172614/8-The_IMO_Windmill_Problem_Geometry_in_Motion/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_172614/8-The_IMO_Windmill_Problem_Geometry_in_Motion/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_172614/8-The_IMO_Windmill_Problem_Geometry_in_Motion/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_172614/8-The_IMO_Windmill_Problem_Geometry_in_Motion/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_172614/8-The_IMO_Windmill_Problem_Geometry_in_Motion/media/videos/section_5/480p15/Section5Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_172614/8-The_IMO_Windmill_Problem_Geometry_in_Motion",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 131369,
+      "completion_tokens": 12508,
+      "total_tokens": 154654,
+      "call_count": 21
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 274,
+        "completion_tokens": 794,
+        "total_tokens": 1906,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 6767,
+        "completion_tokens": 223,
+        "total_tokens": 7006,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 8369,
+        "completion_tokens": 292,
+        "total_tokens": 8877,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 11308,
+        "completion_tokens": 202,
+        "total_tokens": 11562,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 8967,
+        "completion_tokens": 241,
+        "total_tokens": 9347,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 29571,
+        "completion_tokens": 2320,
+        "total_tokens": 31995,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 16009,
+        "completion_tokens": 1699,
+        "total_tokens": 17731,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 20505,
+        "completion_tokens": 2056,
+        "total_tokens": 22584,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 20562,
+        "completion_tokens": 2178,
+        "total_tokens": 22938,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 3679,
+        "completion_tokens": 661,
+        "total_tokens": 11594,
+        "call_count": 10
+      },
+      "scope_refine:section_1": {
+        "prompt_tokens": 5358,
+        "completion_tokens": 1842,
+        "total_tokens": 9114,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 131369,
+        "completion_tokens": 12508,
+        "total_tokens": 154654,
+        "call_count": 21
+      }
+    }
+  }
+}

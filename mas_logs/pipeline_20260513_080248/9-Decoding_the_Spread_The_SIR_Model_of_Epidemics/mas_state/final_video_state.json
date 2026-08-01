@@ -1,0 +1,1241 @@
+{
+  "topic": "Decoding the Spread: The SIR Model of Epidemics",
+  "target_audience": "Undergraduate students or science enthusiasts with basic calculus knowledge",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup the basic layout\n        lecture_lines = [\n            'Infectious diseases seem chaotic and unpredictable.', \n            'Mathematics reveals hidden patterns in how they spread.', \n            'Today, we decode the math behind the sneeze.'\n        ]\n        self.setup_layout(\"Introduction: The Math Behind the Sneeze\", lecture_lines)\n        \n        # Constants for simulation\n        BLUE_CLR = \"#3498db\"\n        RED_CLR = \"#e74c3c\"\n        HIGHLIGHT_CLR = \"#f1c40f\"\n        \n        # Grid boundaries for simulation (B2 to F6)\n        # B2: (1.5, 1.2), F6: (5.5, -2.8). Span is 4.0.\n        # With scale factor 0.9, effective width/height is 3.6.\n        box_center = (self.grid['B2'] + self.grid['F6']) / 2\n        side = 4.0 * 0.9\n        x_min, x_max = box_center[0] - side/2, box_center[0] + side/2\n        y_min, y_max = box_center[1] - side/2, box_center[1] + side/2\n\n        # Simulation space visualization\n        box = Rectangle(width=4.0, height=4.0, color=WHITE, stroke_opacity=0.3)\n        self.place_in_area(box, 'B2', 'F6', scale_factor=0.9)\n        self.add(box)\n\n        # === Animation for Lecture Line 1 ===\n        # Initialize 20 blue circles moving randomly\n        self.lecture[0].set_color(HIGHLIGHT_CLR)\n        \n        dots = VGroup()\n        for _ in range(20):\n            d = Dot(radius=0.1, color=BLUE_CLR)\n            d.move_to([\n                np.random.uniform(x_min + 0.1, x_max - 0.1),\n                np.random.uniform(y_min + 0.1, y_max - 0.1),\n                0\n            ])\n            d.vel = np.array([\n                np.random.uniform(-1, 1),\n                np.random.uniform(-1, 1),\n                0\n            ]) * 0.8\n            d.is_infected = False\n            dots.add(d)\n        \n        def update_dots(mob, dt):\n            for d in mob:\n                d.shift(d.vel * dt)\n                # Bounce mechanics\n                if d.get_x() <= x_min or d.get_x() >= x_max:\n                    d.vel[0] *= -1\n                    # Push back inside bounds\n                    d.set_x(np.clip(d.get_x(), x_min, x_max))\n                if d.get_y() <= y_min or d.get_y() >= y_max:\n                    d.vel[1] *= -1\n                    d.set_y(np.clip(d.get_y(), y_min, y_max))\n            \n            # Infection logic: check for collisions\n            infected = [d for d in mob if d.is_infected]\n            susceptible = [d for d in mob if not d.is_infected]\n            for s in susceptible:\n                for i in infected:\n                    if np.linalg.norm(s.get_center() - i.get_center()) < 0.22:\n                        s.is_infected = True\n                        s.set_color(RED_CLR)\n                        break\n\n        self.add(dots)\n        dots.add_updater(update_dots)\n        self.wait(3)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(HIGHLIGHT_CLR)\n\n        # Find center-most dot to infect\n        center_pt = box_center\n        patient_zero = min(dots, key=lambda d: np.linalg.norm(d.get_center() - center_pt))\n        \n        self.play(\n            Indicate(patient_zero, color=RED_CLR, scale_factor=2),\n            patient_zero.animate.set_color(RED_CLR),\n            run_time=1\n        )\n        patient_zero.is_infected = True\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(HIGHLIGHT_CLR)\n        \n        # Continue simulation to show spread\n        self.wait(5)\n        \n        # Finish\n        dots.remove_updater(update_dots)\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Setup layout\n        title_text = \"Prerequisite: The Concept of Rate of Change\"\n        lines = [\n            \"Calculus helps us track changes over time.\",\n            \"Imagine a tank where water flows in and out.\",\n            \"Flow rate depends on the current population size.\"\n        ]\n        self.setup_layout(title_text, lines)\n        \n        # Colors\n        line_color = \"#FFFF00\"  # Yellow for highlight\n        water_color = \"#3399FF\" # Sky Blue\n        label_color = \"#FFFFFF\" # White\n        inflow_color = \"#00FF00\" # Green\n        outflow_color = \"#FF3333\" # Red\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(line_color))\n        \n        # Tank Asset (Issue 36)\n        tank = SVGMobject(\"/mmfs1/data/home/jthen/Code2Video/assets/icon/tank.svg\")\n        tank.set_color(WHITE)\n        self.place_in_area(tank, \"B3\", \"E5\")\n        \n        # Water inside (approximate size relative to tank area)\n        water = Rectangle(\n            width=tank.width * 0.9, \n            height=tank.height * 0.4, \n            fill_color=water_color, \n            fill_opacity=0.6, \n            stroke_width=0\n        )\n        water.move_to(tank.get_bottom(), aligned_edge=DOWN).shift(UP * 0.1)\n        \n        # Gauge Label (Issue 41: area C2-E2, scale 0.8)\n        gauge_label = Text(\"Population Size\", font_size=18, color=label_color)\n        self.place_in_area(gauge_label, \"C2\", \"E2\", scale_factor=0.8)\n        gauge_label.rotate(PI/2)\n\n        self.play(Create(tank), FadeIn(water), Write(gauge_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(line_color)\n        )\n        \n        # Tap Asset (Issue 36: A3)\n        tap = SVGMobject(\"/mmfs1/data/home/jthen/Code2Video/assets/icon/tap.svg\")\n        self.place_at_grid(tap, \"A3\", scale_factor=0.6)\n        \n        # Inflow Arrow (From tap to tank)\n        in_arrow = Arrow(\n            start=self.grid[\"A3\"] + DOWN * 0.3, \n            end=self.grid[\"B3\"] + DOWN * 0.3, \n            color=inflow_color\n        )\n        in_label = Text(\"Inflow\", font_size=20, color=inflow_color)\n        self.place_at_grid(in_label, \"A4\")\n        \n        # Outflow Arrow (From tank to E6)\n        out_arrow = Arrow(\n            start=self.grid[\"E5\"], \n            end=self.grid[\"E6\"], \n            color=outflow_color\n        )\n        # Outflow Label (Issue 42: E6)\n        out_label = Text(\"Outflow\", font_size=20, color=outflow_color)\n        self.place_at_grid(out_label, \"E6\")\n        # Shift label slightly so it doesn't overlap arrow head perfectly if needed, \n        # but place_at_grid is the anchor.\n        out_label.next_to(out_arrow, RIGHT, buff=0.1)\n\n        self.play(\n            FadeIn(tap),\n            GrowArrow(in_arrow),\n            FadeIn(in_label),\n            GrowArrow(out_arrow),\n            FadeIn(out_label)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(line_color)\n        )\n        \n        # Derivative notation label (Issue 40: C6, scale 0.8)\n        dv_dt_label = Text(\"dV / dt\", font_size=32, color=label_color)\n        self.place_at_grid(dv_dt_label, \"C6\", scale_factor=0.8)\n        \n        # Transform labels and simulate volume increase\n        self.play(\n            ReplacementTransform(VGroup(in_label, out_label), dv_dt_label),\n            water.animate.stretch_to_fit_height(tank.height * 0.7, about_edge=DOWN)\n        )\n        self.wait(2)\n        \n        # Final cleanup/reset highlight\n        self.play(self.lecture[2].animate.set_color(WHITE))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Setup layout\n        lecture_lines = [\n            'The population is split into three distinct compartments.', \n            'Healthy individuals begin in the Susceptible group.', \n            'They become Infectious after contacting the virus.', \n            'Eventually, they recover and gain lasting immunity.', \n            'The total population remains constant across all groups.'\n        ]\n        self.setup_layout(\"The SIR Compartments\", lecture_lines)\n\n        # Colors\n        COLOR_S = \"#3498db\" # Blue\n        COLOR_I = \"#e74c3c\" # Red\n        COLOR_R = \"#2ecc71\" # Green\n        COLOR_TEXT = \"#ffffff\"\n        ASSET_PATH = \"/mmfs1/data/home/jthen/Code2Video/assets/icon/person.svg\"\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight lecture line 1\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n\n        # Create Compartment Rectangles\n        s_rect = Rectangle(width=1.6, height=2.6, color=COLOR_S, stroke_width=4)\n        i_rect = Rectangle(width=1.6, height=2.6, color=COLOR_I, stroke_width=4)\n        r_rect = Rectangle(width=1.6, height=2.6, color=COLOR_R, stroke_width=4)\n\n        self.place_in_area(s_rect, \"B1\", \"D2\")\n        self.place_in_area(i_rect, \"B3\", \"D4\")\n        self.place_in_area(r_rect, \"B5\", \"D6\")\n\n        # Labels - Addressing Issues 43, 44, 45 (Centered under compartments)\n        s_label = Text(\"Susceptible\", font_size=18, color=COLOR_S)\n        i_label = Text(\"Infectious\", font_size=18, color=COLOR_I)\n        r_label = Text(\"Recovered\", font_size=18, color=COLOR_R)\n\n        self.place_in_area(s_label, 'E1', 'E2', scale_factor=0.8)\n        self.place_in_area(i_label, 'E3', 'E4', scale_factor=0.8)\n        self.place_in_area(r_label, 'E5', 'E6', scale_factor=0.8)\n\n        self.play(\n            Create(s_rect), Create(i_rect), Create(r_rect),\n            Write(s_label), Write(i_label), Write(r_label)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Transition highlight\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW)\n        )\n\n        # Populate Susceptible zone with 10 person icons [Asset: ...]\n        people = VGroup()\n        for i in range(10):\n            person = SVGMobject(ASSET_PATH).set_color(COLOR_S)\n            person.scale(0.12)\n            # Scatter within S rect (B1-D2)\n            row = i // 2\n            col = i % 2\n            # Manual jitter/offset within the box center\n            offset = np.array([(col - 0.5) * 0.5, (1.0 - row * 0.5), 0])\n            person.move_to(s_rect.get_center() + offset)\n            people.add(person)\n\n        # Equation display N = S + I + R\n        equation = Text(\"N = S + I + R\", font_size=32, color=COLOR_TEXT)\n        self.place_in_area(equation, \"A1\", \"A6\")\n\n        self.play(\n            LaggedStart(*[FadeIn(p) for p in people], lag_ratio=0.05),\n            Write(equation)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Transition highlight\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW)\n        )\n\n        # Animate one person icon moving S -> I (turning red)\n        traveler = people[0]\n        self.play(\n            traveler.animate.move_to(i_rect.get_center()).set_color(COLOR_I),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Transition highlight\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(YELLOW)\n        )\n\n        # Animate icon moving I -> R (turning green)\n        self.play(\n            traveler.animate.move_to(r_rect.get_center()).set_color(COLOR_R),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Transition highlight\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(YELLOW)\n        )\n        \n        # Emphasize the conservation equation\n        self.play(equation.animate.set_color(YELLOW).scale(1.1))\n        self.play(equation.animate.set_color(WHITE).scale(1/1.1))\n\n        # Reset line color\n        self.play(self.lecture[4].animate.set_color(WHITE))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Initialize basic layout\n        lines = [\n            \"Beta measures the likelihood of disease transmission.\",\n            \"Higher Beta values speed up the infection's spread.\",\n            \"Gamma controls the rate at which people recover.\"\n        ]\n        self.setup_layout(\"The Dynamics: Beta (β) and Gamma (γ)\", lines)\n\n        # Colors\n        BETA_COLOR = \"#f1c40f\"  # Yellow\n        GAMMA_COLOR = \"#9b59b6\" # Purple\n        S_COLOR = \"#3498db\"\n        I_COLOR = \"#e74c3c\"\n        R_COLOR = \"#2ecc71\"\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(BETA_COLOR)\n        \n        # S and I compartments\n        s_box = RoundedRectangle(corner_radius=0.1, height=1.2, width=1.2, color=S_COLOR)\n        s_label = Text(\"S\", color=S_COLOR)\n        s_group = VGroup(s_box, s_label)\n        self.place_in_area(s_group, \"A2\", \"B2\", scale_factor=0.8)\n\n        i_box = RoundedRectangle(corner_radius=0.1, height=1.2, width=1.2, color=I_COLOR)\n        i_label = Text(\"I\", color=I_COLOR)\n        i_group = VGroup(i_box, i_label)\n        self.place_in_area(i_group, \"A4\", \"B4\", scale_factor=0.8)\n\n        # Beta Arrow (S to I)\n        beta_arrow = Arrow(\n            start=s_group.get_right(),\n            end=i_group.get_left(),\n            buff=0.1,\n            color=BETA_COLOR,\n            stroke_width=2\n        )\n        beta_sym = Text(\"β\", color=BETA_COLOR, font_size=32, weight=BOLD)\n        self.place_at_grid(beta_sym, \"A3\", scale_factor=1.0)\n        \n        self.play(Create(s_group), Create(i_group))\n        self.play(GrowArrow(beta_arrow), FadeIn(beta_sym))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(BETA_COLOR)\n\n        # Beta Slider\n        beta_slider_track = Line(self.grid[\"C2\"], self.grid[\"C4\"], color=GRAY)\n        beta_slider_knob = Dot(self.grid[\"C2\"], color=BETA_COLOR)\n        beta_slider_label = Text(\"Beta β\", font_size=20, color=BETA_COLOR)\n        self.place_at_grid(beta_slider_label, \"C1\", scale_factor=1.0)\n        \n        self.play(Create(beta_slider_track), FadeIn(beta_slider_knob), FadeIn(beta_slider_label))\n        \n        # Increase Beta Visuals - Slider move and Arrow thickens\n        self.play(\n            beta_slider_knob.animate.move_to(self.grid[\"C4\"]),\n            beta_arrow.animate.set_stroke(width=12),\n            run_time=1.5\n        )\n        \n        # Moving dots to show rapid spread from S to I\n        dot_path = Line(s_group.get_right(), i_group.get_left())\n        dots = VGroup(*[Dot(radius=0.08, color=BETA_COLOR) for _ in range(8)])\n        \n        self.play(\n            LaggedStart(\n                *[MoveAlongPath(dot, dot_path) for dot in dots],\n                lag_ratio=0.1,\n                run_time=1.5\n            )\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(GAMMA_COLOR)\n\n        # R compartment\n        r_box = RoundedRectangle(corner_radius=0.1, height=1.2, width=1.2, color=R_COLOR)\n        r_label = Text(\"R\", color=R_COLOR)\n        r_group = VGroup(r_box, r_label)\n        self.place_in_area(r_group, \"A6\", \"B6\", scale_factor=0.8)\n\n        # Gamma Arrow (I to R)\n        gamma_arrow = Arrow(\n            start=i_group.get_right(),\n            end=r_group.get_left(),\n            buff=0.1,\n            color=GAMMA_COLOR,\n            stroke_width=4\n        )\n        gamma_sym = Text(\"γ\", color=GAMMA_COLOR, font_size=32)\n        self.place_at_grid(gamma_sym, \"A5\", scale_factor=1.0)\n\n        # Gamma Slider for interaction consistency\n        gamma_slider_track = Line(self.grid[\"E2\"], self.grid[\"E4\"], color=GRAY)\n        gamma_slider_knob = Dot(self.grid[\"E2\"], color=GAMMA_COLOR)\n        gamma_slider_label = Text(\"Gamma γ\", font_size=20, color=GAMMA_COLOR)\n        # Resolved Issue 46: Label placement at E1 to align with Beta Slider label at C1\n        self.place_at_grid(gamma_slider_label, \"E1\", scale_factor=1.0)\n\n        self.play(Create(r_group), GrowArrow(gamma_arrow), FadeIn(gamma_sym))\n        self.play(Create(gamma_slider_track), FadeIn(gamma_slider_knob), FadeIn(gamma_slider_label))\n        \n        # Interaction: Gamma increases\n        self.play(\n            gamma_slider_knob.animate.move_to(self.grid[\"E4\"]),\n            gamma_arrow.animate.set_stroke(width=12),\n            run_time=1.5\n        )\n        \n        # Final flow dots through the whole system: S -> I -> R\n        path_si = Line(s_group.get_right(), i_group.get_left())\n        path_ir = Line(i_group.get_right(), r_group.get_left())\n        \n        def get_flow_animations():\n            flow_dots = VGroup(*[Dot(radius=0.08, color=WHITE) for _ in range(10)])\n            anims = []\n            for dot in flow_dots:\n                anims.append(Succession(\n                    MoveAlongPath(dot, path_si, run_time=0.6),\n                    MoveAlongPath(dot, path_ir, run_time=0.6)\n                ))\n            return anims\n\n        self.play(\n            LaggedStart(*get_flow_animations(), lag_ratio=0.3),\n            run_time=4\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Colors\n        COLOR_S = \"#3498db\"\n        COLOR_I = \"#e74c3c\"\n        COLOR_R = \"#2ecc71\"\n        COLOR_BETA = \"#f1c40f\"\n        COLOR_GAMMA = \"#9b59b6\"\n\n        lecture_lines = [\n            'Differential equations describe population shifts mathematically.',\n            'The Susceptible group shrinks as people get sick.',\n            'The Infected group grows, peaks, and then falls.',\n            'Recovered numbers rise as patients heal.',\n            \"These equations predict the epidemic's trajectory.\"\n        ]\n\n        self.setup_layout(\"The SIR Equations Visualized\", lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Equation 1: dS/dt = -βSI/N\n        self.lecture[0].set_color(YELLOW)\n        \n        eq_s = VGroup(\n            Text(\"d\", font_size=24), Text(\"S\", font_size=24, color=COLOR_S), Text(\"/dt = -\", font_size=24),\n            Text(\"β\", font_size=24, color=COLOR_BETA), Text(\"S\", font_size=24, color=COLOR_S),\n            Text(\"I\", font_size=24, color=COLOR_I), Text(\"/N\", font_size=24)\n        ).arrange(RIGHT, buff=0.1)\n        \n        # Issue 47 Fix: reduce scale factor to 0.7\n        self.place_in_area(eq_s, 'A1', 'A2', scale_factor=0.7)\n        self.play(FadeIn(eq_s))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Equation 2: dI/dt = βSI/N - γI\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        eq_i = VGroup(\n            Text(\"d\", font_size=24), Text(\"I\", font_size=24, color=COLOR_I), Text(\"/dt = \", font_size=24),\n            Text(\"β\", font_size=24, color=COLOR_BETA), Text(\"S\", font_size=24, color=COLOR_S),\n            Text(\"I\", font_size=24, color=COLOR_I), Text(\"/N - \", font_size=24),\n            Text(\"γ\", font_size=24, color=COLOR_GAMMA), Text(\"I\", font_size=24, color=COLOR_I)\n        ).arrange(RIGHT, buff=0.1)\n        \n        # Issue 48 Fix: reduce scale factor to 0.7\n        self.place_in_area(eq_i, 'A3', 'A4', scale_factor=0.7)\n        self.play(FadeIn(eq_i))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Equation 3: dR/dt = γI\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        eq_r = VGroup(\n            Text(\"d\", font_size=24), Text(\"R\", font_size=24, color=COLOR_R), Text(\"/dt = \", font_size=24),\n            Text(\"γ\", font_size=24, color=COLOR_GAMMA), Text(\"I\", font_size=24, color=COLOR_I)\n        ).arrange(RIGHT, buff=0.1)\n        \n        # Issue 49 Fix: reduce scale factor to 0.7\n        self.place_in_area(eq_r, 'A5', 'A6', scale_factor=0.7)\n        self.play(FadeIn(eq_r))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Coordinate Graph\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        axes = Axes(\n            x_range=[0, 10, 1],\n            y_range=[0, 1.2, 0.2],\n            axis_config={\"include_tip\": True, \"color\": WHITE},\n            x_length=5,\n            y_length=3\n        )\n        x_label = Text(\"Time\", font_size=18).next_to(axes.x_axis, DOWN)\n        y_label = Text(\"Population\", font_size=18).rotate(90*DEGREES).next_to(axes.y_axis, LEFT)\n        graph_group = VGroup(axes, x_label, y_label)\n        \n        self.place_in_area(graph_group, 'B1', 'F6', scale_factor=0.8)\n        self.play(FadeIn(graph_group))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Plotting the curves\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        # Approximate SIR curves using logistic and bell functions\n        s_curve = axes.plot(lambda t: 1.0 / (1 + np.exp(t - 5)), color=COLOR_S)\n        i_curve = axes.plot(lambda t: 0.8 * np.exp(-0.4 * (t - 5)**2), color=COLOR_I)\n        r_curve = axes.plot(lambda t: 1.0 - (1.0 / (1 + np.exp(t - 5))), color=COLOR_R)\n        \n        self.play(\n            Create(s_curve),\n            Create(i_curve),\n            Create(r_curve),\n            run_time=4,\n            rate_func=linear\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Setup layout\n        title_text = \"The Tipping Point: Basic Reproduction Number (R0)\"\n        lecture_lines = [\n            \"Dividing Beta by Gamma gives the number R-naught.\",\n            \"This value predicts if a disease becomes an epidemic.\",\n            \"If R-naught exceeds one, cases grow exponentially.\",\n            \"Below one, the outbreak will eventually die out.\",\n            \"It is the tipping point for public health.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n        \n        # Colors\n        RED = \"#e74c3c\"\n        BLUE = \"#3498db\"\n        GREEN = \"#2ecc71\"\n        WHITE_COLOR = \"#ffffff\"\n        YELLOW_COLOR = \"#f1c40f\"\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(WHITE_COLOR)\n        # R0 = β / γ\n        formula_text = \"R₀ = \\u03b2 / \\u03b3\" # R0 = beta / gamma\n        formula = Text(formula_text, font_size=48, color=WHITE_COLOR)\n        # Fix Issue 50: Use B2-B5 area for better spacing\n        self.place_in_area(formula, 'B2', 'B5', scale_factor=0.9)\n        \n        self.play(FadeIn(formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(WHITE_COLOR)\n        # Move formula to top row to clear space for branching diagram\n        target_pos = self.grid['A3']\n        self.play(formula.animate.scale(0.8).move_to(target_pos))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(RED)\n        \n        # Branching Diagram for R0 = 3\n        # Parent Dot\n        parent_dot = Circle(radius=0.25, color=RED, fill_opacity=1)\n        self.place_at_grid(parent_dot, 'C3')\n        \n        # Target Dots\n        targets = VGroup(\n            Circle(radius=0.25, color=BLUE, fill_opacity=1),\n            Circle(radius=0.25, color=BLUE, fill_opacity=1),\n            Circle(radius=0.25, color=BLUE, fill_opacity=1)\n        )\n        self.place_at_grid(targets[0], 'E2')\n        self.place_at_grid(targets[1], 'E3')\n        self.place_at_grid(targets[2], 'E4')\n        \n        # Arrows\n        arrows = VGroup(\n            Arrow(parent_dot.get_bottom(), targets[0].get_top(), buff=0.1, color=RED),\n            Arrow(parent_dot.get_bottom(), targets[1].get_top(), buff=0.1, color=RED),\n            Arrow(parent_dot.get_bottom(), targets[2].get_top(), buff=0.1, color=RED)\n        )\n        \n        spread_label = Text(\"R0 = 3: Epidemic Spreads\", font_size=24, color=RED)\n        # Fix Issue 51: Wider area for label\n        self.place_in_area(spread_label, 'F1', 'F6', scale_factor=0.8)\n\n        self.play(FadeIn(parent_dot))\n        self.play(FadeIn(targets))\n        self.play(LaggedStart(*[GrowArrow(a) for a in arrows], lag_ratio=0.3))\n        self.play(targets.animate.set_color(RED))\n        self.play(FadeIn(spread_label))\n        self.wait(2)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(GREEN)\n        \n        # Clear previous diagram\n        self.play(FadeOut(parent_dot), FadeOut(targets), FadeOut(arrows), FadeOut(spread_label))\n        \n        # New diagram: Recovery before spread\n        parent_dot_2 = Circle(radius=0.25, color=RED, fill_opacity=1)\n        self.place_at_grid(parent_dot_2, 'C3')\n        \n        targets_2 = VGroup(\n            Circle(radius=0.25, color=BLUE, fill_opacity=1),\n            Circle(radius=0.25, color=BLUE, fill_opacity=1),\n            Circle(radius=0.25, color=BLUE, fill_opacity=1)\n        )\n        self.place_at_grid(targets_2[0], 'E2')\n        self.place_at_grid(targets_2[1], 'E3')\n        self.place_at_grid(targets_2[2], 'E4')\n        \n        dieout_label = Text(\"R0 < 1: Disease Dies Out\", font_size=24, color=GREEN)\n        # Fix Issue 52: Wider area for label\n        self.place_in_area(dieout_label, 'F1', 'F6', scale_factor=0.8)\n        \n        self.play(FadeIn(parent_dot_2), FadeIn(targets_2))\n        self.wait(0.5)\n        # Recovery animation (turns green)\n        self.play(parent_dot_2.animate.set_color(GREEN))\n        self.play(FadeIn(dieout_label))\n        self.wait(2)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(WHITE_COLOR)\n        \n        # Highlight the concept of \"Tipping Point\"\n        tipping_box = SurroundingRectangle(formula, color=YELLOW_COLOR, buff=0.2)\n        self.play(Create(tipping_box))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section7Scene(TeachingScene):\n    def construct(self):\n        # Initialize Scene\n        lecture_lines = [\n            'Flattening the curve means reducing the peak.', \n            'Lowering Beta keeps cases within hospital capacity.', \n            'Math helps us manage and survive outbreaks.'\n        ]\n        self.setup_layout(\"Conclusion: Flattening the Curve\", lecture_lines)\n        \n        # Define Colors\n        RED_CURVE = \"#e74c3c\"\n        CAPACITY_WHITE = \"#ffffff\"\n        \n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(WHITE))\n        \n        # Setup Axes - Fixed overlap by using B1-F5 area (Issue 53)\n        axes = Axes(\n            x_range=[0, 10, 2],\n            y_range=[0, 10, 2],\n            x_length=5,\n            y_length=4,\n            axis_config={\"include_tip\": True, \"color\": WHITE}\n        )\n        self.place_in_area(axes, \"B1\", \"F5\")\n        \n        # Fixed x_label scale and grid positioning (Issue 55)\n        x_label = Text(\"Time\", font_size=18, color=WHITE)\n        self.place_at_grid(x_label, \"F6\", scale_factor=0.8)\n        \n        y_label = Text(\"Infected\", font_size=18, color=WHITE)\n        self.place_at_grid(y_label, \"A1\", scale_factor=1.0)\n\n        # Healthcare Capacity Line\n        capacity_line = DashedLine(\n            start=axes.c2p(0, 4),\n            end=axes.c2p(9, 4),\n            color=CAPACITY_WHITE,\n            stroke_width=4\n        )\n        \n        # Fixed capacity text placement and scale (Issue 54)\n        capacity_text = Text(\"Healthcare Capacity\", font_size=16, color=CAPACITY_WHITE)\n        self.place_in_area(capacity_text, \"C2\", \"C4\", scale_factor=0.7)\n        \n        # Asset integration (Issue 38)\n        hospital_icon = SVGMobject(\"/mmfs1/data/home/jthen/Code2Video/assets/icon/hospital.svg\")\n        self.place_at_grid(hospital_icon, \"C5\", scale_factor=0.4)\n\n        self.play(Create(axes), Write(x_label), Write(y_label))\n        self.play(Create(capacity_line), FadeIn(capacity_text), FadeIn(hospital_icon))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(RED_CURVE))\n        \n        # Tall, narrow red curve (High Beta)\n        tall_curve = axes.plot(\n            lambda x: 8 * np.exp(-1.5 * (x - 3)**2),\n            x_range=[0, 7],\n            color=RED_CURVE\n        )\n        \n        tall_label = Text(\"High Beta\", font_size=14, color=RED_CURVE)\n        self.place_at_grid(tall_label, \"B3\", scale_factor=1.0)\n\n        self.play(Create(tall_curve), FadeIn(tall_label), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(RED_CURVE))\n        \n        # Flatter, wider red curve (Low Beta)\n        flat_curve = axes.plot(\n            lambda x: 3 * np.exp(-0.3 * (x - 5)**2),\n            x_range=[0, 10],\n            color=RED_CURVE\n        )\n        \n        flat_label = Text(\"Low Beta\", font_size=14, color=RED_CURVE)\n        self.place_at_grid(flat_label, \"D4\", scale_factor=1.0)\n\n        self.play(Create(flat_curve), FadeIn(flat_label), run_time=2)\n        self.wait(2)\n"
+  ],
+  "outline": {
+    "topic": "Decoding the Spread: The SIR Model of Epidemics",
+    "target_audience": "Undergraduate students or science enthusiasts with basic calculus knowledge",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "Introduction: The Math Behind the Sneeze",
+        "content": "Hook the audience by framing disease spread as a predictable mathematical system. Define the goal: to predict how many people get sick and when the outbreak ends.",
+        "example": "Visual: A crowd of blue 'Social Sloths'. Suddenly, one turns red (infected) and the color starts spreading through the group as they interact."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Concept of Rate of Change",
+        "content": "Briefly explain differential equations visually. Use the metaphor of 'flow' between containers. Introduce the idea that the speed of population change depends on the current population size.",
+        "example": "Animation: A water tank with an adjustable tap. Show that 'Flow Rate' (dV/dt) is the speed at which water enters or leaves, mirroring how people move between health states."
+      },
+      {
+        "id": "section_3",
+        "title": "The SIR Compartments",
+        "content": "Divide the population into three distinct 'buckets': S (Susceptible - healthy but can get sick), I (Infectious - currently sick and spreading), and R (Recovered - immune or removed). Total Population N = S + I + R.",
+        "example": "Graphic: Three colored zones. Sloths move from the Blue Zone (S) to the Red Zone (I) after a 'collision', then eventually to the Green Zone (R) after a timer expires."
+      },
+      {
+        "id": "section_4",
+        "title": "The Dynamics: Beta (β) and Gamma (γ)",
+        "content": "Introduce the two critical parameters: Transmission Rate (β), which is contact frequency times infection probability, and Recovery Rate (γ), which is 1 divided by the infectious period duration.",
+        "example": "Interactive Slider Visual: Increasing 'Beta' makes the 'S to I' flow pipe wider (faster spread). Increasing 'Gamma' makes the 'I to R' flow pipe wider (faster recovery/less time to infect others)."
+      },
+      {
+        "id": "section_5",
+        "title": "The SIR Equations Visualized",
+        "content": "Present the three core differential equations. Use color-coding to link terms to the flows: dS/dt = -βSI/N (The Loss of Susceptibles), dI/dt = βSI/N - γI (The Growth/Decay of the Infected), and dR/dt = γI (The Gain of Recovered).",
+        "example": "Dynamic Graphing: As the Sloths move between zones in a split-screen, a line graph simultaneously draws the classic bell-shaped 'Infectious' curve and the S-shaped 'Recovered' curve."
+      },
+      {
+        "id": "section_6",
+        "title": "The Tipping Point: Basic Reproduction Number (R0)",
+        "content": "Define R0 = β/γ. Explain that if R0 > 1, the epidemic grows; if R0 < 1, it dies out. This is the 'Threshold Theorem'.",
+        "example": "Branching Diagram: If R0 is 2, show one infected sloth handing a 'red ball' to two others. Then show how social distancing (lowering β) or vaccination (reducing S) drops R0 below 1."
+      },
+      {
+        "id": "section_7",
+        "title": "Conclusion: Flattening the Curve",
+        "content": "Summarize how simulation helps policymakers. Explain that 'Flattening the Curve' means slowing β to keep the peak of the 'I' curve below healthcare capacity.",
+        "example": "Overlay: A horizontal dashed line representing 'Hospital Beds'. Show two simulations side-by-side: one with high β (peak goes over the line) and one with low β (peak stays below)."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "Introduction: The Math Behind the Sneeze",
+      "lecture_lines": [
+        "Infectious diseases seem chaotic and unpredictable.",
+        "Mathematics reveals hidden patterns in how they spread.",
+        "Today, we decode the math behind the sneeze."
+      ],
+      "animations": [
+        "Initialize a 2D space with 20 blue circles (#3498db) moving randomly and bouncing off the edges.",
+        "Highlight the center-most circle and change its color to red (#e74c3c) to represent the first infection.",
+        "When a red circle (#e74c3c) collides with a blue circle (#3498db), the blue circle immediately turns red."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Concept of Rate of Change",
+      "lecture_lines": [
+        "Calculus helps us track changes over time.",
+        "Imagine a tank where water flows in and out.",
+        "Flow rate depends on the current population size."
+      ],
+      "animations": [
+        "Draw a rectangular vessel using [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/tank.svg] with a vertical gauge on the side, labeled 'Population Size' in white (#ffffff).",
+        "Animate a tap [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/tap.svg] pouring water in (Inflow) and a drain at the bottom (Outflow) with arrows indicating movement.",
+        "Transform the 'Inflow' and 'Outflow' labels into the derivative notation 'dV/dt' to show the rate of change."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The SIR Compartments",
+      "lecture_lines": [
+        "The population is split into three distinct compartments.",
+        "Healthy individuals begin in the Susceptible group.",
+        "They become Infectious after contacting the virus.",
+        "Eventually, they recover and gain lasting immunity.",
+        "The total population remains constant across all groups."
+      ],
+      "animations": [
+        "Display three rectangular zones labeled 'Susceptible' (Blue #3498db), 'Infectious' (Red #e74c3c), and 'Recovered' (Green #2ecc71).",
+        "Populate the 'Susceptible' zone with 10 person icons [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/person.svg] (Blue #3498db) and display the equation 'N = S + I + R' at the top in white (#ffffff).",
+        "Animate one person icon [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/person.svg] moving from 'Susceptible' to 'Infectious' (turning red #e74c3c) and then to 'Recovered' (turning green #2ecc71)."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Dynamics: Beta (β) and Gamma (γ)",
+      "lecture_lines": [
+        "Beta measures the likelihood of disease transmission.",
+        "Higher Beta values speed up the infection's spread.",
+        "Gamma controls the rate at which people recover."
+      ],
+      "animations": [
+        "Display the 'S' (Blue #3498db) and 'I' (Red #e74c3c) compartments with a thin yellow arrow (#f1c40f) connecting them.",
+        "Label the yellow arrow with a bold Greek letter beta (β) (#f1c40f) to identify the transmission rate.",
+        "Show a slider for β moving to the right; the yellow arrow (#f1c40f) thickens and dots move rapidly from 'S' to 'I'.",
+        "Draw the 'R' (Green #2ecc71) compartment and a purple arrow (#9b59b6) from 'I' labeled with the Greek letter gamma (γ).",
+        "Animate dots flowing through the whole system: from 'S' to 'I' via β and then from 'I' to 'R' via γ."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The SIR Equations Visualized",
+      "lecture_lines": [
+        "Differential equations describe population shifts mathematically.",
+        "The Susceptible group shrinks as people get sick.",
+        "The Infected group grows, peaks, and then falls.",
+        "Recovered numbers rise as patients heal.",
+        "These equations predict the epidemic's trajectory."
+      ],
+      "animations": [
+        "Display dS/dt = -βSI/N in the top left, with S in blue (#3498db) and β in yellow (#f1c40f).",
+        "Display dI/dt = βSI/N - γI in the top center, with I in red (#e74c3c) and γ in purple (#9b59b6).",
+        "Display dR/dt = γI in the top right, with R in green (#2ecc71).",
+        "Fade in a coordinate graph below the equations with 'Time' on the X-axis and 'Population' on the Y-axis.",
+        "Simultaneously plot the decreasing blue curve (S), the bell-shaped red curve (I), and the increasing green curve (R)."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "The Tipping Point: Basic Reproduction Number (R0)",
+      "lecture_lines": [
+        "Dividing Beta by Gamma gives the number R-naught.",
+        "This value predicts if a disease becomes an epidemic.",
+        "If R-naught exceeds one, cases grow exponentially.",
+        "Below one, the outbreak will eventually die out.",
+        "It is the tipping point for public health."
+      ],
+      "animations": [
+        "Display the formula R0 = β / γ in a large, bold white font (#ffffff) in the center of the screen.",
+        "Animate a branching diagram where one red dot (#e74c3c) contacts three blue dots (#3498db), turning them all red.",
+        "Show the text 'R0 = 3: Epidemic Spreads' in red (#e74c3c) next to the branching diagram.",
+        "Transition to a new scene where a red dot recovers (turns green #2ecc71) before it can contact any blue dots.",
+        "Show the text 'R0 < 1: Disease Dies Out' in green (#2ecc71) to highlight the threshold."
+      ]
+    },
+    {
+      "id": "section_7",
+      "title": "Conclusion: Flattening the Curve",
+      "lecture_lines": [
+        "Flattening the curve means reducing the peak.",
+        "Lowering Beta keeps cases within hospital capacity.",
+        "Math helps us manage and survive outbreaks."
+      ],
+      "animations": [
+        "Draw a coordinate graph with a horizontal dashed white line (#ffffff) labeled 'Healthcare Capacity' and place the hospital icon [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/hospital.svg] near the capacity line.",
+        "Animate a tall, narrow red curve (#e74c3c) representing an uncontrolled outbreak that peaks far above the dashed line.",
+        "Overlay a second, flatter and wider red curve (#e74c3c) that stays entirely below the healthcare capacity line."
+      ]
+    }
+  ],
+  "turns_run": 3,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for Section 1. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 1 following the 6x6 grid system and simulation requirements. Implemented dot movement and infection logic with updaters."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for Section 2. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 2 following the 6x6 grid system and visual anchor constraints. Handled the 'dV/dt' notation using Text mobjects as per instructions."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Updated lecture lines for section_3 to 5 lines matching the 5 animation stages, ensuring each line is under 10 words."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 codable animation steps for Section 3 (Key Section). Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 3 with 3 compartments (S, I, R), a population of dots, a transition animation, and the conservation equation. Adhered to grid system and no-Tex constraints."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section 4 (Key Section)."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Expanded the animation plan for section_4 to 5 stages to match the 5 lecture lines. The stages now follow the introduction of beta, its effect, the introduction of gamma, and the total flow."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Section 4 Manim code has been generated. It includes the compartment layout (S, I, R), Beta and Gamma arrows with corresponding sliders, and the required animations for line-by-line synchronization. All mandatory constraints (grid system, no Tex, color highlighting) are met."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section 5 (Key Section)."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 codable animation steps for Section 5 (Key Section). Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 5 with 5 animation stages matching the lecture lines. Used Text and VGroups for color-coded SIR equations. Added a coordinate graph with animated S, I, R curves. Positioned elements using the 6x6 grid system."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section 6 (Key Section)."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 codable animation steps for Section 6 (Key Section). Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Script and animation plan for section_6 are finalized (5 stages). Generating Manim code following the visual anchor system and constraints."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section 7."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 codable animation steps for Section 7. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Finalized Manim code for Section 7. Implemented three stages: 1) Initializing coordinate graph and Healthcare Capacity line, 2) Drawing the tall 'uncontrolled' outbreak curve, 3) Drawing the flat 'controlled' outbreak curve. Used grid system for positioning and adhered to all MAS constraints (no TeX, hex colors, color-coded lecture lines)."
+    },
+    {
+      "id": 22,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines provided for section 1. Please design 3 corresponding animation stages.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines provided for section 2. Please design 3 corresponding animation stages.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines provided for section 3. Please design 3 corresponding animation stages.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines provided for section 4. Please design 5 corresponding animation stages.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines provided for section 5. Please design 5 corresponding animation stages.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines provided for section 6. Please design 5 corresponding animation stages.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines provided for section 7. Please design 3 corresponding animation stages.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please write concise lecture lines (max 10 words each) for section_1, following the 3 animation stages I have defined. Ensure each line aligns with its corresponding stage.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please write concise lecture lines (max 10 words each) for section_2, following the 3 animation stages I have defined. Ensure each line aligns with its corresponding stage.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please write concise lecture lines (max 10 words each) for section_3 (Key Section), following the 5 animation stages I have defined. Ensure each line aligns with its corresponding stage.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please write concise lecture lines (max 10 words each) for section_4, following the 3 animation stages I have defined. Ensure each line aligns with its corresponding stage.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please write concise lecture lines (max 10 words each) for section_5 (Key Section), following the 5 animation stages I have defined. Ensure each line aligns with its corresponding stage.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please write concise lecture lines (max 10 words each) for section_6 (Key Section), following the 5 animation stages I have defined. Ensure each line aligns with its corresponding stage.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "Please write concise lecture lines (max 10 words each) for section_7, following the 3 animation stages I have defined. Ensure each line aligns with its corresponding stage.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Draw a rectangular vessel using [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/tank.svg] with a vertical gauge on the side, labeled 'Population Size' in white (#ffffff).\", 'Animate a tap [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/tap.svg] pouring water in (Inflow) and a drain at the bottom (Outflow) with arrows indicating movement.']",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated tank.svg and tap.svg assets into the scene using SVGMobject. Tank placed in area B3-E5, tap at A3."
+    },
+    {
+      "id": 37,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Populate the 'Susceptible' zone with 10 person icons [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/person.svg] (Blue #3498db) and display the equation 'N = S + I + R' at the top in white (#ffffff).\", \"Animate one person icon [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/person.svg] moving from 'Susceptible' to 'Infectious' (turning red #e74c3c) and then to 'Recovered' (turning green #2ecc71).\"]",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated person.svg icons for the population and used them in the S->I->R transition animation."
+    },
+    {
+      "id": 38,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_7] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Draw a coordinate graph with a horizontal dashed white line (#ffffff) labeled 'Healthcare Capacity' and place the hospital icon [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/hospital.svg] near the capacity line.\"]",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated hospital icon SVG at grid C5 near the capacity line."
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The simulation box occupies the full right-side grid area (A1-F6), making the layout feel cramped and leaving insufficient margin from the title and the lecture text on the left. Fix: Line 69: self.place_in_area(box, 'B2', 'F6', scale_factor=0.9) (line=69, object=box)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated simulation box to B2-F6 with scale_factor=0.9 to provide better margins from title and lecture text. Adjusted simulation bounds and patient zero location accordingly."
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The dv_dt_label (dV/dt) is positioned at C5, which places it inside the tank's interior area (B3-E5), causing it to overlap with the water animation and reducing legibility. Fix: Line 126: self.place_at_grid(self.dv_dt_label, 'C6', scale_factor=0.8) (line=126, object=dv_dt_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved dv_dt_label to C6 with scale 0.8 to avoid overlap with the tank."
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'Population Size' gauge_label is a multi-word vertical label placed at a single grid point (D2), making it appear cramped and too close to the tank boundary. Fix: Line 78: self.place_in_area(self.gauge_label, 'C2', 'E2', scale_factor=0.8) (line=78, object=gauge_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved gauge_label to area C2-E2 with scale 0.8 for better spacing and visibility."
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The 'out_label' is positioned at F5 at the absolute bottom edge of the grid, which risks visual clipping and feels disconnected from the drain pipe above it. Fix: Line 108: self.place_at_grid(self.out_label, 'E6') (line=108, object=out_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved out_label to E6 to prevent clipping and improve alignment with the drain."
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The label 's_label' is left-aligned at E1, causing it to be off-center relative to its 2-column wide compartment box (B1-D2). Fix: Line 80: self.place_in_area(s_label, 'E1', 'E2', scale_factor=0.8) (line=80, object=s_label)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Centered 'Susceptible' label using place_in_area('E1', 'E2')."
+    },
+    {
+      "id": 44,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The label 'i_label' is left-aligned at E3, making it uncentered under the 'i_rect' compartment (B3-D4). Fix: Line 81: self.place_in_area(i_label, 'E3', 'E4', scale_factor=0.8) (line=81, object=i_label)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Centered 'Infectious' label using place_in_area('E3', 'E4')."
+    },
+    {
+      "id": 45,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The label 'r_label' is left-aligned at E5, which fails to center it under the 'r_rect' compartment (B5-D6) and risks overflow due to its length. Fix: Line 82: self.place_in_area(r_label, 'E5', 'E6', scale_factor=0.8) (line=82, object=r_label)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Centered 'Recovered' label using place_in_area('E5', 'E6')."
+    },
+    {
+      "id": 46,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The 'gamma_slider_label' is misaligned with the 'beta_slider_label', starting at grid E3 while the latter starts at C1, creating a staggered and inconsistent visual flow for the interactive sliders. Fix: Line 156: self.place_at_grid('gamma_slider_label', 'E1', scale_factor=1.0) (line=156, object=gamma_slider_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Corrected the alignment of 'gamma_slider_label' by moving it from grid position 'E3' to 'E1', matching the column used for 'beta_slider_label' at 'C1'. Adjusted the 'gamma_slider_track' to 'E2' to 'E4' for consistency with the beta slider track at 'C2' to 'C4'. Updated lecture lines to match the specific instructions for Section 4."
+    },
+    {
+      "id": 47,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The susceptible equation (eq_s) overlaps with the infected equation (eq_i) at the current scale. Fix: Line 75: self.place_in_area(eq_s, 'A1', 'A2', scale_factor=0.7) (line=75, object=eq_s)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced scale factor for eq_s to 0.7 to prevent overlap with eq_i."
+    },
+    {
+      "id": 48,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The infected equation (eq_i) is too long for its grid area at scale 1.0, causing it to overlap with eq_s and eq_r. Fix: Line 91: self.place_in_area(eq_i, 'A3', 'A4', scale_factor=0.7) (line=91, object=eq_i)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced scale factor for eq_i to 0.7 to prevent overlap with eq_s and eq_r."
+    },
+    {
+      "id": 49,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The recovered equation (eq_r) overlaps with the infected equation (eq_i) because they are positioned too closely. Fix: Line 105: self.place_in_area(eq_r, 'A5', 'A6', scale_factor=0.7) (line=105, object=eq_r)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced scale factor for eq_r to 0.7 to prevent overlap with eq_i."
+    },
+    {
+      "id": 50,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The formula 'R0 = beta / gamma' at line 80 is positioned too high and in a narrow 2-unit area, which makes it look small and cramped near the top edge. Fix: Line 80: self.place_in_area(formula, 'B2', 'B5', scale_factor=0.9) (line=80, object=formula)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted the formula positioning to use 'B2' to 'B5' with a scale factor of 0.9 as suggested to avoid a cramped appearance."
+    },
+    {
+      "id": 51,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The label 'R0 = 3: Epidemic Spreads' is too wide for the allocated F2-F4 area, risking horizontal compression or clipping. Fix: Line 109: self.place_in_area(spread_label, 'F1', 'F6', scale_factor=0.8) (line=109, object=spread_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Expanded the spread label area to 'F1' to 'F6' and set scale factor to 0.8 to prevent horizontal compression."
+    },
+    {
+      "id": 52,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The label 'R0 < 1: Disease Dies Out' is cramped in the F2-F4 grid space, which limits its readability as a long text string. Fix: Line 138: self.place_in_area(dieout_label, 'F1', 'F6', scale_factor=0.8) (line=138, object=dieout_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Expanded the die-out label area to 'F1' to 'F6' and set scale factor to 0.8 for better readability."
+    },
+    {
+      "id": 53,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The axes occupy the full A1-F6 area, causing the 'Infected' label at A1 and 'Time' label at F6 to overlap directly with the axis tips, creating visual clutter. Fix: Line 71: self.place_in_area(axes, 'B1', 'F5') (line=71, object=axes)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced axes area to B1-F5 to prevent label overlap."
+    },
+    {
+      "id": 54,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The 'Healthcare Capacity' label is a long string placed at a single point (D6) at the extreme edge, making it appear unbalanced and risking clipping. Fix: Line 91: self.place_in_area(capacity_text, 'C2', 'C4', scale_factor=0.7) (line=91, object=capacity_text)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned Healthcare Capacity label to C2-C4 area at 0.7 scale."
+    },
+    {
+      "id": 55,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The x-axis label 'Time' at F6 is positioned at the very edge of the grid, which can feel cramped against the frame boundary. Fix: Line 74: self.place_at_grid(x_label, 'F6', scale_factor=0.8) (line=74, object=x_label)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Scaled x-axis label to 0.8 at F6 to avoid edge cramping."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6",
+    "section_7": "Coder7"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5,
+    "section_7": 6
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_6/480p15/Section6Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_7/480p15/Section7Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 154743,
+        "video_mtime_ns": 1778636276023512459,
+        "code_sha1": "4bc93e4dfaacac8488deee91786884e4c96d3864"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The simulation box occupies the full right-side grid area (A1-F6), making the layout feel cramped and leaving insufficient margin from the title and the lecture text on the left.",
+              "solution": "Line 69: self.place_in_area(box, 'B2', 'F6', scale_factor=0.9)",
+              "line_number": 69,
+              "object_affected": "box"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        39
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 160574,
+        "video_mtime_ns": 1778636320401901631,
+        "code_sha1": "24fd90e5bfef6aafd772e31c9ca2eccde943267a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The dv_dt_label (dV/dt) is positioned at C5, which places it inside the tank's interior area (B3-E5), causing it to overlap with the water animation and reducing legibility.",
+              "solution": "Line 126: self.place_at_grid(self.dv_dt_label, 'C6', scale_factor=0.8)",
+              "line_number": 126,
+              "object_affected": "dv_dt_label"
+            },
+            {
+              "problem": "The 'Population Size' gauge_label is a multi-word vertical label placed at a single grid point (D2), making it appear cramped and too close to the tank boundary.",
+              "solution": "Line 78: self.place_in_area(self.gauge_label, 'C2', 'E2', scale_factor=0.8)",
+              "line_number": 78,
+              "object_affected": "gauge_label"
+            },
+            {
+              "problem": "The 'out_label' is positioned at F5 at the absolute bottom edge of the grid, which risks visual clipping and feels disconnected from the drain pipe above it.",
+              "solution": "Line 108: self.place_at_grid(self.out_label, 'E6')",
+              "line_number": 108,
+              "object_affected": "out_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        40,
+        41,
+        42
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 187026,
+        "video_mtime_ns": 1778636282334924478,
+        "code_sha1": "bbd7b402ef9ef6ecb06823e772365af463af36a2"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The label 's_label' is left-aligned at E1, causing it to be off-center relative to its 2-column wide compartment box (B1-D2).",
+              "solution": "Line 80: self.place_in_area(s_label, 'E1', 'E2', scale_factor=0.8)",
+              "line_number": 80,
+              "object_affected": "s_label"
+            },
+            {
+              "problem": "The label 'i_label' is left-aligned at E3, making it uncentered under the 'i_rect' compartment (B3-D4).",
+              "solution": "Line 81: self.place_in_area(i_label, 'E3', 'E4', scale_factor=0.8)",
+              "line_number": 81,
+              "object_affected": "i_label"
+            },
+            {
+              "problem": "The label 'r_label' is left-aligned at E5, which fails to center it under the 'r_rect' compartment (B5-D6) and risks overflow due to its length.",
+              "solution": "Line 82: self.place_in_area(r_label, 'E5', 'E6', scale_factor=0.8)",
+              "line_number": 82,
+              "object_affected": "r_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        43,
+        44,
+        45
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 298049,
+        "video_mtime_ns": 1778636283035374538,
+        "code_sha1": "1b46ddbfcae4b4d3f6ed4ba237377c172afc3e94"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'gamma_slider_label' is misaligned with the 'beta_slider_label', starting at grid E3 while the latter starts at C1, creating a staggered and inconsistent visual flow for the interactive sliders.",
+              "solution": "Line 156: self.place_at_grid('gamma_slider_label', 'E1', scale_factor=1.0)",
+              "line_number": 156,
+              "object_affected": "gamma_slider_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        46
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 207196,
+        "video_mtime_ns": 1778636280122516052,
+        "code_sha1": "308632b054f5fbf0c76b60e97e9507466340b353"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The susceptible equation (eq_s) overlaps with the infected equation (eq_i) at the current scale.",
+              "solution": "Line 75: self.place_in_area(eq_s, 'A1', 'A2', scale_factor=0.7)",
+              "line_number": 75,
+              "object_affected": "eq_s"
+            },
+            {
+              "problem": "The infected equation (eq_i) is too long for its grid area at scale 1.0, causing it to overlap with eq_s and eq_r.",
+              "solution": "Line 91: self.place_in_area(eq_i, 'A3', 'A4', scale_factor=0.7)",
+              "line_number": 91,
+              "object_affected": "eq_i"
+            },
+            {
+              "problem": "The recovered equation (eq_r) overlaps with the infected equation (eq_i) because they are positioned too closely.",
+              "solution": "Line 105: self.place_in_area(eq_r, 'A5', 'A6', scale_factor=0.7)",
+              "line_number": 105,
+              "object_affected": "eq_r"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        47,
+        48,
+        49
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 399161,
+        "video_mtime_ns": 1778636284861202506,
+        "code_sha1": "e57ac5052e43f84ab3213f770fcad2e07a6680c5"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The formula 'R0 = beta / gamma' at line 80 is positioned too high and in a narrow 2-unit area, which makes it look small and cramped near the top edge.",
+              "solution": "Line 80: self.place_in_area(formula, 'B2', 'B5', scale_factor=0.9)",
+              "line_number": 80,
+              "object_affected": "formula"
+            },
+            {
+              "problem": "The label 'R0 = 3: Epidemic Spreads' is too wide for the allocated F2-F4 area, risking horizontal compression or clipping.",
+              "solution": "Line 109: self.place_in_area(spread_label, 'F1', 'F6', scale_factor=0.8)",
+              "line_number": 109,
+              "object_affected": "spread_label"
+            },
+            {
+              "problem": "The label 'R0 < 1: Disease Dies Out' is cramped in the F2-F4 grid space, which limits its readability as a long text string.",
+              "solution": "Line 138: self.place_in_area(dieout_label, 'F1', 'F6', scale_factor=0.8)",
+              "line_number": 138,
+              "object_affected": "dieout_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        50,
+        51,
+        52
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_7",
+      "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_7/480p15/Section7Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics/media/videos/section_7/480p15/Section7Scene.mp4",
+        "video_size": 166771,
+        "video_mtime_ns": 1778636281172706239,
+        "code_sha1": "47885447fde11e329be55a964ab33e6046060b60"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The axes occupy the full A1-F6 area, causing the 'Infected' label at A1 and 'Time' label at F6 to overlap directly with the axis tips, creating visual clutter.",
+              "solution": "Line 71: self.place_in_area(axes, 'B1', 'F5')",
+              "line_number": 71,
+              "object_affected": "axes"
+            },
+            {
+              "problem": "The 'Healthcare Capacity' label is a long string placed at a single point (D6) at the extreme edge, making it appear unbalanced and risking clipping.",
+              "solution": "Line 91: self.place_in_area(capacity_text, 'C2', 'C4', scale_factor=0.7)",
+              "line_number": 91,
+              "object_affected": "capacity_text"
+            },
+            {
+              "problem": "The x-axis label 'Time' at F6 is positioned at the very edge of the grid, which can feel cramped against the frame boundary.",
+              "solution": "Line 74: self.place_at_grid(x_label, 'F6', scale_factor=0.8)",
+              "line_number": 74,
+              "object_affected": "x_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        53,
+        54,
+        55
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/9-Decoding_the_Spread_The_SIR_Model_of_Epidemics",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 212621,
+      "completion_tokens": 32197,
+      "total_tokens": 310410,
+      "call_count": 43
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 276,
+        "completion_tokens": 939,
+        "total_tokens": 2061,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 13441,
+        "completion_tokens": 556,
+        "total_tokens": 14807,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 16688,
+        "completion_tokens": 504,
+        "total_tokens": 17577,
+        "call_count": 2
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 22621,
+        "completion_tokens": 479,
+        "total_tokens": 23287,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 18189,
+        "completion_tokens": 2261,
+        "total_tokens": 21099,
+        "call_count": 2
+      },
+      "agent:Coder7": {
+        "prompt_tokens": 15370,
+        "completion_tokens": 3597,
+        "total_tokens": 19331,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 16604,
+        "completion_tokens": 3917,
+        "total_tokens": 21056,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 19206,
+        "completion_tokens": 4132,
+        "total_tokens": 23613,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 15982,
+        "completion_tokens": 4325,
+        "total_tokens": 21333,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 20077,
+        "completion_tokens": 1832,
+        "total_tokens": 22366,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 20876,
+        "completion_tokens": 4873,
+        "total_tokens": 25992,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 5456,
+        "completion_tokens": 905,
+        "total_tokens": 17480,
+        "call_count": 14
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 7156,
+        "completion_tokens": 1775,
+        "total_tokens": 14639,
+        "call_count": 1
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2623,
+        "completion_tokens": 143,
+        "total_tokens": 7680,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2819,
+        "completion_tokens": 373,
+        "total_tokens": 11727,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2903,
+        "completion_tokens": 375,
+        "total_tokens": 10959,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3174,
+        "completion_tokens": 156,
+        "total_tokens": 7565,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2851,
+        "completion_tokens": 342,
+        "total_tokens": 5235,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 3557,
+        "completion_tokens": 368,
+        "total_tokens": 10081,
+        "call_count": 1
+      },
+      "video_review:section_7": {
+        "prompt_tokens": 2752,
+        "completion_tokens": 345,
+        "total_tokens": 12522,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 212621,
+        "completion_tokens": 32197,
+        "total_tokens": 310410,
+        "call_count": 43
+      }
+    }
+  }
+}

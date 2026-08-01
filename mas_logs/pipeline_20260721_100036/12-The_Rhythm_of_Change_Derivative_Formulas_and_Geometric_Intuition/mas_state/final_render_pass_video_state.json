@@ -1,0 +1,993 @@
+{
+  "topic": "The Rhythm of Change: Derivative Formulas and Geometric Intuition",
+  "target_audience": "Introductory Calculus Students (High School or First-Year University)",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup title and lecture lines from storyboard\n        title_str = \"Prerequisite: The Concept of Slope\"\n        lecture_lines_str = [\n            \"- Slope measures how steep a straight line is.\",\n            \"- We calculate it as vertical rise over horizontal run.\",\n            \"- On a curve, the steepness changes at every point.\"\n        ]\n        self.setup_layout(title_str, lecture_lines_str)\n        \n        # === Animation for Lecture Line 1 ===\n        # Create a straight white line (#FFFFFF) and a simple ant shape on it.\n        self.lecture[0].set_color(WHITE)\n        \n        start_pt = self.grid[\"D1\"]\n        end_pt = self.grid[\"B6\"]\n        white_line = Line(start_pt, end_pt, color=WHITE)\n        \n        # Simple ant shape (Mobject group)\n        ant_body = Ellipse(width=0.4, height=0.2, color=WHITE, fill_opacity=1)\n        ant_head = Dot(radius=0.08, color=WHITE).next_to(ant_body, RIGHT, buff=0)\n        ant = VGroup(ant_body, ant_head)\n        ant.move_to(start_pt)\n        # Initial orientation along the line\n        init_angle = white_line.get_angle()\n        ant.rotate(init_angle)\n        ant.current_angle = init_angle\n\n        self.play(Create(white_line))\n        self.play(FadeIn(ant))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight 'rise' and 'run' with a green triangle (#00FF00).\n        self.lecture[1].set_color(GREEN)\n        \n        # Define triangle points using grid-aligned positions\n        p_corner = np.array([end_pt[0], start_pt[1], 0])\n        triangle = Polygon(start_pt, p_corner, end_pt, color=GREEN, fill_opacity=0.3, stroke_width=2)\n        \n        # Fix Issue 27: Reposition 'run' label to E3\n        run_label = Text(\"run\", color=GREEN, font_size=20)\n        self.place_at_grid(run_label, 'E3', scale_factor=0.6)\n        \n        # Fix Issue 28: Reposition 'rise' label to D6\n        rise_label = Text(\"rise\", color=GREEN, font_size=20)\n        self.place_at_grid(rise_label, 'D6', scale_factor=0.6)\n        \n        self.play(Create(triangle), Write(run_label), Write(rise_label))\n        \n        # Move ant along the plank (line)\n        self.play(ant.animate.move_to(end_pt), run_time=2, rate_func=linear)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Transition to a blue curve (#0000FF). Ant walks with a white tangent line (#FFFFFF).\n        self.lecture[2].set_color(BLUE)\n        \n        # Define a blue curve\n        curve = ParametricFunction(\n            lambda t: np.array([t, 0.5 * np.sin(t), 0]),\n            t_range=[-3, 3],\n            color=BLUE\n        )\n        # Fix Issue 29: Position curve in area B2 to E6\n        self.place_in_area(curve, 'B2', 'E6', scale_factor=0.8)\n        \n        # White tangent line that follows the ant\n        tangent_line = Line(LEFT, RIGHT, color=WHITE).scale(0.7)\n        \n        # Transition sequence\n        self.play(\n            FadeOut(white_line),\n            FadeOut(triangle),\n            FadeOut(run_label),\n            FadeOut(rise_label),\n            Create(curve),\n            # Orient ant for the start of the curve (approx 0 angle for sin(t) at -3)\n            ant.animate.move_to(curve.point_from_proportion(0)).rotate(-ant.current_angle)\n        )\n        ant.current_angle = 0\n        \n        # Movement along curve using ValueTracker and updaters\n        t_tracker = ValueTracker(0)\n        \n        def ant_updater(m):\n            t = t_tracker.get_value()\n            pos = curve.point_from_proportion(t)\n            # Numerical tangent calculation for rotation\n            dt = 0.001\n            p1 = curve.point_from_proportion(max(0, t - dt))\n            p2 = curve.point_from_proportion(min(1, t + dt))\n            target_angle = np.arctan2(p2[1] - p1[1], p2[0] - p1[0])\n            m.move_to(pos)\n            m.rotate(target_angle - m.current_angle)\n            m.current_angle = target_angle\n            \n        def tangent_updater(m):\n            m.move_to(ant.get_center())\n            m.set_angle(ant.current_angle)\n            \n        ant.add_updater(ant_updater)\n        tangent_line.add_updater(tangent_updater)\n        \n        self.add(tangent_line)\n        self.play(t_tracker.animate.set_value(1), run_time=5, rate_func=linear)\n        \n        # Remove updaters and clean up for final markers\n        ant.remove_updater(ant_updater)\n        tangent_line.remove_updater(tangent_updater)\n        self.play(FadeOut(ant), FadeOut(tangent_line))\n        \n        # Highlight slope at three distinct points: yellow (#FFFF00), orange (#FFA500), red (#FF0000)\n        marker_proportions = [0.2, 0.5, 0.8]\n        marker_colors = [YELLOW, \"#FFA500\", RED]\n        \n        for p_prop, m_color in zip(marker_proportions, marker_colors):\n            pos = curve.point_from_proportion(p_prop)\n            # Calculate tangent angle at this point\n            dt = 0.001\n            p1 = curve.point_from_proportion(p_prop - dt)\n            p2 = curve.point_from_proportion(p_prop + dt)\n            angle = np.arctan2(p2[1] - p1[1], p2[0] - p1[0])\n            \n            dot = Dot(pos, color=m_color)\n            line = Line(LEFT, RIGHT, color=m_color).scale(0.6).move_to(pos).set_angle(angle)\n            \n            self.play(FadeIn(dot), Create(line), run_time=1)\n            \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with the section title and lecture lines from storyboard\n        title = \"Geometric Intuition: The 'Infinite Zoom'\"\n        lines = [\n            \"Zooming in on a curve reveals a surprising secret.\",\n            \"At extreme magnification, every smooth curve looks straight.\",\n            \"This straight line is the tangent at that point.\",\n            \"The derivative is the slope of this tangent line.\",\n            \"It captures the exact rate of change right now.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Draw a red parabola (#FF0000) and mark a single point with a white dot (#FFFFFF).\n        self.play(self.lecture[0].animate.set_color(RED))\n        \n        # Define the parabola y = 0.5 * x^2\n        parabola = FunctionGraph(lambda x: 0.5 * x**2, x_range=[-2.5, 2.5]).set_color(\"#FF0000\")\n        \n        # Point on the curve at x=1.0, y=0.5\n        dot = Dot(color=\"#FFFFFF\")\n        # Fix for Issue 30: Move dot to C4 to avoid obstructing lecture lines\n        self.place_at_grid(dot, 'C4')\n        \n        # Shift parabola so that its point (1.0, 0.5) aligns with the dot's grid position\n        # FunctionGraph relative coordinate for the point\n        point_on_curve_rel = np.array([1.0, 0.5, 0])\n        parabola.shift(dot.get_center() - point_on_curve_rel)\n        \n        self.play(Create(parabola), FadeIn(dot))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Create a magnifying glass circle around the white dot.\n        self.play(self.lecture[1].animate.set_color(YELLOW))\n        \n        mag_glass = Circle(radius=0.7, color=WHITE, stroke_width=4)\n        mag_glass.move_to(dot.get_center())\n        \n        self.play(Create(mag_glass))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Zoom into the area inside the circle. The curve should gradually look straight.\n        # Overlay a green tangent line (#00FF00).\n        self.play(self.lecture[2].animate.set_color(GREEN))\n        \n        zoom_group = VGroup(parabola, dot)\n        \n        # Tangent line at x=1 for y=0.5x^2 has slope f'(1)=1.0\n        tangent_line = Line(start=LEFT*2.5, end=RIGHT*2.5, color=\"#00FF00\")\n        tangent_line.rotate(np.arctan(1.0)) \n        tangent_line.move_to(dot.get_center())\n        \n        # Scale the parabola and dot around the point to simulate zoom\n        self.play(\n            zoom_group.animate.scale(8, about_point=dot.get_center()),\n            parabola.animate.set_stroke(width=2),\n            mag_glass.animate.scale(1.2).set_color(GRAY), # Fade/expand the glass slightly\n            run_time=3\n        )\n        \n        self.play(Create(tangent_line))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Display 'Instantaneous Slope' in white (#FFFFFF)\n        self.play(self.lecture[3].animate.set_color(WHITE))\n        \n        slope_label = Text(\"Instantaneous Slope\", font_size=20, color=\"#FFFFFF\")\n        # Fix for Issue 31: Use place_in_area to avoid overlapping tangent line\n        self.place_in_area(slope_label, 'E4', 'F6', scale_factor=0.8)\n        \n        self.play(Write(slope_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Focus on rate of change\n        self.play(self.lecture[4].animate.set_color(WHITE))\n        \n        # Highlight the point of tangency\n        self.play(\n            Indicate(dot, color=WHITE, scale_factor=1.5),\n            Flash(dot, color=WHITE, line_length=0.3)\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Data from storyboard\n        title_text = \"The Power Rule: Expanding Dimensions\"\n        lecture_lines = [\n            \"The power rule calculates derivatives for functions like x squared.\",\n            \"Imagine a square growing by a tiny amount of area.\",\n            \"Growth happens along the boundary of the existing shape.\",\n            \"For x squared, the rate of growth is two x.\",\n            \"Power rule: drop the exponent and subtract one.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors\n        BLUE_SQ = \"#0000FF\"\n        WHITE_TXT = \"#FFFFFF\"\n        GREEN_STRIP = \"#00FF00\"\n        YELLOW_LBL = \"#FFFF00\"\n\n        # === Animation for Lecture Line 1 ===\n        # The power rule calculates derivatives for functions like x squared.\n        self.lecture[0].set_color(BLUE_SQ)\n        \n        # Initialize mobjects but don't add to scene yet\n        square = Square(side_length=2.0, fill_opacity=0.8, fill_color=BLUE_SQ, stroke_color=WHITE)\n        self.place_at_grid(square, 'D3')\n        \n        label_x_left = MathTex(\"x\", color=WHITE_TXT)\n        self.place_at_grid(label_x_left, 'D2')\n        \n        label_x_bottom = MathTex(\"x\", color=WHITE_TXT)\n        self.place_at_grid(label_x_bottom, 'E3')\n        \n        area_text = MathTex(\"x^2\", color=WHITE_TXT)\n        self.place_at_grid(area_text, 'D3')\n        \n        self.play(\n            Create(square),\n            Write(label_x_left),\n            Write(label_x_bottom),\n            Write(area_text),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Imagine a square growing by a tiny amount of area.\n        self.lecture[1].set_color(GREEN_STRIP)\n        \n        # Top strip\n        top_strip = Rectangle(width=2.0, height=0.2, fill_opacity=0.8, fill_color=GREEN_STRIP, stroke_color=WHITE)\n        self.place_at_grid(top_strip, 'C3')\n        top_strip.shift(UP * 0.1) # Position precisely above the square\n        \n        # Right strip\n        right_strip = Rectangle(width=0.2, height=2.0, fill_opacity=0.8, fill_color=GREEN_STRIP, stroke_color=WHITE)\n        self.place_at_grid(right_strip, 'D4')\n        right_strip.shift(RIGHT * 0.1) # Position precisely to the right of the square\n        \n        self.play(\n            FadeIn(top_strip),\n            FadeIn(right_strip),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Growth happens along the boundary of the existing shape.\n        self.lecture[2].set_color(YELLOW_LBL)\n        \n        label_strip_top = MathTex(\"x\", color=YELLOW_LBL)\n        self.place_at_grid(label_strip_top, 'B3')\n        \n        label_strip_right = MathTex(\"x\", color=YELLOW_LBL)\n        self.place_at_grid(label_strip_right, 'D5')\n        \n        self.play(\n            Write(label_strip_top),\n            Write(label_strip_right),\n            run_time=1.0\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # For x squared, the rate of growth is two x.\n        self.lecture[3].set_color(WHITE_TXT)\n        \n        # Create objects here to avoid any chance of early appearance\n        target_2x = MathTex(\"2x\", color=WHITE_TXT)\n        self.place_at_grid(target_2x, 'B5', scale_factor=1.0)\n        \n        formula = MathTex(r\"\\frac{d}{dx}(x^2) = 2x\", color=WHITE_TXT)\n        self.place_in_area(formula, 'A2', 'A5', scale_factor=1.0)\n        \n        self.play(\n            ReplacementTransform(VGroup(label_strip_top, label_strip_right), target_2x),\n            FadeIn(formula),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Power rule: drop the exponent and subtract one.\n        self.lecture[4].set_color(WHITE_TXT)\n        \n        # Visual highlight of the connection\n        self.play(\n            Flash(target_2x, color=WHITE_TXT, flash_radius=0.4),\n            Flash(top_strip, color=GREEN_STRIP, flash_radius=0.4),\n            Flash(right_strip, color=GREEN_STRIP, flash_radius=0.4),\n            run_time=1.5\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        title = \"Trigonometric Intuition: The Unit Circle Dance\"\n        lines = [\n            \"Imagine a point moving around a unit circle.\",\n            \"The height of the point represents the sine function.\",\n            \"Its vertical speed depends on its horizontal position.\",\n            \"When height changes fastest, horizontal value is highest.\",\n            \"This proves the derivative of sine is cosine.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Assets/Values\n        theta = ValueTracker(0.0)\n        radius = 1.5\n        \n        # Colors for matching lecture lines\n        COLOR_SIN = \"#0000FF\"\n        COLOR_COS = \"#FF0000\"\n        COLOR_FASTEST = \"#00FFFF\"\n        \n        # Grid center for the unit circle (placed to leave room for formula below)\n        circle_center = np.array([3.0, 0.2, 0])\n\n        # === Animation for Lecture Line 1 ===\n        # Imagine a point moving around a unit circle.\n        unit_circle = Circle(radius=radius, color=WHITE)\n        unit_circle.move_to(circle_center)\n        \n        # Integration of Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/point.svg\n        point_asset = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/point.svg\").set_color(WHITE).scale(0.2)\n        point_asset.add_updater(lambda d: d.move_to(\n            circle_center + np.array([radius * np.cos(theta.get_value()), radius * np.sin(theta.get_value()), 0])\n        ))\n        \n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            Create(unit_circle),\n            FadeIn(point_asset)\n        )\n        self.play(theta.animate.set_value(0.5), run_time=1)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # The height of the point represents the sine function.\n        blue_line = Line(color=COLOR_SIN)\n        blue_line.add_updater(lambda l: l.set_points_as_corners([\n            circle_center + np.array([radius * np.cos(theta.get_value()), 0, 0]),\n            circle_center + np.array([radius * np.cos(theta.get_value()), radius * np.sin(theta.get_value()), 0])\n        ]))\n        \n        sin_label = MathTex(r\"\\sin(x)\", color=COLOR_SIN, font_size=24)\n        sin_label.add_updater(lambda l: l.next_to(blue_line, RIGHT, buff=0.1))\n        \n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(COLOR_SIN),\n            Create(blue_line),\n            FadeIn(sin_label)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Its vertical speed depends on its horizontal position.\n        red_line = Line(color=COLOR_COS)\n        red_line.add_updater(lambda l: l.set_points_as_corners([\n            circle_center,\n            circle_center + np.array([radius * np.cos(theta.get_value()), 0, 0])\n        ]))\n        \n        cos_label = MathTex(r\"\\cos(x)\", color=COLOR_COS, font_size=24)\n        cos_label.add_updater(lambda l: l.next_to(red_line, DOWN, buff=0.1))\n\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(COLOR_COS),\n            Create(red_line),\n            FadeIn(cos_label)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # When height changes fastest, horizontal value is highest.\n        def get_flash_anim(pos, color):\n            f = Circle(radius=0.1, color=color, stroke_width=6).move_to(pos)\n            return AnimationGroup(\n                f.animate.scale(6).set_stroke(opacity=0),\n                run_time=0.6,\n                rate_func=linear\n            )\n\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(COLOR_FASTEST)\n        )\n        \n        # Point at 0: Fast (Cyan flash)\n        self.play(theta.animate.set_value(0), run_time=0.5)\n        self.play(get_flash_anim(circle_center + np.array([radius, 0, 0]), COLOR_FASTEST))\n        \n        # To pi/2: Stop (Red flash at center because cos=0)\n        self.play(theta.animate.set_value(PI/2), run_time=1.5, rate_func=linear)\n        self.play(get_flash_anim(circle_center, COLOR_COS))\n        \n        # To pi: Fast (Cyan flash)\n        self.play(theta.animate.set_value(PI), run_time=1.5, rate_func=linear)\n        self.play(get_flash_anim(circle_center + np.array([-radius, 0, 0]), COLOR_FASTEST))\n        \n        # To 3pi/2: Stop (Red flash)\n        self.play(theta.animate.set_value(3*PI/2), run_time=1.5, rate_func=linear)\n        self.play(get_flash_anim(circle_center, COLOR_COS))\n\n        # Back to 2pi\n        self.play(theta.animate.set_value(2*PI), run_time=1.5, rate_func=linear)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # This proves the derivative of sine is cosine.\n        formula = MathTex(r\"\\frac{d}{dx}(\\sin x) = \\cos x\", color=WHITE)\n        # Positioned below the circle to avoid overlap (Issue 35)\n        self.place_in_area(formula, 'E2', 'F5', scale_factor=0.8)\n        \n        bg_rect = SurroundingRectangle(formula, color=BLACK, fill_opacity=0.7, stroke_width=0)\n\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(WHITE),\n            FadeIn(bg_rect),\n            Write(formula)\n        )\n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with the specific title and lecture lines\n        self.setup_layout(\n            \"Application: The Cheetah’s Sprint\",\n            [\n                \"Derivatives describe real movement, like a running cheetah.\",\n                \"Velocity is the derivative of position over time.\",\n                \"Acceleration is the derivative of velocity, measuring speed changes.\"\n            ]\n        )\n        \n        # Define colors for consistency between text and visuals\n        COLOR_POS = \"#58ACFA\" # Light Blue\n        COLOR_VEL = \"#58FA58\" # Light Green\n        COLOR_ACC = \"#FA5858\" # Light Red\n        \n        # === Animation for Lecture Line 1 ===\n        # Highlight first line\n        self.play(self.lecture[0].animate.set_color(COLOR_POS))\n        \n        # Cheetah representation (using a simple triangle)\n        cheetah = Triangle(color=ORANGE, fill_opacity=1).rotate(-PI/2)\n        self.place_at_grid(cheetah, \"B1\", scale_factor=0.3)\n        \n        # Position label s(t) that follows the cheetah\n        pos_label = MathTex(\"s(t)\", color=COLOR_POS)\n        pos_label.add_updater(lambda m: m.next_to(cheetah, UP, buff=0.2))\n        \n        self.play(FadeIn(cheetah), FadeIn(pos_label))\n        \n        # Move cheetah from start to end of track (B1 to B6)\n        dest_pos_end = self.grid[\"B6\"]\n        self.play(cheetah.animate.move_to(dest_pos_end), run_time=3, rate_func=linear)\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 2 ===\n        # Transition highlight to second line\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(COLOR_VEL)\n        )\n        \n        # Velocity formula positioned in grid\n        # Resolved Issue 37: Scale reduced to 0.7 to avoid crowding\n        vel_formula = MathTex(\"v(t) = s'(t)\", color=COLOR_VEL)\n        self.place_at_grid(vel_formula, \"C2\", scale_factor=0.7)\n        \n        # Speedometer setup\n        # Moved speedometer to E5 to make room for acc_formula at E2\n        speedo_center = self.grid[\"E5\"]\n        speedo_arc = Arc(radius=0.7, start_angle=PI, angle=-PI, color=WHITE)\n        speedo_arc.move_to(speedo_center)\n        arc_center_point = speedo_arc.get_arc_center()\n        \n        # Needle and ValueTracker for synchronized speed display\n        vt = ValueTracker(0)\n        needle = Line(arc_center_point, arc_center_point + LEFT * 0.6, color=COLOR_VEL)\n        \n        def update_needle(m):\n            angle = (1 - vt.get_value()) * PI\n            new_end = arc_center_point + np.array([np.cos(angle), np.sin(angle), 0]) * 0.6\n            m.set_points_as_corners([arc_center_point, new_end])\n            \n        needle.add_updater(update_needle)\n        \n        speedo_text = Text(\"Velocity\", font_size=16, color=COLOR_VEL)\n        speedo_text.next_to(speedo_arc, DOWN, buff=0.2)\n        \n        self.play(\n            Create(speedo_arc),\n            Create(needle),\n            Write(vel_formula),\n            FadeIn(speedo_text)\n        )\n        \n        # Demonstrate variable velocity: reset and move again\n        self.play(\n            cheetah.animate.move_to(self.grid[\"B1\"]), \n            vt.animate.set_value(0), \n            run_time=1\n        )\n        \n        # Move with acceleration/deceleration rate_func\n        self.play(\n            cheetah.animate.move_to(dest_pos_end),\n            vt.animate.set_value(1),\n            run_time=4,\n            rate_func=slow_into \n        )\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 3 ===\n        # Transition highlight to third line\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(COLOR_ACC)\n        )\n        \n        # Acceleration formula\n        # Resolved Issue 36: Moved to E2 and scale reduced to 0.7 to avoid horizontal overlap\n        acc_formula = MathTex(\"a(t) = v'(t)\", color=COLOR_ACC)\n        self.place_at_grid(acc_formula, \"E2\", scale_factor=0.7)\n        \n        # Acceleration arrow and label following the cheetah\n        acc_arrow = Arrow(LEFT, RIGHT, color=COLOR_ACC, buff=0, stroke_width=4)\n        acc_label = Text(\"Acceleration\", font_size=16, color=COLOR_ACC)\n        \n        acc_arrow.add_updater(lambda m: m.next_to(cheetah, RIGHT, buff=0.1))\n        acc_label.add_updater(lambda m: m.next_to(acc_arrow, UP, buff=0.1))\n        \n        self.play(Write(acc_formula), GrowArrow(acc_arrow), FadeIn(acc_label))\n        \n        # Final sprint showing high acceleration\n        self.play(\n            cheetah.animate.move_to(self.grid[\"B1\"]),\n            vt.animate.set_value(0),\n            run_time=1\n        )\n        \n        self.play(\n            cheetah.animate.move_to(dest_pos_end),\n            vt.animate.set_value(1),\n            run_time=3,\n            rate_func=rush_into # High acceleration profile\n        )\n        \n        # Pulse animation for labels at top speed/acceleration\n        self.play(\n            speedo_text.animate.scale(1.3).set_color(WHITE),\n            acc_label.animate.scale(1.3).set_color(WHITE),\n            run_time=0.3\n        )\n        self.play(\n            speedo_text.animate.scale(1/1.3).set_color(COLOR_VEL),\n            acc_label.animate.scale(1/1.3).set_color(COLOR_ACC),\n            run_time=0.3\n        )\n        self.play(\n            speedo_text.animate.scale(1.3).set_color(WHITE),\n            acc_label.animate.scale(1.3).set_color(WHITE),\n            run_time=0.3\n        )\n        self.play(\n            speedo_text.animate.scale(1/1.3).set_color(COLOR_VEL),\n            acc_label.animate.scale(1/1.3).set_color(COLOR_ACC),\n            run_time=0.3\n        )\n\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"Calculus turns geometry into precise mathematical formulas.\",\n            \"Derivatives give us a shortcut to understand change.\",\n            \"Now you can see the rhythm in the world's movement.\"\n        ]\n        self.setup_layout(\"Summary: The Calculus Lens\", lecture_lines)\n        \n        # === Animation for Lecture Line 1 ===\n        # Create a split-screen effect.\n        # On the left (of grid area), display white formulas (#FFFFFF): 'd/dx x^n' and 'd/dx sin x'.\n        # On the right (of grid area), show a gold path (#FFD700) of a soaring eagle.\n        \n        self.lecture[0].set_color(YELLOW)\n        \n        formula1 = MathTex(r\"\\frac{d}{dx} x^n = n x^{n-1}\", color=WHITE)\n        formula2 = MathTex(r\"\\frac{d}{dx} \\sin x = \\cos x\", color=WHITE)\n        formulas = VGroup(formula1, formula2).arrange(DOWN, buff=0.8)\n        \n        # Resolved Issue 38: Move formulas to avoid overlapping lecture lines\n        self.place_in_area(formulas, 'B3', 'D5', scale_factor=0.8)\n        \n        # Eagle path (ParametricFunction)\n        path = ParametricFunction(\n            lambda t: np.array([1.5 * t, 0.8 * np.sin(2*t), 0]),\n            t_range=[-1.0, 1.0],\n            color=\"#FFD700\"\n        )\n        # Resolved Issue 40: Adjusted path position to avoid cramping\n        self.place_in_area(path, 'C4', 'F6', scale_factor=1.0)\n        \n        # Asset Integration: Eagle (Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/eagle.svg)\n        eagle = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/eagle.svg\")\n        eagle.set_color(\"#FFD700\")\n        eagle.scale(0.3)\n        eagle.move_to(path.get_start())\n        \n        self.play(Write(formulas), Create(path))\n        self.play(FadeIn(eagle))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Draw tangent lines on the eagle's path that change color to match the corresponding formulas.\n        \n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # ValueTracker for movement along path\n        t_tracker = ValueTracker(0)\n        \n        # Tangent line starts at the beginning of the path\n        tangent_line = Line(LEFT, RIGHT, color=WHITE).scale(0.3) # Scaled via points in updater\n        \n        def update_tangent_and_eagle(mob_group):\n            t = t_tracker.get_value()\n            p = path.point_from_proportion(t)\n            \n            # Update eagle position (mob_group[0] is eagle)\n            mob_group[0].move_to(p)\n            \n            # Update tangent line (mob_group[1] is tangent_line)\n            # Find derivative via small step\n            dt = 0.005\n            p1 = path.point_from_proportion(max(0, t - dt))\n            p2 = path.point_from_proportion(min(1, t + dt))\n            tangent_vec = (p2 - p1)\n            norm = np.linalg.norm(tangent_vec)\n            if norm > 0:\n                tangent_vec /= norm\n            \n            line_len = 0.6\n            mob_group[1].set_points_as_corners([p - tangent_vec * (line_len/2), p + tangent_vec * (line_len/2)])\n            \n            # Tangent line color matches formulas (both white)\n            mob_group[1].set_color(WHITE)\n\n        animated_group = VGroup(eagle, tangent_line)\n        animated_group.add_updater(update_tangent_and_eagle)\n        \n        self.add(tangent_line)\n        # Animate the eagle and tangent line soaring along the path\n        self.play(t_tracker.animate.set_value(1), run_time=5, rate_func=linear)\n        self.wait(1)\n        \n        # Remove updaters before final transition\n        animated_group.clear_updaters()\n\n        # === Animation for Lecture Line 3 ===\n        # Transition both sides to merge into a single green text (#00FF00): 'The Language of Change'.\n        \n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        final_text = Text(\"The Language of Change\", color=\"#00FF00\")\n        # Resolved Issue 39: Adjusted final text position to avoid obstructing lecture notes\n        self.place_in_area(final_text, 'B3', 'E6', scale_factor=1.0)\n        \n        self.play(\n            FadeOut(formulas),\n            FadeOut(path),\n            FadeOut(eagle),\n            FadeOut(tangent_line),\n            Write(final_text)\n        )\n        self.wait(2)\n\n# Update Issues:\n# update_issue(26, under_review=True, resolution_note=\"Integrated the eagle SVG asset and animated it moving along the path with a tangent line.\")\n# update_issue(38, under_review=True, resolution_note=\"Relocated formulas to grid 'B3'-'D5' to avoid overlap with lecture lines.\")\n# update_issue(39, under_review=True, resolution_note=\"Relocated and scaled final text to 'B3'-'E6' at scale 1.0 to prevent obstruction.\")\n# update_issue(40, under_review=True, resolution_note=\"Relocated and scaled the eagle path to 'C4'-'F6' at scale 1.0 for better spacing.\")\n"
+  ],
+  "outline": {
+    "topic": "The Rhythm of Change: Derivative Formulas and Geometric Intuition",
+    "target_audience": "Introductory Calculus Students (High School or First-Year University)",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "Prerequisite: The Concept of Slope",
+        "content": "Establish the foundation of 'Rate of Change' by reviewing the slope of a straight line (rise/run). Transition from a constant slope to the idea of a changing slope on a curve.",
+        "example": "An ant walking up a straight plank (constant slope) vs. the same ant walking over a smooth, round pebble (changing slope)."
+      },
+      {
+        "id": "section_2",
+        "title": "Geometric Intuition: The 'Infinite Zoom'",
+        "content": "Introduce the derivative as the 'instantaneous' slope. Use the geometric concept of a tangent line. Visualize 'local linearity'—as we zoom into a point on a curve, the curve starts to look like a straight line.",
+        "example": "A magnifying glass zooming into a point on a parabola. At 100x zoom, the curve is indistinguishable from its tangent line, representing the derivative at that specific point."
+      },
+      {
+        "id": "section_3",
+        "title": "The Power Rule: Expanding Dimensions",
+        "content": "Introduce the formula d/dx(x^n) = nx^(n-1). Explain the geometric logic: the derivative of an area (x^2) is the perimeter/boundary (2x) that allows it to grow.",
+        "example": "A square robot that grows by adding thin strips to its edges. If its area is x², the 'extra' bit it grows by at any moment is proportional to its 2 sides (2x)."
+      },
+      {
+        "id": "section_4",
+        "title": "Trigonometric Intuition: The Unit Circle Dance",
+        "content": "Derive why d/dx(sin x) = cos x. Use the unit circle to show that the rate of vertical change (sine) is exactly the horizontal position (cosine) at any given angle.",
+        "example": "A Ferris wheel passenger. When they are at the very side (sin x = 0), they are moving vertically at their fastest (cos x = 1). At the top (sin x = 1), their vertical movement stops for a split second (cos x = 0)."
+      },
+      {
+        "id": "section_5",
+        "title": "Application: The Cheetah’s Sprint",
+        "content": "Connect formulas to real-world motion. Explain the hierarchy: Position ➔ Velocity (1st derivative) ➔ Acceleration (2nd derivative). Show how these formulas predict physical limits.",
+        "example": "A robotic cheetah chasing a drone. We use the power rule on its position formula to find its speedometer reading (velocity) and the derivative of that to find the 'jerk' or kick of its motors (acceleration)."
+      },
+      {
+        "id": "section_6",
+        "title": "Summary: The Calculus Lens",
+        "content": "Recap the connection between the 'formula' and the 'shape'. Emphasize that the derivative formula is just a shortcut to describe the 'steepness' of the world's movements.",
+        "example": "A split-screen view: on the left, the equations (d/dx); on the right, the curving path of a soaring eagle, perfectly synchronized."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "Prerequisite: The Concept of Slope",
+      "lecture_lines": [
+        "Slope measures how steep a straight line is.",
+        "We calculate it as vertical rise over horizontal run.",
+        "On a curve, the steepness changes at every point."
+      ],
+      "animations": [
+        "Create a straight white line (#FFFFFF) using and place on it, set against. Highlight the 'rise' and 'run' with a green triangle (#00FF00).",
+        "Move along the plank while the green slope triangle remains constant in shape and color.",
+        "Transition to. walks along it as follows as a white tangent line (#FFFFFF), changing its angle.",
+        "Highlight the slope at three distinct points on the curve using in yellow (#FFFF00), orange (#FFA500), and red (#FF0000) to show change."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Geometric Intuition: The 'Infinite Zoom'",
+      "lecture_lines": [
+        "Zooming in on a curve reveals a surprising secret.",
+        "At extreme magnification, every smooth curve looks straight.",
+        "This straight line is the tangent at that point.",
+        "The derivative is the slope of this tangent line.",
+        "It captures the exact rate of change right now."
+      ],
+      "animations": [
+        "Draw a red parabola (#FF0000) and mark a single point with a white dot (#FFFFFF).",
+        "Create a magnifying glass circle around the white dot.",
+        "Zoom into the area inside the circle. The red curve should gradually appear flatter until it looks like a straight line.",
+        "Overlay a green tangent line (#00FF00) on the flattened curve to demonstrate 'local linearity'.",
+        "Display the text 'Instantaneous Slope' in white (#FFFFFF) next to the zoomed-in line."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Power Rule: Expanding Dimensions",
+      "lecture_lines": [
+        "The power rule calculates derivatives for functions like x squared.",
+        "Imagine a square growing by a tiny amount of area.",
+        "Growth happens along the boundary of the existing shape.",
+        "For x squared, the rate of growth is two x.",
+        "Power rule: drop the exponent and subtract one."
+      ],
+      "animations": [
+        "Draw a blue square (#0000FF) with side labels 'x' and area text 'x^2' in white (#FFFFFF).",
+        "Animate the square growing by adding two thin green strips (#00FF00) to the top and right edges.",
+        "Label each green strip as 'x' in yellow (#FFFF00) and show them merging to represent '2x'.",
+        "Fade in the formula 'd/dx(x^2) = 2x' in white (#FFFFFF) at the top of the screen.",
+        "Flash the '2x' and the green strips simultaneously to emphasize their relationship."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Trigonometric Intuition: The Unit Circle Dance",
+      "lecture_lines": [
+        "Imagine a point moving around a unit circle.",
+        "The height of the point represents the sine function.",
+        "Its vertical speed depends on its horizontal position.",
+        "When height changes fastest, horizontal value is highest.",
+        "This proves the derivative of sine is cosine."
+      ],
+      "animations": [
+        "Draw a white unit circle (#FFFFFF) with a [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/point.svg] rotating counter-clockwise.",
+        "Show a vertical blue line (#0000FF) representing 'sin x' (height) and a horizontal red line (#FF0000) representing 'cos x'.",
+        "As the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/point.svg] reaches the side, the blue line grows fastest; highlight this with a cyan flash (#00FFFF).",
+        "As the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/point.svg] reaches the top, the blue line stops growing; highlight the horizontal red line (cos x = 0) with a red flash (#FF0000).",
+        "Display 'd/dx(sin x) = cos x' in white (#FFFFFF) centered in the circle."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Application: The Cheetah’s Sprint",
+      "lecture_lines": [
+        "Derivatives describe real movement, like a running cheetah.",
+        "Velocity is the derivative of position over time.",
+        "Acceleration is the derivative of velocity, measuring speed changes."
+      ],
+      "animations": [
+        "Show a simple cheetah icon moving across the screen from left to right.",
+        "Display the position formula 's(t)' in blue (#0000FF) above the cheetah.",
+        "Draw a green speedometer (#00FF00) that shows the velocity 'v(t)' as the derivative of 's(t)'.",
+        "As the cheetah accelerates, show a red vector arrow (#FF0000) for acceleration 'a(t)'.",
+        "Pulse the labels 'Velocity' and 'Acceleration' in their respective colors as the cheetah reaches top speed."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Summary: The Calculus Lens",
+      "lecture_lines": [
+        "Calculus turns geometry into precise mathematical formulas.",
+        "Derivatives give us a shortcut to understand change.",
+        "Now you can see the rhythm in the world's movement."
+      ],
+      "animations": [
+        "Create a split-screen effect. On the left, display white formulas (#FFFFFF): 'd/dx x^n' and 'd/dx sin x'.",
+        "On the right, show a gold path (#FFD700) of a soaring eagle [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/eagle.svg].",
+        "Draw tangent lines on the eagle [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/eagle.svg] path that change color to match the corresponding formulas on the left.",
+        "Transition both sides to merge into a single green text (#00FF00): 'The Language of Change'."
+      ]
+    }
+  ],
+  "turns_run": 3,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 1 (Concept of Slope)."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations generated based on section outline and example."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated initial Manim code for Section 1, including the straight line/ant animation and the curve/tangent animation with 3-color highlights. Implemented using the grid system and efficient updaters."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for Section 2 (Infinite Zoom) - Key Section."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations generated based on section outline and example."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_2 following the storyboard and constraints. Implemented infinite zoom by scaling the parabola around the point of interest and adding a tangent line. Used the required grid system and color highlights for lecture lines."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for Section 3 (Power Rule) - Key Section."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations generated based on section outline and example."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 3 following the storyboard and grid constraints. Implemented square growth visualization with green strips and formula introduction."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for Section 4 (Trig Intuition) - Key Section."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations generated based on section outline and example."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_4 following the unit circle intuition for the derivative of sine. Used 6x6 grid, ValueTracker, and updaters for lines and labels. Integrated color changes for lecture lines."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 5 (Cheetah's Sprint)."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations generated based on section outline and example."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated initial Manim code for Section 5 based on the storyboard and teaching script. Implemented the 6x6 grid system, color-coded lecture lines, and animated cheetah with speedometer and acceleration arrow using updaters."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 6 (Summary)."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations generated based on section outline and example."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated complete Manim code for section_6 following the storyboard and constraints. Implemented split-screen with formulas and eagle path, added a moving tangent line with ValueTracker, and the final green text transition. All positioning uses the 6x6 grid system."
+    },
+    {
+      "id": 19,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation plan is missing. Create 3 animation steps that correspond to the provided 3 lecture lines. Each animation should visually represent the concept of slope (rise/run) and changing steepness on a curve.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Redundant. AnimationPlanner task is already handled and completed."
+    },
+    {
+      "id": 20,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation plan is missing. Create 5 animation steps that correspond to the 5 lecture lines. Focus on the 'infinite zoom' on a curve leading to a local linear tangent line.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Redundant. AnimationPlanner task is already handled and completed."
+    },
+    {
+      "id": 21,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation plan is missing. Create 5 animation steps that correspond to the 5 lecture lines. Use the geometric growth of a square (area x^2) and its boundary (2x) to explain the power rule.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Redundant. AnimationPlanner task is already handled and completed."
+    },
+    {
+      "id": 22,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation plan is missing. Create 5 animation steps that correspond to the 5 lecture lines. Use the unit circle to show how sine's rate of change corresponds to the cosine (horizontal position).",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Redundant. AnimationPlanner task is already handled and completed."
+    },
+    {
+      "id": 23,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation plan is missing. Create 3 animation steps that correspond to the 3 lecture lines. Visualize the relationship between position, velocity, and acceleration using a moving cheetah.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Redundant. AnimationPlanner task is already handled and completed."
+    },
+    {
+      "id": 24,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation plan is missing. Create 3 animation steps that correspond to the 3 lecture lines. Create a summary visual that links the formulas to the geometry of movement.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Redundant. AnimationPlanner task is already handled and completed."
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Draw a white unit circle (#FFFFFF) with a [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/point.svg] rotating counter-clockwise.', 'As the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/point.svg] reaches the side, the blue line grows fastest; highlight this with a cyan flash (#00FFFF).', 'As the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/point.svg] reaches the top, the blue line stops growing; highlight the horizontal red line (cos x = 0) with a red flash (#FF0000).']",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Replaced the standard Dot with the provided SVGMobject point asset and colored it white as per the storyboard."
+    },
+    {
+      "id": 26,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['On the right, show a gold path (#FFD700) of a soaring eagle [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/eagle.svg].', 'Draw tangent lines on the eagle [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/eagle.svg] path that change color to match the corresponding formulas on the left.']",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'run' label is positioned too close to the horizontal line of the triangle, causing a visual overlap and reducing readability. Fix: Line 22: self.place_at_grid(run_label, 'E3', scale_factor=0.6) (line=22, object=run_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned 'run' label to grid E3 using place_at_grid to avoid overlap as requested by Critic."
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'rise' label is tightly packed against the vertical line of the slope triangle, creating spatial crowding in the animation area. Fix: Line 24: self.place_at_grid(rise_label, 'D6', scale_factor=0.6) (line=24, object=rise_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned 'rise' label to grid D6 using place_at_grid to fix crowding as requested by Critic."
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The blue curve and its associated tangent lines start too far to the left, which risks obstructing the lecture notes on the left side of the screen. Fix: Line 40: self.place_in_area(curve_group, 'B2', 'E6', scale_factor=0.8) (line=40, object=curve_group)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Used place_in_area to position the blue curve within B2 to E6, preventing it from obstructing lecture notes."
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The parabola curve and the 'infinite zoom' circle centered at C3 obstruct the lecture lines on the left side of the screen. Fix: Line 68: self.place_at_grid(dot, 'C4', scale_factor=1.0) (line=68, object=dot)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved the dot and parabola anchor to C4 as requested to avoid obstruction of lecture lines."
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The multi-word label 'Instantaneous Slope' is poorly placed at the single grid point D4, causing it to overlap with the tangent line and appear cramped. Fix: Line 119: self.place_in_area(slope_label, 'E4', 'F6', scale_factor=0.8) (line=119, object=slope_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Relocated 'Instantaneous Slope' label to the area E4-F6 at 0.8 scale to prevent overlap with the tangent line."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: Stray formula components ($d$, $dx$, $x^2$, etc.) and the result text ($2x$) are visible at the center of the right-side grid (around D3/D4) at 00:00, creating visual clutter and overlapping the square animation's starting position. Fix: Line 138: self.place_in_area(formula, 'A2', 'A5', scale_factor=1.0) (line=138, object=formula)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved mobject creation closer to use and ensured they are not added to the scene prematurely. Fixed scale factor to 1.0."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The target result text ($2x$) at C5 is vertically adjacent to the right strip label ($x$) at D5, creating a cramped vertical column that interferes with the visual flow of the growth demonstration. Fix: Line 134: self.place_at_grid(target_2x, 'B5', scale_factor=1.0) (line=134, object=target_2x)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved target_2x label to grid B5 to improve visual flow and reduce cramping."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The main formula is scaled at 1.2, which makes the derivative expression appear slightly oversized for the top margin, potentially crowding the title and lecture boundary. Fix: Line 138: self.place_in_area(formula, 'A2', 'A5', scale_factor=1.0) (line=138, object=formula)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced formula scale factor to 1.0 to fit better within the top margin."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The derivative formula at the end of the video is positioned centrally (C3-D4) with a large scale, causing it to overlap and obscure the unit circle animation which is the core visual evidence. Fix: Line 166: self.place_in_area(formula, 'E2', 'F5', scale_factor=0.8) (line=166, object=formula)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved the final derivative formula to the 'E2'-'F5' area (bottom of the right side) to prevent it from overlapping the unit circle animation."
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The acceleration formula (acc_formula) at C4 horizontally overlaps with the velocity formula (vel_formula) at C2, making both difficult to read when they are both on screen. Fix: Line 145: self.place_at_grid(acc_formula, 'E2', scale_factor=0.7) (line=145, object=acc_formula)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved acc_formula to 'E2' and reduced scale to 0.7 as requested. Also moved the speedometer to 'E5' to prevent a new overlap at 'E2'."
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The velocity formula scale is too large (0.8), which crowds the grid space and reduces the visual separation from the moving cheetah object above it. Fix: Line 91: self.place_at_grid(vel_formula, 'C2', scale_factor=0.7) (line=91, object=vel_formula)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Reduced vel_formula scale to 0.7 at 'C2' to reduce crowding and improve visual separation."
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The derivative formulas overlap the first lecture line because they are positioned too far left in the B1-E3 area. Fix: Line 67: self.place_in_area(formulas, 'B3', 'D5', scale_factor=0.8) (line=67, object=formulas)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The final summary text 'The Language of Change' is excessively large and obstructs the lecture notes on the left side. Fix: Line 128: self.place_in_area(final_text, 'B3', 'E6', scale_factor=1.0) (line=128, object=final_text)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The sine wave path is scaled too large, causing it to feel cramped near the center of the screen. Fix: Line 77: self.place_in_area(path, 'C4', 'F6', scale_factor=1.0) (line=77, object=path)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 247432,
+        "video_mtime_ns": 1784602375000000000,
+        "code_sha1": "8e0fa779088c94faa097c2b0cdba22501af6d8bc"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'run' label is positioned too close to the horizontal line of the triangle, causing a visual overlap and reducing readability.",
+              "solution": "Line 22: self.place_at_grid(run_label, 'E3', scale_factor=0.6)",
+              "line_number": 22,
+              "object_affected": "run_label"
+            },
+            {
+              "problem": "The 'rise' label is tightly packed against the vertical line of the slope triangle, creating spatial crowding in the animation area.",
+              "solution": "Line 24: self.place_at_grid(rise_label, 'D6', scale_factor=0.6)",
+              "line_number": 24,
+              "object_affected": "rise_label"
+            },
+            {
+              "problem": "The blue curve and its associated tangent lines start too far to the left, which risks obstructing the lecture notes on the left side of the screen.",
+              "solution": "Line 40: self.place_in_area(curve_group, 'B2', 'E6', scale_factor=0.8)",
+              "line_number": 40,
+              "object_affected": "curve_group"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        27,
+        28,
+        29
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 403966,
+        "video_mtime_ns": 1784602389000000000,
+        "code_sha1": "6817acd955b5475dd9c5e34f7ec018d8069230e7"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The parabola curve and the 'infinite zoom' circle centered at C3 obstruct the lecture lines on the left side of the screen.",
+              "solution": "Line 68: self.place_at_grid(dot, 'C4', scale_factor=1.0)",
+              "line_number": 68,
+              "object_affected": "dot"
+            },
+            {
+              "problem": "The multi-word label 'Instantaneous Slope' is poorly placed at the single grid point D4, causing it to overlap with the tangent line and appear cramped.",
+              "solution": "Line 119: self.place_in_area(slope_label, 'E4', 'F6', scale_factor=0.8)",
+              "line_number": 119,
+              "object_affected": "slope_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        30,
+        31
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 264820,
+        "video_mtime_ns": 1784602377000000000,
+        "code_sha1": "57b9833a4cf44f890c4c8ec8ec595e228c13f818"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Stray formula components ($d$, $dx$, $x^2$, etc.) and the result text ($2x$) are visible at the center of the right-side grid (around D3/D4) at 00:00, creating visual clutter and overlapping the square animation's starting position.",
+              "solution": "Line 138: self.place_in_area(formula, 'A2', 'A5', scale_factor=1.0)",
+              "line_number": 138,
+              "object_affected": "formula"
+            },
+            {
+              "problem": "The target result text ($2x$) at C5 is vertically adjacent to the right strip label ($x$) at D5, creating a cramped vertical column that interferes with the visual flow of the growth demonstration.",
+              "solution": "Line 134: self.place_at_grid(target_2x, 'B5', scale_factor=1.0)",
+              "line_number": 134,
+              "object_affected": "target_2x"
+            },
+            {
+              "problem": "The main formula is scaled at 1.2, which makes the derivative expression appear slightly oversized for the top margin, potentially crowding the title and lecture boundary.",
+              "solution": "Line 138: self.place_in_area(formula, 'A2', 'A5', scale_factor=1.0)",
+              "line_number": 138,
+              "object_affected": "formula"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 531058,
+        "video_mtime_ns": 1784602400000000000,
+        "code_sha1": "639f4cb74dd741c8c2aae1e6e6ea2c14d81aea7b"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The derivative formula at the end of the video is positioned centrally (C3-D4) with a large scale, causing it to overlap and obscure the unit circle animation which is the core visual evidence.",
+              "solution": "Line 166: self.place_in_area(formula, 'E2', 'F5', scale_factor=0.8)",
+              "line_number": 166,
+              "object_affected": "formula"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 411114,
+        "video_mtime_ns": 1784602390000000000,
+        "code_sha1": "8934c10de2127ba07ef4100a72c81c8448dad61c"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The acceleration formula (acc_formula) at C4 horizontally overlaps with the velocity formula (vel_formula) at C2, making both difficult to read when they are both on screen.",
+              "solution": "Line 145: self.place_at_grid(acc_formula, 'E2', scale_factor=0.7)",
+              "line_number": 145,
+              "object_affected": "acc_formula"
+            },
+            {
+              "problem": "The velocity formula scale is too large (0.8), which crowds the grid space and reduces the visual separation from the moving cheetah object above it.",
+              "solution": "Line 91: self.place_at_grid(vel_formula, 'C2', scale_factor=0.7)",
+              "line_number": 91,
+              "object_affected": "vel_formula"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        36,
+        37
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 173153,
+        "video_mtime_ns": 1784602373000000000,
+        "code_sha1": "66992b4a664400653948cc79fb71271f2d5033e3"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The derivative formulas overlap the first lecture line because they are positioned too far left in the B1-E3 area.",
+              "solution": "Line 67: self.place_in_area(formulas, 'B3', 'D5', scale_factor=0.8)",
+              "line_number": 67,
+              "object_affected": "formulas"
+            },
+            {
+              "problem": "The final summary text 'The Language of Change' is excessively large and obstructs the lecture notes on the left side.",
+              "solution": "Line 128: self.place_in_area(final_text, 'B3', 'E6', scale_factor=1.0)",
+              "line_number": 128,
+              "object_affected": "final_text"
+            },
+            {
+              "problem": "The sine wave path is scaled too large, causing it to feel cramped near the center of the screen.",
+              "solution": "Line 77: self.place_in_area(path, 'C4', 'F6', scale_factor=1.0)",
+              "line_number": 77,
+              "object_affected": "path"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        38,
+        39,
+        40
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260721_100036/12-The_Rhythm_of_Change_Derivative_Formulas_and_Geometric_Intuition",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 224570,
+      "completion_tokens": 26216,
+      "total_tokens": 295466,
+      "call_count": 35
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 276,
+        "completion_tokens": 799,
+        "total_tokens": 1860,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 7656,
+        "completion_tokens": 316,
+        "total_tokens": 8046,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 7231,
+        "completion_tokens": 249,
+        "total_tokens": 7542,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 21087,
+        "completion_tokens": 577,
+        "total_tokens": 22080,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 17361,
+        "completion_tokens": 3935,
+        "total_tokens": 26093,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 21051,
+        "completion_tokens": 3676,
+        "total_tokens": 25355,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 31411,
+        "completion_tokens": 2541,
+        "total_tokens": 34147,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 31551,
+        "completion_tokens": 3920,
+        "total_tokens": 35745,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 28737,
+        "completion_tokens": 4727,
+        "total_tokens": 33557,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 35016,
+        "completion_tokens": 2832,
+        "total_tokens": 37958,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 4654,
+        "completion_tokens": 975,
+        "total_tokens": 15395,
+        "call_count": 12
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3058,
+        "completion_tokens": 328,
+        "total_tokens": 8197,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 3194,
+        "completion_tokens": 236,
+        "total_tokens": 7245,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2910,
+        "completion_tokens": 392,
+        "total_tokens": 12898,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3373,
+        "completion_tokens": 148,
+        "total_tokens": 6709,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3330,
+        "completion_tokens": 245,
+        "total_tokens": 7363,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2674,
+        "completion_tokens": 320,
+        "total_tokens": 5276,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 224570,
+        "completion_tokens": 26216,
+        "total_tokens": 295466,
+        "call_count": 35
+      }
+    }
+  }
+}

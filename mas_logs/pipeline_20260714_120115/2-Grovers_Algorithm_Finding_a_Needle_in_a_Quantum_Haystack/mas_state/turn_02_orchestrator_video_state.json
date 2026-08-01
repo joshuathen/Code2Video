@@ -1,0 +1,1034 @@
+{
+  "topic": "Grover's Algorithm: Finding a Needle in a Quantum Haystack",
+  "target_audience": "Undergraduate students with a basic understanding of linear algebra and quantum bits",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Content from Shared State\n        title_text = \"The Classical Search Dilemma\"\n        lecture_lines = [\n            \"Finding a specific item in an unsorted database is slow.\",\n            \"Classically, we must check every single item one by one.\",\n            \"For N items, finding the target takes O(N) time.\"\n        ]\n        \n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors for visual matching (L005)\n        BOX_COLOR = WHITE\n        HIGHLIGHT_COLOR = \"#FF0000\"  # Red\n        COMPLEXITY_COLOR = \"#ADD8E6\" # Light Blue\n        INACTIVE_COLOR = GREY\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(BOX_COLOR))\n        \n        # Display a grid of 10 identical boxes\n        boxes = VGroup(*[Square(side_length=0.7, color=BOX_COLOR) for _ in range(10)])\n        boxes.arrange_in_grid(2, 5, buff=0.2)\n        self.place_in_area(boxes, \"C2\", \"D6\")\n        \n        db_label = Text(\"Unsorted Database\", font_size=20, color=BOX_COLOR)\n        self.place_in_area(db_label, \"B2\", \"B6\")\n        \n        self.play(Create(boxes), Write(db_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(INACTIVE_COLOR),\n            self.lecture[1].animate.set_color(HIGHLIGHT_COLOR)\n        )\n        \n        # Counter for boxes checked (Replaced Integer with Text to avoid LaTeX dependency)\n        counter_val = Text(\"0\", font_size=18, color=WHITE)\n        counter_label = Text(\"Boxes checked: \", font_size=18, color=WHITE)\n        counter_group = VGroup(counter_label, counter_val).arrange(RIGHT, buff=0.1)\n        self.place_at_grid(counter_group, \"E4\")\n        self.add(counter_group)\n        \n        q_marks = VGroup()\n        for i in range(len(boxes)):\n            q = Text(\"?\", color=HIGHLIGHT_COLOR, font_size=24)\n            q.next_to(boxes[i], UP, buff=0.05)\n            q_marks.add(q)\n            \n            # Create a new Text mobject for the updated counter value\n            new_counter_val = Text(str(i + 1), font_size=18, color=WHITE).next_to(counter_label, RIGHT, buff=0.1)\n            \n            self.play(\n                boxes[i].animate.set_stroke(color=HIGHLIGHT_COLOR),\n                Write(q),\n                counter_val.animate.become(new_counter_val),\n                run_time=0.3\n            )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(INACTIVE_COLOR),\n            self.lecture[2].animate.set_color(COMPLEXITY_COLOR)\n        )\n        \n        # Replaced MathTex with Text to avoid LaTeX dependency\n        complexity_tex = Text(\"Classical Complexity: O(N)\", font_size=20, color=COMPLEXITY_COLOR)\n        self.place_in_area(complexity_tex, \"F2\", \"F6\", scale_factor=0.8)\n        \n        self.play(Write(complexity_tex))\n        self.wait(2)\n        \n        # Wrap up\n        self.play(self.lecture[2].animate.set_color(INACTIVE_COLOR))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Data from shared state\n        title = \"Prerequisite: The Quantum Canvas\"\n        lecture_lines = [\n            \"Quantum computers use superposition to represent all items simultaneously.\",\n            \"We start with every box having an equal probability amplitude.\",\n            \"This state is the starting point for Grover's algorithm.\"\n        ]\n        \n        self.setup_layout(title, lecture_lines)\n\n        # Pre-create elements for efficiency\n        bar_color = \"#00FF00\"\n        glow_color = \"#ADD8E6\"\n        \n        # 4 vertical bars\n        bars = VGroup(*[\n            Rectangle(width=0.6, height=0.5, fill_opacity=0.8, fill_color=bar_color, stroke_width=2)\n            for _ in range(4)\n        ])\n        \n        # Place bars in columns 2, 3, 4, 5 across rows C-E\n        self.place_at_grid(bars[0], \"D2\")\n        self.place_at_grid(bars[1], \"D3\")\n        self.place_at_grid(bars[2], \"D4\")\n        self.place_at_grid(bars[3], \"D5\")\n        \n        # Labels for boxes\n        labels = VGroup(\n            Text(\"00\", font_size=20),\n            Text(\"01\", font_size=20),\n            Text(\"10\", font_size=20),\n            Text(\"11\", font_size=20)\n        )\n        \n        # Place labels in row F below the bars\n        for i, label in enumerate(labels):\n            self.place_at_grid(label, f\"F{i+2}\")\n\n        # Formula: 1/√N Σ |i⟩\n        formula = Text(\"1/√N Σ |i⟩\", font_size=32, color=WHITE)\n        self.place_in_area(formula, \"B2\", \"B5\") # Spanning columns 2-5 in row B\n\n        # Glow effect: Outer rectangles with lower opacity\n        glows = VGroup(*[\n            Rectangle(width=0.7, height=2.2, fill_opacity=0.2, fill_color=glow_color, stroke_width=0)\n            .move_to(bars[i].get_center())\n            for i in range(4)\n        ])\n\n        # === Animation for Lecture Line 1 ===\n        # Line 1: \"Quantum computers use superposition to represent all items simultaneously.\"\n        # Step 1: Show 4 vertical bars (#00FF00) representing boxes, with labels '00', '01', '10', '11'.\n        self.play(\n            self.lecture[0].animate.set_color(YELLOW),\n            Create(bars),\n            Write(labels),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Line 2: \"We start with every box having an equal probability amplitude.\"\n        # Step 2: Make all bars equal height, with the formula '1/√N Σ |i⟩' (#FFFFFF) appearing above.\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW),\n            bars[0].animate.stretch_to_fit_height(2.0).move_to(self.grid[\"D2\"]),\n            bars[1].animate.stretch_to_fit_height(2.0).move_to(self.grid[\"D3\"]),\n            bars[2].animate.stretch_to_fit_height(2.0).move_to(self.grid[\"D4\"]),\n            bars[3].animate.stretch_to_fit_height(2.0).move_to(self.grid[\"D5\"]),\n            Write(formula),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Line 3: \"This state is the starting point for Grover's algorithm.\"\n        # Step 3: Add a soft glow effect (#ADD8E6) to all bars to represent 'Quantum Superposition'.\n        \n        # Update glow positions in case bars moved (though they stayed in center of grid cells)\n        for i in range(4):\n            glows[i].move_to(bars[i].get_center())\n\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW),\n            FadeIn(glows, scale=1.2),\n            bars.animate.set_stroke(glow_color, opacity=0.8),\n            run_time=2\n        )\n        self.wait(2)\n\n        # Reset final line color\n        self.play(self.lecture[2].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Fetching data from shared state (simulated based on previous tool calls)\n        title_str = \"Step 1: The Oracle (Phase Inversion)\"\n        lecture_lines = [\n            \"We start with four bars, labeling one as our target.\",\n            \"The Oracle flips the target amplitude below the axis.\",\n            \"This pulsing yellow border highlights the marked state.\",\n            \"This process is known as a phase inversion.\",\n            \"The target's probability magnitude remains the same.\"\n        ]\n        \n        self.setup_layout(title_str, lecture_lines)\n        \n        # Colors\n        COLOR_TARGET = \"#FFFF00\"  # Yellow\n        COLOR_BAR = \"#87CEEB\"     # Sky Blue\n        COLOR_TEXT = \"#FFFFFF\"    # White\n        COLOR_PROB = \"#ADD8E6\"    # Light Blue\n        COLOR_AXIS = \"#666666\"    # Dark Gray\n        \n        # === Animation for Lecture Line 1 ===\n        # Show 4 bars, label '10' as 'Target' (#FFFF00)\n        self.lecture[0].set_color(COLOR_TARGET)\n        \n        # Horizontal Axis at Row D\n        axis_line = Line(self.grid['D1'], self.grid['D6'], color=COLOR_AXIS)\n        self.add(axis_line)\n        \n        # Bars: Rectangle height 1.0 fits between two rows.\n        # Positive bars sit in Row C-D.\n        bar00 = Rectangle(width=0.6, height=1.0, fill_opacity=0.8, fill_color=COLOR_BAR, stroke_color=WHITE, stroke_width=1)\n        bar01 = Rectangle(width=0.6, height=1.0, fill_opacity=0.8, fill_color=COLOR_BAR, stroke_color=WHITE, stroke_width=1)\n        bar10 = Rectangle(width=0.6, height=1.0, fill_opacity=0.8, fill_color=COLOR_TARGET, stroke_color=WHITE, stroke_width=1)\n        bar11 = Rectangle(width=0.6, height=1.0, fill_opacity=0.8, fill_color=COLOR_BAR, stroke_color=WHITE, stroke_width=1)\n        \n        self.place_in_area(bar00, 'C2', 'D2')\n        self.place_in_area(bar01, 'C3', 'D3')\n        self.place_in_area(bar10, 'C4', 'D4')\n        self.place_in_area(bar11, 'C5', 'D5')\n        \n        # Index labels at Row B (above the bars)\n        label00 = Text(\"00\", font_size=20, color=COLOR_TEXT)\n        label01 = Text(\"01\", font_size=20, color=COLOR_TEXT)\n        label10 = Text(\"10\", font_size=20, color=COLOR_TARGET)\n        label11 = Text(\"11\", font_size=20, color=COLOR_TEXT)\n        \n        self.place_at_grid(label00, 'B2')\n        self.place_at_grid(label01, 'B3')\n        self.place_at_grid(label10, 'B4')\n        self.place_at_grid(label11, 'B5')\n        \n        # 'Target' label at Row A\n        target_marker = Text(\"Target\", font_size=22, color=COLOR_TARGET)\n        self.place_at_grid(target_marker, 'A4', scale_factor=0.8) # Scaled down for Row A buffer (L006)\n        \n        self.play(\n            FadeIn(VGroup(bar00, bar01, bar10, bar11)),\n            Write(VGroup(label00, label01, label10, label11)),\n            FadeIn(target_marker)\n        )\n        self.wait(1)\n        \n        # === Animation for Lecture Line 2 ===\n        # The 'Target' bar flips below the horizontal x-axis\n        self.lecture[1].set_color(COLOR_TEXT)\n        \n        # To flip the bar from C4-D4 to D4-E4:\n        # We calculate the target center for the D4-E4 area.\n        target_rect = Rectangle(width=0.6, height=1.0)\n        self.place_in_area(target_rect, 'D4', 'E4')\n        target_pos = target_rect.get_center()\n        \n        self.play(\n            bar10.animate.move_to(target_pos),\n            # Keep index label, move target marker slightly down to stay close\n            target_marker.animate.next_to(target_rect, DOWN, buff=0.2)\n        )\n        self.wait(1)\n        \n        # === Animation for Lecture Line 3 ===\n        # Pulsing yellow border highlights the marked state\n        self.lecture[2].set_color(COLOR_TARGET)\n        \n        pulse_box = SurroundingRectangle(bar10, color=COLOR_TARGET, buff=0.1)\n        \n        # Persistent pulsing using ValueTracker and Updater (L014 avoided)\n        pulse_tracker = ValueTracker(0)\n        def pulse_updater(m):\n            # Oscillate stroke width between 1 and 4\n            m.set_stroke(width=1 + 3 * np.abs(np.sin(pulse_tracker.get_value() * PI)))\n            \n        pulse_box.add_updater(pulse_updater)\n        \n        self.add(pulse_box)\n        self.play(\n            FadeIn(pulse_box),\n            pulse_tracker.animate(run_time=2, rate_func=linear).set_value(4)\n        )\n        # Keep the tracker moving for the rest of the scene\n        pulse_box.add_updater(lambda m, dt: pulse_tracker.increment_value(dt))\n        self.wait(1)\n        \n        # === Animation for Lecture Line 4 ===\n        # 'Phase Inversion' label (#FFFFFF)\n        self.lecture[3].set_color(COLOR_TEXT)\n        \n        phase_label = Text(\"Phase Inversion\", font_size=24, color=COLOR_TEXT)\n        # Position near the flipped bar (Row E, Column 5)\n        self.place_at_grid(phase_label, 'E5')\n        \n        self.play(Write(phase_label))\n        self.wait(1)\n        \n        # === Animation for Lecture Line 5 ===\n        # Probability text (#ADD8E6)\n        self.lecture[4].set_color(COLOR_PROB)\n        \n        prob_text = Text(\"Probability |a|^2\\nremains unchanged\", font_size=20, color=COLOR_PROB)\n        # Position in a clear area (Row F, centered horizontally over target columns)\n        self.place_in_area(prob_text, 'F3', 'F5', scale_factor=0.8)\n        \n        self.play(FadeIn(prob_text))\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Setup title and lecture lines\n        title_text = \"Step 2: The Diffusion Operator (Inversion about the Mean)\"\n        lecture_lines = [\n            \"Next, we reflect all amplitudes around their average value.\",\n            \"This \\\"inversion about the mean\\\" is a mathematical trick.\",\n            \"The average is slightly lowered by the negative target amplitude.\",\n            \"Reflecting makes the target amplitude much larger than the others.\",\n            \"Other amplitudes shrink, boosting our chance of finding the target.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n        \n        # Colors\n        BLUE_B = \"#58C4DD\"\n        RED_B = \"#F44336\"\n        MEAN_COLOR = \"#FFFFFF\"\n        HIGHLIGHT_COLOR = \"#FFFF00\"\n        \n        # Grid positions for bars\n        bar_cols = [\"2\", \"3\", \"4\", \"5\"]\n        baseline_y = self.grid[\"D1\"][1]\n        \n        # === Animation for Lecture Line 1 ===\n        # Show the bars (one negative, three positive) and a horizontal dashed white (#FFFFFF) line for 'Mean'.\n        self.lecture[0].set_color(YELLOW)\n        \n        bars = VGroup()\n        for i in range(4):\n            # Initial heights: positive states and the flipped target state from the oracle\n            h = 0.6 if i < 3 else -0.6\n            color = BLUE_B if i < 3 else RED_B\n            bar = Rectangle(width=0.5, height=abs(h), fill_opacity=0.8, fill_color=color, stroke_width=2)\n            pos = self.grid[f\"D{bar_cols[i]}\"]\n            if h > 0:\n                bar.move_to(pos + UP * (bar.height / 2))\n            else:\n                bar.move_to(pos + DOWN * (bar.height / 2))\n            bars.add(bar)\n            \n        # Initial Mean line at 0.6 (level of the 3 positive bars)\n        mean_line_y = baseline_y + 0.6\n        mean_line = DashedLine(\n            start=[self.grid[\"D2\"][0] - 0.4, mean_line_y, 0],\n            end=[self.grid[\"D5\"][0] + 0.4, mean_line_y, 0],\n            color=MEAN_COLOR\n        )\n        mean_label = Text(\"Mean\", font_size=18, color=MEAN_COLOR)\n        # Position label near the line in Row C\n        self.place_at_grid(mean_label, \"C1\")\n        mean_label.next_to(mean_line, LEFT, buff=0.2)\n        \n        self.play(Create(bars), Create(mean_line), Write(mean_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Shift the 'Mean' line down slightly to reflect the average of all current amplitudes.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Calculated new mean: (0.6 + 0.6 + 0.6 - 0.6) / 4 = 1.2 / 4 = 0.3\n        new_mean_y = baseline_y + 0.3\n        self.play(\n            mean_line.animate.move_to([mean_line.get_center()[0], new_mean_y, 0]),\n            mean_label.animate.shift(DOWN * 0.3)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Reflect all bars across the dashed 'Mean' line: the target bar shoots up, others shrink.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Reflection formula: x_new = 2*mean - x_old\n        # Positive bars: 2*0.3 - 0.6 = 0.0\n        # Negative bar: 2*0.3 - (-0.6) = 1.2\n        target_heights = [0.01, 0.01, 0.01, 1.2]\n        \n        transforms = []\n        for i in range(4):\n            new_h = target_heights[i]\n            # Maintain bar width and color\n            target_rect = Rectangle(width=0.5, height=new_h, fill_opacity=0.8, fill_color=bars[i].fill_color, stroke_width=2)\n            # All bars are now positive or near-zero, so we move them UP from baseline\n            target_rect.move_to(self.grid[f\"D{bar_cols[i]}\"] + UP * (target_rect.height / 2))\n            transforms.append(Transform(bars[i], target_rect))\n            \n        self.play(*transforms)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Highlight the now-tall target bar with a bright yellow (#FFFF00) glow.\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        # Create a glow effect around the target bar\n        glow = bars[3].copy().set_fill(HIGHLIGHT_COLOR, opacity=0.3).scale(1.2)\n        self.play(FadeIn(glow))\n        self.play(Indicate(bars[3], color=HIGHLIGHT_COLOR, scale_factor=1.05))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Display the text 'Inversion About the Mean' (#FFFFFF) at the top of the screen.\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        inversion_text = Text(\"Inversion About the Mean\", font_size=28, color=WHITE)\n        # Position centered in the top of the chart area (Row B)\n        self.place_in_area(inversion_text, \"B2\", \"B5\")\n        \n        self.play(Write(inversion_text), FadeOut(glow))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        title = \"Iteration and Measurement\"\n        lines = [\n            \"We loop the Oracle and Diffusion steps together.\",\n            \"With each iteration, the target amplitude grows much taller.\",\n            \"We repeat this process roughly square root of N times.\",\n            \"Finally, we measure the system to collapse the state.\",\n            \"The algorithm successfully finds the target with high probability.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        oracle_box = Rectangle(width=1.5, height=0.8, color=BLUE_B).set_fill(BLUE_E, opacity=0.3)\n        # Replaced MathTex with Text to avoid LaTeX dependency\n        oracle_text = Text(\"Oracle\", color=WHITE, font_size=24)\n        oracle_group = VGroup(oracle_box, oracle_text)\n        self.place_at_grid(oracle_group, \"B2\", scale_factor=0.6)\n        \n        diffusion_box = Rectangle(width=1.5, height=0.8, color=ORANGE).set_fill(DARK_BROWN, opacity=0.3)\n        # Replaced MathTex with Text to avoid LaTeX dependency\n        diffusion_text = Text(\"Diffusion\", color=WHITE, font_size=24)\n        diffusion_group = VGroup(diffusion_box, diffusion_text)\n        self.place_at_grid(diffusion_group, \"B5\", scale_factor=0.6)\n        \n        # Loop arrow\n        # Create arrows manually relative to grid points\n        loop_arrow = CurvedArrow(self.grid[\"B5\"] + UP*0.4, self.grid[\"B2\"] + UP*0.4, angle=-TAU/4, color=\"#00FF00\")\n        loop_arrow_back = CurvedArrow(self.grid[\"B2\"] + DOWN*0.4, self.grid[\"B5\"] + DOWN*0.4, angle=-TAU/4, color=\"#00FF00\")\n        loop_group = VGroup(loop_arrow, loop_arrow_back)\n        \n        self.play(FadeIn(oracle_group), FadeIn(diffusion_group))\n        self.play(Create(loop_group))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        bar_colors = [GRAY, GRAY, GREEN, GRAY]\n        bar_heights_start = [0.4, 0.4, 0.8, 0.4]\n        bar_heights_end = [0.1, 0.1, 2.0, 0.1]\n        \n        bars = VGroup(*[\n            Rectangle(width=0.4, height=h, color=c, fill_opacity=0.8) \n            for h, c in zip(bar_heights_start, bar_colors)\n        ]).arrange(RIGHT, buff=0.4)\n        self.place_in_area(bars, \"C2\", \"D5\", scale_factor=0.8)\n        \n        # Move symbols to Row A to make room\n        new_oracle = VGroup(oracle_box.copy(), oracle_text.copy())\n        self.place_at_grid(new_oracle, \"A2\", scale_factor=0.5)\n        \n        new_diffusion = VGroup(diffusion_box.copy(), diffusion_text.copy())\n        self.place_at_grid(new_diffusion, \"A5\", scale_factor=0.5)\n        \n        new_loop = loop_group.copy()\n        # Scale and move loop relative to new positions\n        new_loop.scale(0.8).move_to((self.grid[\"A2\"] + self.grid[\"A5\"])/2)\n\n        self.play(\n            Transform(oracle_group, new_oracle),\n            Transform(diffusion_group, new_diffusion),\n            Transform(loop_group, new_loop),\n            FadeIn(bars)\n        )\n        \n        # Animate bars\n        # We'll use scaling about the bottom edge to avoid move_to\n        self.play(\n            *[bars[i].animate.stretch_to_fit_height(bar_heights_end[i], about_edge=DOWN) for i in range(4)],\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Replaced MathTex with Text to avoid LaTeX dependency\n        repeat_text = Text(\"Repeat approximately √N times\", color=\"#ADD8E6\", font_size=24)\n        self.place_in_area(repeat_text, \"F2\", \"F5\", scale_factor=0.8)\n        \n        self.play(Write(repeat_text))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        noise_bars = VGroup(bars[0], bars[1], bars[3])\n        target_bar = bars[2]\n        \n        self.play(\n            FadeOut(noise_bars),\n            FadeOut(oracle_group),\n            FadeOut(diffusion_group),\n            FadeOut(loop_group),\n            FadeOut(repeat_text),\n            target_bar.animate.set_color(YELLOW).scale(1.2)\n        )\n        \n        # Collapse line at the base of the bar\n        base_y = target_bar.get_bottom()[1]\n        center_x = target_bar.get_center()[0]\n        collapse_line = Line(np.array([center_x - 1.5, base_y, 0]), np.array([center_x + 1.5, base_y, 0]), color=WHITE)\n        self.play(Create(collapse_line))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        found_text = Text(\"Target Found!\", color=\"#00FF00\", font_size=40)\n        self.place_in_area(found_text, \"B2\", \"D5\", scale_factor=1.0)\n        \n        self.play(Write(found_text))\n        \n        # Flashing effect\n        for _ in range(3):\n            self.play(found_text.animate.set_opacity(0.3), run_time=0.2)\n            self.play(found_text.animate.set_opacity(1.0), run_time=0.2)\n            \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Fetching data from shared state\n        title = \"The Quantum Speedup Summary\"\n        lines = [\n            \"Grover's algorithm provides a significant quadratic speedup over classical.\",\n            \"A million items take only one thousand quantum iterations.\",\n            \"Quantum mechanics finds the needle in the haystack much faster.\"\n        ]\n        \n        self.setup_layout(title, lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Display a split-screen comparison: 'Classical: O(N)' on left, 'Grover: O(√N)' on right.\n        line1_color = BLUE_A\n        self.lecture[0].set_color(line1_color)\n        \n        # Use Text instead of MathTex to avoid LaTeX dependency\n        classical_label = VGroup(\n            Text(\"Classical:\", font_size=24, color=WHITE),\n            Text(\"O(N)\", font_size=36, color=line1_color)\n        ).arrange(DOWN, buff=0.2)\n        \n        grover_label = VGroup(\n            Text(\"Grover:\", font_size=24, color=WHITE),\n            # Use unicode square root symbol\n            Text(\"O(√N)\", font_size=36, color=line1_color)\n        ).arrange(DOWN, buff=0.2)\n        \n        # L008: Using place_in_area to balance visuals\n        self.place_in_area(classical_label, \"B2\", \"C3\", scale_factor=0.8)\n        self.place_in_area(grover_label, \"B5\", \"C6\", scale_factor=0.8)\n        \n        # Visual separator\n        separator = Line(self.grid[\"B4\"] + UP*0.5, self.grid[\"E4\"] + DOWN*0.5, color=GREY_E)\n        \n        self.play(\n            FadeIn(classical_label),\n            FadeIn(grover_label),\n            Create(separator),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Show a counter using Text and updaters to avoid DecimalNumber (which requires LaTeX)\n        line2_color = \"#ADD8E6\"\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(line2_color)\n        \n        # Value trackers for the counter effect\n        classical_val = ValueTracker(1)\n        grover_val = ValueTracker(1)\n        \n        # Manually create counting numbers using Text to avoid 'latex' error\n        classical_counter = Text(\"1\", font_size=32, color=line2_color)\n        classical_counter.add_updater(\n            lambda d: d.become(\n                Text(f\"{int(classical_val.get_value()):,}\", font_size=32, color=line2_color)\n                .move_to(d.get_center())\n            )\n        )\n        \n        grover_counter = Text(\"1\", font_size=32, color=line2_color)\n        grover_counter.add_updater(\n            lambda d: d.become(\n                Text(f\"{int(grover_val.get_value()):,}\", font_size=32, color=line2_color)\n                .move_to(d.get_center())\n            )\n        )\n        \n        classical_unit = Text(\"steps\", font_size=20, color=line2_color)\n        grover_unit = Text(\"steps\", font_size=20, color=line2_color)\n        \n        classical_group = VGroup(classical_counter, classical_unit).arrange(DOWN, buff=0.1)\n        grover_group = VGroup(grover_counter, grover_unit).arrange(DOWN, buff=0.1)\n        \n        self.place_in_area(classical_group, \"D2\", \"E3\", scale_factor=0.9)\n        self.place_in_area(grover_group, \"D5\", \"E6\", scale_factor=0.9)\n        \n        self.add(classical_group, grover_group)\n        \n        # Animate counting\n        self.play(\n            classical_val.animate.set_value(1000000),\n            grover_val.animate.set_value(1000),\n            run_time=3,\n            rate_func=linear\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Display the text 'Quadratic Speedup Achieved!' in gold (#FFD700) with a flash effect.\n        line3_color = \"#FFD700\"\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(line3_color)\n        \n        speedup_text = Text(\"Quadratic Speedup Achieved!\", font_size=32, color=line3_color)\n        # Distribute visuals across the bottom right area\n        self.place_in_area(speedup_text, \"F2\", \"F6\", scale_factor=0.8)\n        \n        # Flash effect\n        flash = Flash(speedup_text, color=line3_color, line_length=0.3, num_lines=12, flash_radius=2)\n        \n        self.play(\n            Write(speedup_text),\n            run_time=1.5\n        )\n        self.play(flash)\n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "Grover's Algorithm: Finding a Needle in a Quantum Haystack",
+    "target_audience": "Undergraduate students with a basic understanding of linear algebra and quantum bits",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Classical Search Dilemma",
+        "content": "Introduce the concept of searching an unsorted database. Explain the limitations of classical computing (Linear Search) where you have to check every item one by one.",
+        "example": "Imagine a mischievous cat named 'Pixel' hiding in one of 100 identical cardboard boxes. In a classical world, you'd have to open 50 boxes on average to find Pixel. If there are N boxes, it takes O(N) time."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Quantum Canvas",
+        "content": "Briefly introduce Superposition. Explain that in quantum computing, we don't look at boxes one by one; we look at a 'superposition' of all boxes simultaneously.",
+        "example": "Visual: Represent 4 boxes as 4 vertical bars of equal height (amplitudes). At the start, the probability of Pixel being in any box is equal. Math visual: |ψ⟩ = 1/√N Σ |i⟩."
+      },
+      {
+        "id": "section_3",
+        "title": "Step 1: The Oracle (Phase Inversion)",
+        "content": "Introduce the 'Oracle' as a black box that can recognize the target. The Oracle doesn't reveal the location but 'marks' it by flipping its phase (turning its amplitude upside down).",
+        "example": "Visual: All bars remain positive except for the 'Pixel' box, which flips below the horizontal axis. It’s like a reflection across the 0-line. The state becomes negative, but the probability (magnitude squared) remains the same."
+      },
+      {
+        "id": "section_4",
+        "title": "Step 2: The Diffusion Operator (Inversion about the Mean)",
+        "content": "This is the 'magic' step. Explain the mathematical trick of reflecting all amplitudes around the average (mean) value of all states. This boosts the target's height while shrinking the others.",
+        "example": "Visual: Draw a dashed line representing the 'Average Height' of all bars. Because one bar is negative, the average is slightly lower than the others. When we flip all bars over this dashed line, the 'Pixel' bar shoots up high above the rest, while the others drop near zero."
+      },
+      {
+        "id": "section_5",
+        "title": "Iteration and Measurement",
+        "content": "Explain that one flip isn't always enough. We repeat Steps 1 and 2 (the Grover Iteration) approximately √N times to maximize the target's amplitude before measuring.",
+        "example": "Visual: An animation showing the target bar growing taller and the 'noise' bars getting smaller with each pulse. Warning: If you repeat too many times, the amplitude starts to decrease again (like over-rotating a dial)."
+      },
+      {
+        "id": "section_6",
+        "title": "The Quantum Speedup Summary",
+        "content": "Conclude with the efficiency of the algorithm. Compare O(N) classical vs O(√N) quantum. Highlight that for 1 million items, classical takes 500,000 tries, but Grover takes only 1,000.",
+        "example": "Final Visual: A split screen. On the left, a classical robot is exhausted opening 100 boxes. On the right, a quantum computer identifies Pixel in just 10 'pulses'. Quadratic speedup achieved!"
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Classical Search Dilemma",
+      "lecture_lines": [
+        "Finding a specific item in an unsorted database is slow.",
+        "Classically, we must check every single item one by one.",
+        "For N items, finding the target takes O(N) time."
+      ],
+      "animations": [
+        "Display a grid of 10 identical boxes [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/box.svg] (#FFFFFF) labeled 'Unsorted Database'.",
+        "Highlight boxes [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/box.svg] one by one with a red (#FF0000) question mark appearing above them.",
+        "Show the text 'Classical Complexity: O(N)' in light blue (#ADD8E6) while a counter counts boxes [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/box.svg]."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Quantum Canvas",
+      "lecture_lines": [
+        "Quantum computers use superposition to represent all items simultaneously.",
+        "We start with every box having an equal probability amplitude.",
+        "This state is the starting point for Grover's algorithm."
+      ],
+      "animations": [
+        "Show 4 vertical bars (#00FF00) representing boxes [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/box.svg], with labels '00', '01', '10', '11'.",
+        "Make all bars equal height, with the formula '1/√N Σ |i⟩' (#FFFFFF) appearing above.",
+        "Add a soft glow effect (#ADD8E6) to all bars to represent 'Quantum Superposition'."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "Step 1: The Oracle (Phase Inversion)",
+      "lecture_lines": [
+        "We start with four bars, labeling one as our target.",
+        "The Oracle flips the target amplitude below the axis.",
+        "This pulsing yellow border highlights the marked state.",
+        "This process is known as a phase inversion.",
+        "The target's probability magnitude remains the same."
+      ],
+      "animations": [
+        "Show the 4 bars from the previous section. Label the '10' bar as 'Target' (#FFFF00).",
+        "The 'Target' bar flips below the horizontal x-axis, becoming a negative amplitude.",
+        "Highlight the flipped 'Target' bar with a pulsing yellow (#FFFF00) border.",
+        "Show the label 'Phase Inversion' (#FFFFFF) next to the flipped bar.",
+        "Display the text: 'Probability |a|^2 remains unchanged' (#ADD8E6) near the flipped bar."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Step 2: The Diffusion Operator (Inversion about the Mean)",
+      "lecture_lines": [
+        "Next, we reflect all amplitudes around their average value.",
+        "This \"inversion about the mean\" is a mathematical trick.",
+        "The average is slightly lowered by the negative target amplitude.",
+        "Reflecting makes the target amplitude much larger than the others.",
+        "Other amplitudes shrink, boosting our chance of finding the target."
+      ],
+      "animations": [
+        "Show the bars (one negative, three positive) and a horizontal dashed white (#FFFFFF) line for 'Mean'.",
+        "Shift the 'Mean' line down slightly to reflect the average of all current amplitudes.",
+        "Reflect all bars across the dashed 'Mean' line: the target bar shoots up, others shrink.",
+        "Highlight the now-tall target bar with a bright yellow (#FFFF00) glow.",
+        "Display the text 'Inversion About the Mean' (#FFFFFF) at the top of the screen."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Iteration and Measurement",
+      "lecture_lines": [
+        "We loop the Oracle and Diffusion steps together.",
+        "With each iteration, the target amplitude grows much taller.",
+        "We repeat this process roughly square root of N times.",
+        "Finally, we measure the system to collapse the state.",
+        "The algorithm successfully finds the target with high probability."
+      ],
+      "animations": [
+        "Show a green (#00FF00) loop icon around symbols for 'Oracle' and 'Diffusion'.",
+        "Animate the bars again: the target bar grows taller while the others shrink further.",
+        "Display the text 'Repeat approximately √N times' (#ADD8E6) at the bottom.",
+        "Simulate a measurement: the tall target bar is selected, and all other bars disappear.",
+        "Show the text 'Target Found!' in bright green (#00FF00) with a flashing effect."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "The Quantum Speedup Summary",
+      "lecture_lines": [
+        "Grover's algorithm provides a significant quadratic speedup over classical.",
+        "A million items take only one thousand quantum iterations.",
+        "Quantum mechanics finds the needle in the haystack much faster."
+      ],
+      "animations": [
+        "Display a split-screen comparison featuring a haystack icon [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/haystack.svg]: 'Classical: O(N)' on left, 'Grover: O(√N)' on right.",
+        "Show a counter: 1,000,000 steps (Classical) vs 1,000 steps (Grover) (#ADD8E6).",
+        "Display the text 'Quadratic Speedup Achieved!' alongside a needle icon [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/needle.svg] in gold (#FFD700) with a flash effect."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 1, aligned with 3 animation steps."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for Section 1 based on the outline. Waiting for ScriptWriter to provide matching lecture lines."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for Section 1 as requested in issue 19."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2, aligned with 3 animation steps."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for Section 2 based on the outline. Waiting for ScriptWriter to provide matching lecture lines."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Replaced by issue 20, which is now resolved with the generated code."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 3, synchronized 1:1 with the animation steps."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for Section 3 (Key Section) based on the outline. Waiting for ScriptWriter to provide matching lecture lines."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented complete Manim code for Section 3 following the storyboard and grid constraints. Section 3 covers the Oracle's phase inversion with 5 synced animation steps."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 4, synchronized 1:1 with the animation steps."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for Section 4 (Key Section) based on the outline. Waiting for ScriptWriter to provide matching lecture lines."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 4: \"Step 2: The Diffusion Operator\". Implemented 5-step animation sequence synchronized with 5 lecture lines: showing bars/mean, shifting mean, reflecting bars, target glow, and adding labels. Followed 6x6 grid constraints and color standards."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 5, synchronized 1:1 with the animation steps."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for Section 5 (Key Section) based on the outline. Waiting for ScriptWriter to provide matching lecture lines."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Replaced by issue 23."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 6, synchronized 1:1 with the animation steps."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for Section 6 based on the outline. Waiting for ScriptWriter to provide matching lecture lines."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Replaced by issue 24."
+    },
+    {
+      "id": 19,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "Implement Manim code for Section 1: \"The Classical Search Dilemma\". \n- Lines (3): \"Finding a specific item...\", \"Classically, we must...\", \"For N items...\"\n- Animations (3): Grid of boxes (#FFFFFF), Highlight one by one (red #FF0000), Show 'Classical Complexity' (light blue #ADD8E6).\nEnsure 1:1 synchronization between lecture lines and animation steps.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for Section 1: \"The Classical Search Dilemma\" with 1:1 synchronization, visual grid system, and matching colors."
+    },
+    {
+      "id": 20,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "Implement Manim code for Section 2: \"Prerequisite: The Quantum Canvas\". \n- Lines (3): \"Quantum computers use...\", \"We start with...\", \"This state is...\"\n- Animations (3): 4 vertical bars (#00FF00), Equal height with formula (#FFFFFF), Soft glow effect (#ADD8E6).\nEnsure 1:1 synchronization between lecture lines and animation steps.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 2 following the storyboard and lecture lines. Implemented 1:1 sync, grid positioning, and requested visual effects."
+    },
+    {
+      "id": 21,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "Implement Manim code for Section 3: \"Step 1: The Oracle (Phase Inversion)\". \n- Lines (5): \"We start with four...\", \"The Oracle flips...\", \"This pulsing yellow...\", \"This process is...\", \"The target's probability...\"\n- Animations (5): 4 bars (target '10' #FFFF00), Target flips below x-axis, Pulsing yellow border (#FFFF00), 'Phase Inversion' label (#FFFFFF), Probability text (#ADD8E6).\nEnsure 1:1 synchronization between lecture lines and animation steps.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 3 with 1:1 line-to-animation mapping. Used 6x6 grid, handled colors (Yellow, White, Light Blue), and added persistent pulsing border for the flipped target bar. All mobjects placed using grid system."
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "Implement Manim code for Section 4: \"Step 2: The Diffusion Operator (Inversion about the Mean)\". \n- Lines (5): \"Next, we reflect...\", \"This \\\"inversion about...\", \"The average is...\", \"Reflecting makes the...\", \"Other amplitudes shrink...\"\n- Animations (5): Bars with 'Mean' line (#FFFFFF), Shift 'Mean' line, Reflect bars, Target glow (#FFFF00), 'Inversion About the Mean' text (#FFFFFF).\nEnsure 1:1 synchronization between lecture lines and animation steps.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for Section 4 with 1:1 synchronization between 5 lecture lines and 5 animation steps. Included bar reflection visualization, shifting mean line, and target highlighting as requested. Verified against 6x6 grid layout and color requirements."
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "Implement Manim code for Section 5: \"Iteration and Measurement\". \n- Lines (5): \"We loop the...\", \"With each iteration...\", \"We repeat this...\", \"Finally, we measure...\", \"The algorithm successfully...\"\n- Animations (5): Green (#00FF00) loop icon, Animate bars growth, 'Repeat √N times' text (#ADD8E6), Measurement (collapse state), 'Target Found!' text (bright green #00FF00).\nEnsure 1:1 synchronization between lecture lines and animation steps.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 5 with 1:1 synchronization, grid-based positioning, and the requested visual effects (loop icon, growing bars, √N text, measurement collapse, and flashing 'Target Found!' text)."
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "Implement Manim code for Section 6: \"The Quantum Speedup Summary\". \n- Lines (3): \"Grover's algorithm provides...\", \"A million items...\", \"Quantum mechanics finds...\"\n- Animations (3): Split-screen comparison, Counter (1M vs 1K #ADD8E6), 'Quadratic Speedup' text (gold #FFD700).\nEnsure 1:1 synchronization between lecture lines and animation steps.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for Section 6 with split-screen comparison, counters, and flash effect. Followed all visual grid and lesson heuristics."
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Display a grid of 10 identical boxes [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/box.svg] (#FFFFFF) labeled 'Unsorted Database'.\", 'Highlight boxes [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/box.svg] one by one with a red (#FF0000) question mark appearing above them.', \"Show the text 'Classical Complexity: O(N)' in light blue (#ADD8E6) while a counter counts boxes [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/box.svg].\"]",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Show 4 vertical bars (#00FF00) representing boxes [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/box.svg], with labels '00', '01', '10', '11'.\"]",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Display a split-screen comparison featuring a haystack icon [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/haystack.svg]: 'Classical: O(N)' on left, 'Grover: O(√N)' on right.\", \"Display the text 'Quadratic Speedup Achieved!' alongside a needle icon [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/needle.svg] in gold (#FFD700) with a flash effect.\"]",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The counter_group is positioned at a single grid point (E4), which can lead to horizontal misalignment and poor centering relative to the database boxes spanning columns 2-6. Fix: Line 87: self.place_in_area(counter_group, 'E2', 'E6') (line=87, object=counter_group)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The complexity_tex is placed in the bottom row (F2-F6) with a 0.8 scale, leaving very little breathing room at the bottom edge of the frame. Fix: Line 115: self.place_in_area(complexity_tex, 'F2', 'F6', scale_factor=0.7) (line=115, object=complexity_tex)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'phase_label' (Phase Inversion) overlaps with the right side of the 'target_rect' (pulsing yellow border) in the bottom-right quadrant. Fix: Line 154: self.place_at_grid(phase_label, 'E6', scale_factor=0.8) (line=154, object=phase_label)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'target_marker' (Target) moves to a position that overlaps with the 'prob_text' (Probability magnitude...) at the bottom of the screen. Fix: Line 99: self.place_at_grid(target_marker, 'E3', scale_factor=0.8) (line=99, object=target_marker)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'prob_text' is crowded within the F3-F5 area, making it appear cramped and potentially cutting off long words. Fix: Line 165: self.place_in_area(prob_text, 'F2', 'F6', scale_factor=0.6) (line=165, object=prob_text)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The inversion_text positioned at B2-B5 overlaps with the target amplitude bar when it is reflected and amplified upwards. Fix: Line 153: self.place_in_area(inversion_text, 'A2', 'A5', scale_factor=0.7) (line=153, object=inversion_text)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The mean_label at C1 is placed too close to the end of the long lecture lines on the left, creating a cluttered appearance. Fix: Line 94: self.place_at_grid(mean_label, 'C1', scale_factor=0.6) (line=94, object=mean_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'found_text' ('Target Found!') directly overlaps with the tall measurement bar, obscuring the primary visual result of the algorithm. Fix: Line 162: self.place_in_area(found_text, 'A2', 'B5', scale_factor=0.8) (line=162, object=found_text)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'repeat_text' is placed at the very bottom of the screen (row F), which creates a cramped layout and risks being cut off by safe area margins. Fix: Line 129: self.place_in_area(repeat_text, 'E2', 'E5', scale_factor=0.7) (line=129, object=repeat_text)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'new_oracle' and 'new_diffusion' status indicators are scaled too small at the top edge, making them difficult to read against the black background. Fix: Line 99: self.place_at_grid(new_oracle, 'A2', scale_factor=0.6); Line 102: self.place_at_grid(new_diffusion, 'A5', scale_factor=0.6) (line=99, object=new_oracle)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The layout is vertically imbalanced, leaving the top row (A) entirely unused while pushing the summary text to the absolute bottom edge of the frame. Fix: Line 76 & 77: self.place_in_area(classical_label, 'A2', 'B3', scale_factor=0.8); self.place_in_area(grover_label, 'A5', 'B6', scale_factor=0.8) (line=76, object=classical_label and grover_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The large number in classical_group ('1,000,000') at 0.9 scale is too wide for its grid area, creating tight margins against the central divider and the left side. Fix: Line 123 & 124: self.place_in_area(classical_group, 'C2', 'D3', scale_factor=0.8); self.place_in_area(grover_group, 'C5', 'D6', scale_factor=0.8) (line=123, object=classical_group and grover_group)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The speedup_text is cramped at the bottom row (F), which risks being cut off and visually overlaps the end of the vertical divider line. Fix: Line 145: self.place_in_area(speedup_text, 'E2', 'F6', scale_factor=0.7) (line=145, object=speedup_text)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The mathematical formula representing the quantum state is too small, making it difficult to read as a central lecture element. Fix: Line 88: self.place_in_area(formula, 'B2', 'B5', scale_factor=1.2)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The probability bars at Row D are too far from their binary labels at the bottom of the screen, violating the proximity rule (labels must be within 1 unit). Fix: Line 69: self.place_at_grid(bars[0], 'E2'); Line 70: self.place_at_grid(bars[1], 'E3'); Line 71: self.place_at_grid(bars[2], 'E4'); Line 72: self.place_at_grid(bars[3], 'E5')",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Poor vertical grid utilization; the animation is concentrated in the middle-top, leaving large empty spaces at the bottom and between elements before the growth animation. Fix: Moving the bars to Row E (as per the proximity fix) and maintaining the formula at Row B ensures that when the bars grow, they fill the vertical space in Row D and Row C, creating a cohesive visual unit.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 299751,
+        "video_mtime_ns": 1784003674414468031,
+        "code_sha1": "2d3469b56e66d348e985e515dce88e1284de7fe2"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The counter_group is positioned at a single grid point (E4), which can lead to horizontal misalignment and poor centering relative to the database boxes spanning columns 2-6.",
+              "solution": "Line 87: self.place_in_area(counter_group, 'E2', 'E6')",
+              "line_number": 87,
+              "object_affected": "counter_group"
+            },
+            {
+              "problem": "The complexity_tex is placed in the bottom row (F2-F6) with a 0.8 scale, leaving very little breathing room at the bottom edge of the frame.",
+              "solution": "Line 115: self.place_in_area(complexity_tex, 'F2', 'F6', scale_factor=0.7)",
+              "line_number": 115,
+              "object_affected": "complexity_tex"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        28,
+        29
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 165433,
+        "video_mtime_ns": 1784003629259571368,
+        "code_sha1": "0306b35df794ed0e52ff9756ed60a309a3d40aaa"
+      },
+      "analysis": {
+        "raw_response": "```json\n{\n    \"layout\": {\n        \"has_issues\": true,\n        \"improvements\": [\n            {\n                \"problem\": \"The mathematical formula representing the quantum state is too small, making it difficult to read as a central lecture element.\",\n                \"solution\": \"Line 88: self.place_in_area(formula, 'B2', 'B5', scale_factor=1.2)\",\n                \"line_number\": 88,\n                \"object_affected\": \"formula\"\n            },\n            {\n                \"problem\": \"The probability bars at Row D are too far from their binary labels at the bottom of the screen, violating the proximity rule (labels must be within 1 unit).\",\n                \"solution\": \"Line 69: self.place_at_grid(bars[0], 'E2'); Line 70: self.place_at_grid(bars[1], 'E3'); Line 71: self.place_at_grid(bars[2], 'E4'); Line 72: self.place_at_grid(bars[3], 'E5')\",\n                \"line_number\": 69,\n                \"object_affected\": \"bars[0-3]\"\n            },\n            {\n                \"problem\": \"Poor vertical grid utilization; the animation is concentrated in the middle-top, leaving large empty spaces at the bottom and between elements before the growth animation.\",\n                \"solution\": \"Moving the bars to Row E (as per the proximity fix) and maintaining the formula at Row B ensures that when the bars grow, they fill the vertical space in Row D and Row C, creating a cohesive visual unit.\",\n                \"line_number\": 69,\n                \"object_affected\": \"bars\"\n            }\n        ]\n    }"
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 211552,
+        "video_mtime_ns": 1784003587256579856,
+        "code_sha1": "053adff3d1c1ac6d16d0fe059c5269478b8fad3b"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'phase_label' (Phase Inversion) overlaps with the right side of the 'target_rect' (pulsing yellow border) in the bottom-right quadrant.",
+              "solution": "Line 154: self.place_at_grid(phase_label, 'E6', scale_factor=0.8)",
+              "line_number": 154,
+              "object_affected": "phase_label"
+            },
+            {
+              "problem": "The 'target_marker' (Target) moves to a position that overlaps with the 'prob_text' (Probability magnitude...) at the bottom of the screen.",
+              "solution": "Line 99: self.place_at_grid(target_marker, 'E3', scale_factor=0.8)",
+              "line_number": 99,
+              "object_affected": "target_marker"
+            },
+            {
+              "problem": "The 'prob_text' is crowded within the F3-F5 area, making it appear cramped and potentially cutting off long words.",
+              "solution": "Line 165: self.place_in_area(prob_text, 'F2', 'F6', scale_factor=0.6)",
+              "line_number": 165,
+              "object_affected": "prob_text"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        30,
+        31,
+        32
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 250175,
+        "video_mtime_ns": 1784003588636724855,
+        "code_sha1": "3054d8d2db14830342389ec3d04e8f90fbf9e558"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The inversion_text positioned at B2-B5 overlaps with the target amplitude bar when it is reflected and amplified upwards.",
+              "solution": "Line 153: self.place_in_area(inversion_text, 'A2', 'A5', scale_factor=0.7)",
+              "line_number": 153,
+              "object_affected": "inversion_text"
+            },
+            {
+              "problem": "The mean_label at C1 is placed too close to the end of the long lecture lines on the left, creating a cluttered appearance.",
+              "solution": "Line 94: self.place_at_grid(mean_label, 'C1', scale_factor=0.6)",
+              "line_number": 94,
+              "object_affected": "mean_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 366258,
+        "video_mtime_ns": 1784003673035917985,
+        "code_sha1": "fd2c256f8825596b5a953f7040ffefa13c0ee34a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'found_text' ('Target Found!') directly overlaps with the tall measurement bar, obscuring the primary visual result of the algorithm.",
+              "solution": "Line 162: self.place_in_area(found_text, 'A2', 'B5', scale_factor=0.8)",
+              "line_number": 162,
+              "object_affected": "found_text"
+            },
+            {
+              "problem": "The 'repeat_text' is placed at the very bottom of the screen (row F), which creates a cramped layout and risks being cut off by safe area margins.",
+              "solution": "Line 129: self.place_in_area(repeat_text, 'E2', 'E5', scale_factor=0.7)",
+              "line_number": 129,
+              "object_affected": "repeat_text"
+            },
+            {
+              "problem": "The 'new_oracle' and 'new_diffusion' status indicators are scaled too small at the top edge, making them difficult to read against the black background.",
+              "solution": "Line 99: self.place_at_grid(new_oracle, 'A2', scale_factor=0.6); Line 102: self.place_at_grid(new_diffusion, 'A5', scale_factor=0.6)",
+              "line_number": 99,
+              "object_affected": "new_oracle"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35,
+        36,
+        37
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 177392,
+        "video_mtime_ns": 1784003675927669103,
+        "code_sha1": "703fa7b10387d8fb7b56538a482bad74ae9958f7"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The layout is vertically imbalanced, leaving the top row (A) entirely unused while pushing the summary text to the absolute bottom edge of the frame.",
+              "solution": "Line 76 & 77: self.place_in_area(classical_label, 'A2', 'B3', scale_factor=0.8); self.place_in_area(grover_label, 'A5', 'B6', scale_factor=0.8)",
+              "line_number": 76,
+              "object_affected": "classical_label and grover_label"
+            },
+            {
+              "problem": "The large number in classical_group ('1,000,000') at 0.9 scale is too wide for its grid area, creating tight margins against the central divider and the left side.",
+              "solution": "Line 123 & 124: self.place_in_area(classical_group, 'C2', 'D3', scale_factor=0.8); self.place_in_area(grover_group, 'C5', 'D6', scale_factor=0.8)",
+              "line_number": 123,
+              "object_affected": "classical_group and grover_group"
+            },
+            {
+              "problem": "The speedup_text is cramped at the bottom row (F), which risks being cut off and visually overlaps the end of the vertical divider line.",
+              "solution": "Line 145: self.place_in_area(speedup_text, 'E2', 'F6', scale_factor=0.7)",
+              "line_number": 145,
+              "object_affected": "speedup_text"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        38,
+        39,
+        40
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260714_120115/2-Grovers_Algorithm_Finding_a_Needle_in_a_Quantum_Haystack",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 237290,
+      "completion_tokens": 25635,
+      "total_tokens": 360947,
+      "call_count": 36
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 278,
+        "completion_tokens": 856,
+        "total_tokens": 1781,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 7593,
+        "completion_tokens": 393,
+        "total_tokens": 8367,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 10960,
+        "completion_tokens": 243,
+        "total_tokens": 11236,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 33843,
+        "completion_tokens": 888,
+        "total_tokens": 35305,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 10494,
+        "completion_tokens": 281,
+        "total_tokens": 10806,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 10447,
+        "completion_tokens": 2280,
+        "total_tokens": 13133,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 11748,
+        "completion_tokens": 2473,
+        "total_tokens": 14305,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 16805,
+        "completion_tokens": 1853,
+        "total_tokens": 18805,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 16207,
+        "completion_tokens": 2452,
+        "total_tokens": 18793,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 22101,
+        "completion_tokens": 2423,
+        "total_tokens": 24861,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4393,
+        "completion_tokens": 829,
+        "total_tokens": 14719,
+        "call_count": 12
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 9572,
+        "completion_tokens": 1746,
+        "total_tokens": 17711,
+        "call_count": 1
+      },
+      "scope_refine:section_5": {
+        "prompt_tokens": 20011,
+        "completion_tokens": 2640,
+        "total_tokens": 34020,
+        "call_count": 2
+      },
+      "scope_refine:section_1": {
+        "prompt_tokens": 26059,
+        "completion_tokens": 1906,
+        "total_tokens": 42836,
+        "call_count": 2
+      },
+      "scope_refine:section_6": {
+        "prompt_tokens": 19477,
+        "completion_tokens": 2311,
+        "total_tokens": 36524,
+        "call_count": 2
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3031,
+        "completion_tokens": 251,
+        "total_tokens": 9513,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2707,
+        "completion_tokens": 398,
+        "total_tokens": 12703,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2893,
+        "completion_tokens": 350,
+        "total_tokens": 9124,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 2751,
+        "completion_tokens": 236,
+        "total_tokens": 7432,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3117,
+        "completion_tokens": 382,
+        "total_tokens": 8989,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2803,
+        "completion_tokens": 444,
+        "total_tokens": 9984,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 237290,
+        "completion_tokens": 25635,
+        "total_tokens": 360947,
+        "call_count": 36
+      }
+    }
+  }
+}

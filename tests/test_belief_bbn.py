@@ -16,6 +16,7 @@ from belief_bbn import (  # noqa: E402
     BeliefSituation,
     TransitionEvidence,
     fit_bbn_parameters,
+    normalize_stage,
     update_beta_posterior,
 )
 
@@ -101,6 +102,21 @@ class BeliefBBNTests(unittest.TestCase):
             self.assertEqual([item["belief_id"] for item in selected], ["B001"])
             row = json.loads(log_path.read_text(encoding="utf-8"))
             self.assertEqual(row["selected_belief_ids"], ["B001"])
+            candidate = row["candidates"][0]
+            self.assertEqual(candidate["role_match"], 1.0)
+            self.assertEqual(candidate["stage_match"], 1.0)
+            self.assertEqual(candidate["context_match"], 1.0)
+            mismatched = next(
+                item for item in row["candidates"] if item["belief_id"] == "B002"
+            )
+            self.assertEqual(mismatched["role_match"], 0.0)
+            self.assertEqual(mismatched["stage_match"], 0.0)
+            self.assertFalse(mismatched["selected"])
+
+    def test_runtime_stage_aliases_match_frozen_stage_vocabulary(self):
+        self.assertEqual(normalize_stage("debugging"), "coding")
+        self.assertEqual(normalize_stage("writing"), "planning")
+        self.assertEqual(normalize_stage("revision"), "planning")
 
     def test_parameter_fit_learns_from_labelled_cases(self):
         cases = [
@@ -183,6 +199,88 @@ class BeliefBBNTests(unittest.TestCase):
             threshold=0.5,
         )
         self.assertEqual([item["belief_id"] for item in selected], ["B001"])
+
+    def test_selector_uses_semantic_context_as_bbn_evidence(self):
+        class FakeIndex:
+            def similarities_with_context(self, query, context_texts):
+                return {"B001": 0.9}, {"B001": 0.8}
+
+        belief = {
+            "belief_id": "B001",
+            "instruction": "Use area placement for wide labels.",
+            "scope": {
+                "roles": ["Coder"],
+                "stages": ["coding"],
+                "problem_description": "wide label alignment",
+                "context_conditions": ["grid layout with wide labels"],
+            },
+            "alpha": 9,
+            "beta": 1,
+            "status": "active",
+            "timing": "preventative",
+        }
+        selector = BeliefSelector([belief], embedding_index=FakeIndex())
+        selected = selector.select(
+            BeliefSituation(
+                topic="T",
+                agent_role="Coder",
+                pipeline_stage="coding",
+                problem_text="A long title must be centered across a six-column grid.",
+                timing="preventative",
+            ),
+            threshold=0.5,
+        )
+        self.assertEqual([item["belief_id"] for item in selected], ["B001"])
+        self.assertEqual(selected[0]["context_match_semantic"], 0.8)
+
+    def test_probationary_belief_can_collect_selection_evidence(self):
+        belief = {
+            "belief_id": "B058",
+            "instruction": "Qualify rate functions.",
+            "scope": {
+                "roles": ["Coder"],
+                "stages": ["coding"],
+                "problem_description": "Render failure due to NameError.",
+            },
+            "alpha": 3,
+            "beta": 1,
+            "status": "probation",
+            "timing": "reactive",
+        }
+        selector = BeliefSelector(
+            [belief],
+            similarity_fn=lambda first, second: 1.0,
+        )
+        selected = selector.select(
+            BeliefSituation(
+                topic="T",
+                agent_role="Coder",
+                pipeline_stage="coding",
+                problem_text="NameError: smooth is not defined",
+                context_tags=["missing_import", "render_error"],
+                timing="reactive",
+            ),
+            threshold=0.0,
+        )
+        self.assertEqual([item["belief_id"] for item in selected], ["B058"])
+        self.assertEqual(selected[0]["status"], "probation")
+
+        belief["timing"] = "preventative"
+        preventative = selector.select(
+            BeliefSituation(
+                topic="T",
+                agent_role="Coder",
+                pipeline_stage="coding",
+                problem_text="NameError while preparing a section",
+                context_tags=["missing_import"],
+                timing="preventative",
+            ),
+            threshold=0.0,
+        )
+        self.assertEqual(
+            [item["belief_id"] for item in preventative],
+            ["B058"],
+        )
 
 
 if __name__ == "__main__":

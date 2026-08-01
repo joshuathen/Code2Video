@@ -1,0 +1,592 @@
+{
+  "topic": "Eigenvalues of 2x2 Matrices: The DNA of Linear Transformations",
+  "target_audience": "Undergraduate students in STEM fields (Mathematics, Physics, Engineering)",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup layout\n        lines = [\n            \"Meet Leo, our feline friend on a 2D grid.\",\n            \"Matrices transform space, stretching and squashing everything inside.\",\n            \"Watch Leo distort as we apply a linear transformation.\",\n            \"Most points shift to entirely new directions.\",\n            \"But some special lines stay fixed in their orientation.\"\n        ]\n        self.setup_layout(\"Prerequisite & The Core Intuition\", lines)\n\n        # Matrix for transformation: [[2, 0.5], [0, 1]]\n        matrix = [[2, 0.5], [0, 1]]\n\n        # Helper to create Leo the Cat\n        def get_leo():\n            head = Circle(radius=0.6, color=\"#FFFF00\", fill_opacity=0.3)\n            # Ears\n            ear_l = Polygon([-0.5, 0.4, 0], [-0.2, 0.5, 0], [-0.6, 0.9, 0], color=\"#FFFF00\", fill_opacity=0.5)\n            ear_r = Polygon([0.5, 0.4, 0], [0.2, 0.5, 0], [0.6, 0.9, 0], color=\"#FFFF00\", fill_opacity=0.5)\n            # Eyes\n            eye_l = Dot([-0.2, 0.2, 0], radius=0.05, color=\"#FFFF00\")\n            eye_r = Dot([0.2, 0.2, 0], radius=0.05, color=\"#FFFF00\")\n            # Mouth/Nose\n            nose = Triangle(color=\"#FFFF00\", fill_opacity=1).scale(0.05).move_to([0, 0, 0])\n            # Whiskers\n            w1 = Line([-0.7, 0.1, 0], [-0.2, 0, 0], color=\"#FFFF00\")\n            w2 = Line([-0.7, -0.1, 0], [-0.2, 0, 0], color=\"#FFFF00\")\n            w3 = Line([0.7, 0.1, 0], [0.2, 0, 0], color=\"#FFFF00\")\n            w4 = Line([0.7, -0.1, 0], [0.2, 0, 0], color=\"#FFFF00\")\n            return VGroup(head, ear_l, ear_r, eye_l, eye_r, nose, w1, w2, w3, w4)\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        # Grid area\n        grid_visual = NumberPlane(\n            x_range=[-3, 3, 1], y_range=[-3, 3, 1],\n            background_line_style={\"stroke_color\": \"#FFFFFF\", \"stroke_width\": 1, \"stroke_opacity\": 0.5}\n        ).scale(0.5)\n        self.place_in_area(grid_visual, 'A1', 'F6')\n        \n        leo = get_leo().scale(0.5)\n        leo.move_to(grid_visual.c2p(0, 0))\n        \n        self.play(Create(grid_visual), FadeIn(leo))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Add vectors before transformation\n        v_green = Arrow(grid_visual.c2p(0,0), grid_visual.c2p(1,0), color=\"#00FF00\", buff=0, stroke_width=4)\n        v_red = Arrow(grid_visual.c2p(0,0), grid_visual.c2p(1,1), color=\"#FF0000\", buff=0, stroke_width=4)\n        \n        matrix_label = Text(\"A = [[2, 0.5], [0, 1]]\", font_size=20, color=WHITE)\n        self.place_at_grid(matrix_label, 'A6')\n\n        self.play(GrowArrow(v_green), GrowArrow(v_red), Write(matrix_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Transform the grid, leo, and vectors\n        # Note: Manim's apply_matrix is a coordinate transform. \n        # For simplicity in this layout, we animate the points' movement.\n        \n        new_v_green_end = grid_visual.c2p(2, 0) # [1,0] * A = [2,0]\n        new_v_red_end = grid_visual.c2p(2.5, 1) # [1,1] * A = [2.5, 1]\n        \n        self.play(\n            grid_visual.animate.apply_matrix(matrix),\n            leo.animate.apply_matrix(matrix),\n            v_green.animate.put_start_and_end_on(grid_visual.c2p(0,0), new_v_green_end),\n            v_red.animate.put_start_and_end_on(grid_visual.c2p(0,0), new_v_red_end),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(RED)\n        \n        # Highlight red vector changing direction\n        flash_red = v_red.copy().set_color(WHITE).set_stroke(width=6)\n        self.play(FadeIn(flash_red), ScaleInPlace(flash_red, 1.2))\n        self.play(FadeOut(flash_red))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(GREEN)\n        \n        # Highlight green vector staying on line\n        eigen_label = Text(\"Eigen-direction\", font_size=18, color=\"#00FF00\")\n        self.place_at_grid(eigen_label, 'E6')\n        \n        # Draw a dotted line to show the original span\n        span_line = DashedLine(grid_visual.c2p(-3,0), grid_visual.c2p(3,0), color=\"#00FF00\", stroke_opacity=0.5)\n        \n        self.play(Create(span_line), Write(eigen_label))\n        self.play(Indicate(v_green, color=\"#00FF00\"))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(Scene):\n    def construct(self):\n        # Equation: A v = λ v\n        # Characters: [0]:A, [1]:v, [2]:'=', [3]:λ, [4]:v\n        # Using MarkupText for the λ character to avoid Pango rendering issues that cause ParseError\n        eqn = VGroup(\n            Text(\"A\"), Text(\"v\"), Text(\"=\"), MarkupText(\"λ\"), Text(\"v\")\n        ).arrange(RIGHT, buff=0.2)\n        \n        self.add(eqn)\n        self.wait(2)\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Setup layout with specific title and lecture lines\n        self.setup_layout(\n            \"Defining the Eigen-Relationship\", \n            [\n                \"The relationship is defined as A v equals lambda v.\", \n                \"The eigenvector v stays on its original line.\", \n                \"The eigenvalue lambda scales that vector's length.\"\n            ]\n        )\n        \n        # === Animation for Lecture Line 1 ===\n        # Equation: A v = λ v\n        # Characters: [0]:A, [1]:v, [2]:'=', [3]:λ, [4]:v\n        eqn = VGroup(\n            Text(\"A\"), Text(\"v\"), Text(\"=\"), Text(\"λ\"), Text(\"v\")\n        ).arrange(RIGHT, buff=0.2)\n        \n        # Initial state: White\n        eqn.set_color(WHITE)\n        self.place_in_area(eqn, \"B1\", \"B6\", scale_factor=1.5)\n        \n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            Write(eqn),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Logic: Highlight A (Blue) and λ (Gold). \n        # Show a vector v (Green) on its line (span).\n        \n        span_line = Line(\n            start=self.grid[\"E1\"], \n            end=self.grid[\"E6\"], \n            color=GRAY, \n            stroke_opacity=0.3\n        )\n        \n        # Vector v starting at E2 and pointing to E3\n        v_start = self.grid[\"E2\"]\n        v_end = self.grid[\"E3\"]\n        vector_v = Arrow(\n            start=v_start, \n            end=v_end, \n            buff=0, \n            color=\"#00FF00\", \n            stroke_width=6\n        )\n        v_label = Text(\"v\", color=\"#00FF00\", font_size=20).next_to(vector_v, UP, buff=0.1)\n        \n        self.play(\n            self.lecture[1].animate.set_color(\"#00FF00\"),\n            eqn[0].animate.set_color(\"#0000FF\"), # Matrix A to Blue\n            eqn[3].animate.set_color(\"#FFD700\"), # Lambda to Gold\n            Create(span_line),\n            GrowArrow(vector_v),\n            FadeIn(v_label),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Logic: Animate the green vector 'v' scaling by factor 3.\n        \n        # Target end point (E2 + 3 units right = E5)\n        v_end_scaled = self.grid[\"E5\"]\n        vector_v_scaled = Arrow(\n            start=v_start, \n            end=v_end_scaled, \n            buff=0, \n            color=\"#00FF00\", \n            stroke_width=6\n        )\n        \n        # Also update label position relative to new vector\n        v_label_target = Text(\"3v\", color=\"#FFD700\", font_size=20).next_to(vector_v_scaled, UP, buff=0.1)\n\n        self.play(\n            self.lecture[2].animate.set_color(\"#FFD700\"),\n            Transform(vector_v, vector_v_scaled),\n            Transform(v_label, v_label_target),\n            run_time=2\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Setup title and lecture lines\n        title_str = \"The Characteristic Equation (The Math Tool)\"\n        lines = [\n            \"To find these values, we rewrite the equation.\",\n            \"Set the determinant of A minus lambda I to zero.\",\n            \"This condition ensures non-zero solutions for our vectors.\"\n        ]\n        self.setup_layout(title_str, lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Transition: 'A v = λ v' to '(A - λ I) v = 0'\n        self.lecture[0].set_color(WHITE)\n        \n        # Build A v = lambda v\n        eq1 = VGroup(\n            Text(\"A\", color=WHITE),\n            Text(\"v\", color=WHITE),\n            Text(\" = \", color=WHITE),\n            Text(\"\\u03BB\", color=WHITE),\n            Text(\"v\", color=WHITE)\n        ).arrange(RIGHT, buff=0.1)\n        self.place_in_area(eq1, \"A2\", \"B5\", scale_factor=1.2)\n        \n        self.play(Write(eq1))\n        self.wait(1)\n        \n        # Build (A - lambda I) v = 0\n        eq2 = VGroup(\n            Text(\"(\", color=WHITE),\n            Text(\"A\", color=WHITE),\n            Text(\" - \", color=WHITE),\n            Text(\"\\u03BB\", color=WHITE),\n            Text(\"I\", color=WHITE),\n            Text(\")\", color=WHITE),\n            Text(\"v\", color=WHITE),\n            Text(\" = \", color=WHITE),\n            Text(\"0\", color=WHITE)\n        ).arrange(RIGHT, buff=0.1)\n        self.place_in_area(eq2, \"A2\", \"B5\", scale_factor=1.2)\n        \n        # Transition\n        self.play(ReplacementTransform(eq1, eq2))\n        \n        # Highlight (A - lambda I) with a red box\n        # Red box around the \"(A - lambda I)\" part (indices 0 to 5)\n        red_box = SurroundingRectangle(eq2[:6], color=\"#FF0000\", buff=0.1)\n        self.play(Create(red_box))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(YELLOW)\n        \n        # Display text 'Matrix must be singular for non-zero v' (#FFFFFF)\n        singular_text = Text(\"Matrix must be singular for non-zero v\", font_size=24, color=WHITE)\n        self.place_in_area(singular_text, \"C1\", \"C6\", scale_factor=0.8)\n        self.play(FadeIn(singular_text))\n        \n        # Write 'det(A - λ I) = 0' in yellow (#FFFF00)\n        det_eq = VGroup(\n            Text(\"det\", color=YELLOW),\n            Text(\"(\", color=YELLOW),\n            Text(\"A\", color=YELLOW),\n            Text(\" - \", color=YELLOW),\n            Text(\"\\u03BB\", color=YELLOW),\n            Text(\"I\", color=YELLOW),\n            Text(\")\", color=YELLOW),\n            Text(\" = \", color=YELLOW),\n            Text(\"0\", color=YELLOW)\n        ).arrange(RIGHT, buff=0.1)\n        self.place_in_area(det_eq, \"D1\", \"D6\", scale_factor=1.2)\n        \n        self.play(Write(det_eq))\n        \n        # Glowing emphasis (using Flash or temporary highlight)\n        self.play(Indicate(det_eq, color=YELLOW, scale_factor=1.1))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(\"#FFD700\") # Gold\n        \n        # Show a 2x2 matrix with 'λ' subtracted from diagonal elements in gold (#FFD700)\n        # Components of the matrix\n        b_left = Text(\"[\", font_size=80, color=\"#FFD700\")\n        b_right = Text(\"]\", font_size=80, color=\"#FFD700\")\n        \n        # Elements\n        a_minus_lam = Text(\"a - \\u03BB\", color=\"#FFD700\", font_size=32)\n        b_elem = Text(\"b\", color=\"#FFD700\", font_size=32)\n        c_elem = Text(\"c\", color=\"#FFD700\", font_size=32)\n        d_minus_lam = Text(\"d - \\u03BB\", color=\"#FFD700\", font_size=32)\n        \n        # Layout\n        row1 = VGroup(a_minus_lam, b_elem).arrange(RIGHT, buff=1.2)\n        row2 = VGroup(c_elem, d_minus_lam).arrange(RIGHT, buff=1.2)\n        \n        # Align columns\n        a_minus_lam.align_to(c_elem, LEFT)\n        b_elem.align_to(d_minus_lam, LEFT)\n        \n        elements = VGroup(row1, row2).arrange(DOWN, buff=0.6)\n        matrix_vgroup = VGroup(b_left, elements, b_right).arrange(RIGHT, buff=0.2)\n        \n        self.place_in_area(matrix_vgroup, \"E1\", \"F6\", scale_factor=0.9)\n        \n        self.play(FadeIn(matrix_vgroup))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with lecture lines\n        lecture_lines = [\n            \"Let's calculate the eigenvalues for this specific matrix.\", \n            \"Subtract lambda from the diagonal elements.\", \n            \"Calculate the determinant to get a quadratic equation.\", \n            \"Solve for lambda to find our two scaling factors.\", \n            \"Here, our eigenvalues are five and two.\"\n        ]\n        self.setup_layout(\"Step-by-Step Calculation Example\", lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(WHITE)\n        \n        # Matrix A = [[4, 1], [2, 3]]\n        m_4 = Text(\"4\", font_size=36)\n        m_1 = Text(\"1\", font_size=36)\n        m_2 = Text(\"2\", font_size=36)\n        m_3 = Text(\"3\", font_size=36)\n        \n        vals_row1 = VGroup(m_4, m_1).arrange(RIGHT, buff=1.2)\n        vals_row2 = VGroup(m_2, m_3).arrange(RIGHT, buff=1.2)\n        matrix_vals = VGroup(vals_row1, vals_row2).arrange(DOWN, buff=0.8)\n        \n        l_bracket = Text(\"[\", font_size=100)\n        r_bracket = Text(\"]\", font_size=100)\n        matrix_full = VGroup(l_bracket, matrix_vals, r_bracket).arrange(RIGHT, buff=0.2)\n        \n        a_label = Text(\"A =\", font_size=36)\n        matrix_disp = VGroup(a_label, matrix_full).arrange(RIGHT, buff=0.3)\n        \n        # Place in B-C area\n        self.place_in_area(matrix_disp, \"B1\", \"C6\")\n        \n        self.play(FadeIn(matrix_disp))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(WHITE)\n        \n        # Prepare for determinant det(A - λI) = 0\n        l_bar = Text(\"|\", font_size=100)\n        r_bar = Text(\"|\", font_size=100)\n        m_4_sub = Text(\"4 - \\u03BB\", font_size=30)\n        m_3_sub = Text(\"3 - \\u03BB\", font_size=30)\n        \n        # Grouping for determinant\n        det_vals_row1 = VGroup(m_4_sub, m_1.copy()).arrange(RIGHT, buff=0.8)\n        det_vals_row2 = VGroup(m_2.copy(), m_3_sub).arrange(RIGHT, buff=0.8)\n        det_vals = VGroup(det_vals_row1, det_vals_row2).arrange(DOWN, buff=0.8)\n        \n        det_full = VGroup(l_bar, det_vals, r_bar).arrange(RIGHT, buff=0.2)\n        det_eq = Text(\"= 0\", font_size=36)\n        det_disp = VGroup(det_full, det_eq).arrange(RIGHT, buff=0.3)\n        \n        # Place in same area as matrix\n        self.place_in_area(det_disp, \"B1\", \"C6\")\n        \n        self.play(\n            ReplacementTransform(matrix_disp, det_disp)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(YELLOW)\n        \n        # Quadratic Expansion: λ² - 7λ + 10 = 0\n        quad_text = Text(\"\\u03BB\\u00B2 - 7\\u03BB + 10 = 0\", font_size=36, color=YELLOW)\n        self.place_in_area(quad_text, \"D1\", \"D6\")\n        \n        self.play(Write(quad_text))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(YELLOW)\n        \n        # Factoring: (λ - 5)(λ - 2) = 0\n        factor_text = Text(\"(\\u03BB - 5)(\\u03BB - 2) = 0\", font_size=36, color=YELLOW)\n        self.place_in_area(factor_text, \"E1\", \"E6\")\n        \n        self.play(FadeIn(factor_text, shift=DOWN*0.2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(GREEN)\n        \n        # Final result: λ₁ = 5, λ₂ = 2\n        result_text = Text(\"\\u03BB\\u2081 = 5,  \\u03BB\\u2082 = 2\", font_size=42, color=GREEN)\n        self.place_in_area(result_text, \"F1\", \"F6\")\n        \n        self.play(Write(result_text))\n        # Pulse effect using scale and there_and_back\n        self.play(\n            result_text.animate.scale(1.2),\n            rate_func=there_and_back,\n            run_time=0.8\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"Let's see how these numbers reshape Leo's world.\",\n            \"An eigenvalue of five expands space along one diagonal.\",\n            \"An eigenvalue of two stretches the other diagonal.\",\n            \"Values above one grow, while values below one shrink.\",\n            \"Negative eigenvalues flip the orientation entirely.\"\n        ]\n        self.setup_layout(\"Visualizing the Resulting Transformation\", lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        # Grid Center for Area A1-F6\n        area_center = (self.grid[\"A1\"] + self.grid[\"F6\"]) / 2\n        \n        # Create Leo the Cat (stylized)\n        leo_body = Circle(radius=0.4, color=\"#FFFF00\", fill_opacity=0.8)\n        ear_l = Triangle(color=\"#FFFF00\", fill_opacity=0.8).scale(0.15).rotate(30*DEGREES).move_to(leo_body.get_top()+LEFT*0.2+UP*0.05)\n        ear_r = Triangle(color=\"#FFFF00\", fill_opacity=0.8).scale(0.15).rotate(-30*DEGREES).move_to(leo_body.get_top()+RIGHT*0.2+UP*0.05)\n        eye_l = Dot(radius=0.04, color=BLACK).move_to(leo_body.get_center() + LEFT*0.15 + UP*0.1)\n        eye_r = Dot(radius=0.04, color=BLACK).move_to(leo_body.get_center() + RIGHT*0.15 + UP*0.1)\n        leo = VGroup(leo_body, ear_l, ear_r, eye_l, eye_r)\n        \n        # Place Leo and Eigen-lines\n        self.place_in_area(leo, 'A1', 'F6', scale_factor=0.3)\n        \n        line1 = Line(area_center + DL*2, area_center + UR*2, color=\"#00FF00\", stroke_width=2)\n        line2 = Line(area_center + DR*2, area_center + UL*2, color=\"#00FF00\", stroke_width=2)\n        \n        label1 = Text(\"\\u03bb=5\", color=\"#00FF00\", font_size=20)\n        label2 = Text(\"\\u03bb=2\", color=\"#00FF00\", font_size=20)\n        self.place_at_grid(label1, \"B5\")\n        self.place_at_grid(label2, \"B2\")\n\n        self.play(FadeIn(leo), Create(line1), Create(line2), FadeIn(label1), FadeIn(label2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Matrix to scale by factor 5 along 45 degree diagonal (Line1)\n        # M = [[3, 2], [2, 3]]\n        mat1 = [[3, 2], [2, 3]]\n        self.play(leo.animate.apply_matrix(mat1, about_point=area_center), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Matrix to scale by factor 2 along 135 degree diagonal (Line2)\n        # Given we already transformed, applying this matrix scales the other axis.\n        # M = [[1.5, -0.5], [-0.5, 1.5]]\n        mat2 = [[1.5, -0.5], [-0.5, 1.5]]\n        self.play(leo.animate.apply_matrix(mat2, about_point=area_center), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        # Highlight transformation importance\n        self.play(Flash(leo, color=WHITE, line_length=0.4))\n        dna_text = Text(\"The DNA of the Transformation\", color=WHITE, font_size=22)\n        self.place_at_grid(dna_text, \"F4\")\n        self.play(Write(dna_text))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        # Show a flip (reflection across Y axis relative to center)\n        flip_mat = [[-1, 0], [0, 1]]\n        self.play(leo.animate.apply_matrix(flip_mat, about_point=area_center), run_time=1.5)\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            'Eigenvalues describe the fundamental scaling power of transformations.', \n            \"They power Google's PageRank and analyze bridge vibrations.\", \n            'They are the DNA of every linear transformation.'\n        ]\n        self.setup_layout(\"Summary & Application\", lecture_lines)\n        \n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(\"#FFFF00\"), run_time=0.5)\n        \n        # Display text 'Eigenvalues = Scaling Power and Stability' in yellow (#FFFF00)\n        scaling_line1 = Text(\"Eigenvalues =\", color=\"#FFFF00\", font_size=24)\n        scaling_line2 = Text(\"Scaling Power\", color=\"#FFFF00\", font_size=24)\n        scaling_line3 = Text(\"& Stability\", color=\"#FFFF00\", font_size=24)\n        scaling_text_group = VGroup(scaling_line1, scaling_line2, scaling_line3).arrange(DOWN, buff=0.3)\n        \n        self.place_in_area(scaling_text_group, \"A1\", \"C6\")\n        self.play(FadeIn(scaling_text_group))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(\"#FFFF00\"),\n            run_time=0.5\n        )\n        \n        # Show icons for 'Google PageRank' and 'Bridge Vibrations' in white (#FFFFFF)\n        # Using symbolic representations with shapes and text labels\n        google_label = Text(\"Google PageRank\", font_size=18, color=WHITE)\n        google_circle = Circle(radius=0.5, color=WHITE)\n        google_icon = VGroup(google_circle, google_label).arrange(DOWN, buff=0.2)\n        \n        bridge_label = Text(\"Bridge Vibrations\", font_size=18, color=WHITE)\n        bridge_shape = VGroup(\n            Line(LEFT, RIGHT, color=WHITE),\n            Line(LEFT, RIGHT, color=WHITE).shift(UP*0.2),\n            Line(LEFT, RIGHT, color=WHITE).shift(DOWN*0.2)\n        ).scale(0.5)\n        bridge_icon = VGroup(bridge_shape, bridge_label).arrange(DOWN, buff=0.2)\n        \n        self.place_at_grid(google_icon, \"E2\")\n        self.place_at_grid(bridge_icon, \"E5\")\n        \n        self.play(FadeIn(google_icon), FadeIn(bridge_icon))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(\"#FFFF00\"),\n            run_time=0.5\n        )\n        \n        # Fade to black (clear the right-side elements)\n        self.play(\n            FadeOut(scaling_text_group),\n            FadeOut(google_icon),\n            FadeOut(bridge_icon)\n        )\n        \n        # Center a single gold (λ) symbol (#FFD700)\n        dna_lambda = Text(\"λ\", color=\"#FFD700\", font_size=150)\n        # Position λ in the center of the right-side grid area\n        self.place_in_area(dna_lambda, \"A1\", \"F6\")\n        \n        self.play(FadeIn(dna_lambda))\n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "Eigenvalues of 2x2 Matrices: The DNA of Linear Transformations",
+    "target_audience": "Undergraduate students in STEM fields (Mathematics, Physics, Engineering)",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "Prerequisite & The Core Intuition",
+        "content": "Start by reviewing a 2x2 matrix as a 'transformer' of 2D space. Introduce 'Leo the Linear Cat,' a character drawn on a 2D grid. When we multiply the grid by a matrix, Leo gets stretched or squashed. Explain that while most points on Leo move to brand new directions, certain 'special' directions stay fixed along their original lines.",
+        "example": "Visualize Leo the Cat on a grid. Apply a transformation where he is stretched horizontally by 2. His whiskers on the x-axis stay on the x-axis (eigen-direction), while whiskers at 45 degrees tilt toward the horizontal."
+      },
+      {
+        "id": "section_2",
+        "title": "Defining the Eigen-Relationship",
+        "content": "Introduce the fundamental equation: Av = λv. Explain that 'A' is the matrix, 'v' is the eigenvector (the direction that doesn't change), and 'λ' (lambda) is the eigenvalue (the scale factor). Emphasize that in this specific direction, matrix multiplication simplifies to simple scalar multiplication.",
+        "example": "If A maps a vector v to 3v, then λ = 3. This means the 'DNA' of this transformation in that direction is a growth factor of 3."
+      },
+      {
+        "id": "section_3",
+        "title": "The Characteristic Equation (The Math Tool)",
+        "content": "Transition from geometry to algebra. To solve Av = λv, we rewrite it as (A - λI)v = 0. Explain that for a non-zero vector 'v' to exist, the matrix (A - λI) must be 'singular,' meaning its determinant must be zero. This leads to the characteristic equation: det(A - λI) = 0.",
+        "example": "Show a 2x2 matrix with 'λ' subtracted from the top-left and bottom-right diagonal elements, preparing it for the determinant calculation."
+      },
+      {
+        "id": "section_4",
+        "title": "Step-by-Step Calculation Example",
+        "content": "Walk through a concrete calculation using a 2x2 matrix. Show the expansion of the determinant into a quadratic equation (the characteristic polynomial) and solve for λ using factoring or the quadratic formula.",
+        "example": "Matrix A = [[4, 1], [2, 3]]. Calculation: det([[4-λ, 1], [2, 3-λ]]) = (4-λ)(3-λ) - 2 = λ² - 7λ + 10 = 0. Solving (λ-5)(λ-2)=0 gives eigenvalues λ₁=5 and λ₂=2."
+      },
+      {
+        "id": "section_5",
+        "title": "Visualizing the Resulting Transformation",
+        "content": "Connect the math back to Leo the Cat. Explain what the specific eigenvalues mean for the shape. If λ > 1, space expands; if 0 < λ < 1, space compresses; if λ is negative, space flips.",
+        "example": "Animate Leo being stretched 5 times longer along one diagonal (λ=5) and 2 times longer along another (λ=2). This gives a complete 'physical profile' of how the matrix A behaves."
+      },
+      {
+        "id": "section_6",
+        "title": "Summary & Application",
+        "content": "Wrap up by highlighting that eigenvalues are used in everything from Google's PageRank algorithm to analyzing the vibration of bridge cables. Reinforce that eigenvalues represent the 'scaling power' of a transformation.",
+        "example": "A bridge (device) vibrating: its 'natural frequencies' are determined by the eigenvalues of its structural matrix. High eigenvalue = high frequency vibration."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "Prerequisite & The Core Intuition",
+      "lecture_lines": [
+        "Meet Leo, our feline friend on a 2D grid.",
+        "Matrices transform space, stretching and squashing everything inside.",
+        "Watch Leo distort as we apply a linear transformation.",
+        "Most points shift to entirely new directions.",
+        "But some special lines stay fixed in their orientation."
+      ],
+      "animations": [
+        "Display a 2D coordinate grid (#FFFFFF) with a yellow (#FFFF00) 'Leo the Cat' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/cat.png] shape centered.",
+        "Apply transformation [[2, 0.5], [0, 1]] to the grid and Leo [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/cat.png].",
+        "Animate a green vector (#00FF00) along the x-axis, showing it scales but stays on the axis.",
+        "Animate a red vector (#FF0000) at 45 degrees, showing it rotates toward the horizontal.",
+        "Highlight the green x-axis vector and label it 'Eigen-direction' (#00FF00)."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Defining the Eigen-Relationship",
+      "lecture_lines": [
+        "The relationship is defined as A v equals lambda v.",
+        "The eigenvector v stays on its original line.",
+        "The eigenvalue lambda scales that vector's length."
+      ],
+      "animations": [
+        "Show the equation 'A v = \\lambda v' in white (#FFFFFF) at the center.",
+        "Change the color of 'A' to blue (#0000FF) and '\\lambda' to gold (#FFD700).",
+        "Animate a green vector 'v' (#00FF00) scaling by factor 3 with no rotation."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Characteristic Equation (The Math Tool)",
+      "lecture_lines": [
+        "Rearrange the eigenvalue equation to equal zero.",
+        "We seek a non-zero solution for vector v.",
+        "This requires the transformation matrix to be singular.",
+        "Thus, the determinant of the matrix must be zero.",
+        "Subtract lambda from the diagonal elements to solve."
+      ],
+      "animations": [
+        "Transition 'A v = \\lambda v' to '(A - \\lambda I) v = 0' in white (#FFFFFF).",
+        "Animate 'det(A - \\lambda I) = 0' appearing in yellow (#FFFF00) with a glow.",
+        "Draw a red (#FF0000) box around '(A - \\lambda I)' and label 'Singular Matrix' in white (#FFFFFF)."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Step-by-Step Calculation Example",
+      "lecture_lines": [
+        "Let's solve the determinant for this specific matrix.",
+        "Expanding the determinant yields a characteristic quadratic equation.",
+        "Solving this equation reveals eigenvalues of five and two."
+      ],
+      "animations": [
+        "Display matrix A = [[4, 1], [2, 3]] centered in white (#FFFFFF).",
+        "Animate diagonal subtractions: [[4-\\lambda, 1], [2, 3-\\lambda]] in gold (#FFD700).",
+        "Expand determinant: (4-\\lambda)(3-\\lambda) - 2 = 0 in yellow (#FFFF00).",
+        "Simplify the polynomial to \\lambda^2 - 7\\lambda + 10 = 0 in yellow (#FFFF00).",
+        "Pulse the final eigenvalues \\lambda_1 = 5 and \\lambda_2 = 2 in green (#00FF00) and display [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/based.svg] next to the result."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Visualizing the Resulting Transformation",
+      "lecture_lines": [
+        "Let's see how these numbers reshape Leo's world.",
+        "An eigenvalue of five expands space along one diagonal.",
+        "An eigenvalue of two stretches the other diagonal.",
+        "Values above one grow, while values below one shrink.",
+        "Negative eigenvalues flip the orientation entirely."
+      ],
+      "animations": [
+        "Show Leo the Cat (#FFFF00) on a grid with two green (#00FF00) lines for eigen-directions.",
+        "Label the lines '\\lambda=5' and '\\lambda=2' in green (#00FF00).",
+        "Animate Leo stretching by factor 5 along the '\\lambda=5' direction.",
+        "Animate Leo stretching by factor 2 along the '\\lambda=2' direction.",
+        "Flash the final shape and display 'The DNA of the Transformation' (#FFFFFF)."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Summary & Application",
+      "lecture_lines": [
+        "Eigenvalues describe the fundamental scaling power of transformations.",
+        "They power Google's PageRank and analyze bridge vibrations.",
+        "They are the DNA of every linear transformation."
+      ],
+      "animations": [
+        "Show icons for 'Google PageRank' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/server.svg] and 'Bridge Vibrations' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/bridge.svg] in white (#FFFFFF).",
+        "Display text 'Eigenvalues = Scaling Power and Stability' in yellow (#FFFF00).",
+        "Fade to black and center a single gold (\\lambda) symbol (#FFD700)."
+      ]
+    }
+  ],
+  "turns_run": 1,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section_1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 5 animation steps for section 1. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for Section 1, focusing on Leo the Cat, the 2D grid, and the visual intuition of eigenvalues using a transformation matrix. Used the grid system and proper color coding for lecture lines."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 3 animation steps for section 2. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for Section 2: Defining the Eigen-Relationship. Implemented visual anchor system with 6x6 grid, handled equation styling (A, v, lambda), and animated vector scaling by factor 3. Ensuring no MathTex is used and only Text/MarkupText with Unicode symbols."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated section_3 with 5 concise lecture lines to match the 5 animation steps, following the latest animation plan in Issue 21."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Aligned 3 animation steps with the 3 lecture lines in section 3. Each step now directly corresponds to a lecture line."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated complete Manim code for Section 3 using the grid system, Unicode symbols for formulas, and proper lecture line highlighting as requested."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated section_4 with 3 concise lecture lines to match the 3 animation steps, following the latest animation plan in Issue 22."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Expanded to 5 animation steps to align one-to-one with the 5 lecture lines in section 4. Step-by-step calculation is now visually detailed."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for Section 4: Step-by-Step Calculation Example, following the visual anchor system and constraints."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section_5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 5 animation steps for section 5. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for Section 5. The code visualizes a character 'Leo' undergoing linear transformations corresponding to eigenvalues along diagonal eigen-directions. It includes sequential stretching, labelling, and a flip to represent negative eigenvalues. All grid constraints and naming conventions are followed."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 3 animation steps for section 6. Requested matching lecture lines from ScriptWriter."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Section 6 Manim code. The code follows the TeachingScene structure, uses the 6x6 grid for positioning, avoids Tex/MathTex by using Unicode and Text mobjects, and implements the three-stage animation plan aligned with the lecture lines. Correct hex colors were applied to all elements."
+    },
+    {
+      "id": 19,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Provide 5 concise lecture lines (max 10 words each) to match the following animation sequence: 1. Introduce Leo the Cat on a grid. 2. Show a transformation. 3. Show a vector that doesn't rotate (eigenvector). 4. Show a vector that does rotate. 5. Define eigen-direction.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 20,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Provide 3 concise lecture lines (max 10 words each) to match the following animation sequence: 1. Display Av = lambda v. 2. Highlight components (matrix, eigenvalue). 3. Show a vector scaling without rotation.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 21,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Provide 5 concise lecture lines (max 10 words each) to match the following animation sequence: 1. Derive (A - lambda I)v = 0. 2. Explain non-zero v requirement. 3. Mention singular matrix. 4. Introduce det(A - lambda I) = 0. 5. Show the matrix subtraction on the diagonal.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Provided 5 concise lecture lines (max 10 words each) corresponding to the requested animation sequence for section_3."
+    },
+    {
+      "id": 22,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Provide 3 concise lecture lines (max 10 words each) to match the following animation sequence: 1. Show matrix calculation setup. 2. Expand characteristic polynomial. 3. Solve for eigenvalues lambda=5, 2.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Provided 3 concise lecture lines (max 10 words each) corresponding to the requested animation sequence for section_4."
+    },
+    {
+      "id": 23,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Provide 5 concise lecture lines (max 10 words each) to match the following animation sequence: 1. Show Leo with two eigen-directions. 2. Label directions with eigenvalues. 3. Stretch by factor 5 along first direction. 4. Stretch by factor 2 along second direction. 5. Summarize the transformation's 'profile'.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Provide 3 concise lecture lines (max 10 words each) to match the following animation sequence: 1. Show real-world applications (PageRank, Bridges). 2. Define eigenvalues as 'scaling power'. 3. Final summary with lambda symbol.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Display a 2D coordinate grid (#FFFFFF) with a yellow (#FFFF00) 'Leo the Cat' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/cat.png] shape centered.\", 'Apply transformation [[2, 0.5], [0, 1]] to the grid and Leo [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/cat.png].']",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Pulse the final eigenvalues \\\\lambda_1 = 5 and \\\\lambda_2 = 2 in green (#00FF00) and display [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/based.svg] next to the result.']",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Show icons for 'Google PageRank' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/server.svg] and 'Bridge Vibrations' [Asset: /mmfs1/data/home/jthen/Code2Video/assets/icon/bridge.svg] in white (#FFFFFF).\"]",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/3-Eigenvalues_of_2x2_Matrices_The_DNA_of_Linear_Transformations/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/3-Eigenvalues_of_2x2_Matrices_The_DNA_of_Linear_Transformations/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/3-Eigenvalues_of_2x2_Matrices_The_DNA_of_Linear_Transformations/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/3-Eigenvalues_of_2x2_Matrices_The_DNA_of_Linear_Transformations/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/3-Eigenvalues_of_2x2_Matrices_The_DNA_of_Linear_Transformations/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/3-Eigenvalues_of_2x2_Matrices_The_DNA_of_Linear_Transformations/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "run_output_dir": "/mmfs1/data/home/jthen/Code2Video/mas_logs/pipeline_20260513_080248/3-Eigenvalues_of_2x2_Matrices_The_DNA_of_Linear_Transformations",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 109587,
+      "completion_tokens": 13160,
+      "total_tokens": 147575,
+      "call_count": 25
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 279,
+        "completion_tokens": 930,
+        "total_tokens": 1982,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 12210,
+        "completion_tokens": 450,
+        "total_tokens": 12905,
+        "call_count": 2
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 17439,
+        "completion_tokens": 377,
+        "total_tokens": 18201,
+        "call_count": 2
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 7985,
+        "completion_tokens": 460,
+        "total_tokens": 8932,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 7016,
+        "completion_tokens": 1926,
+        "total_tokens": 9083,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 7802,
+        "completion_tokens": 2207,
+        "total_tokens": 11037,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 10206,
+        "completion_tokens": 240,
+        "total_tokens": 10537,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 7634,
+        "completion_tokens": 1467,
+        "total_tokens": 11478,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 12118,
+        "completion_tokens": 2050,
+        "total_tokens": 14445,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 14256,
+        "completion_tokens": 2014,
+        "total_tokens": 16321,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4449,
+        "completion_tokens": 862,
+        "total_tokens": 14688,
+        "call_count": 12
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 8193,
+        "completion_tokens": 177,
+        "total_tokens": 17966,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 109587,
+        "completion_tokens": 13160,
+        "total_tokens": 147575,
+        "call_count": 25
+      }
+    }
+  }
+}

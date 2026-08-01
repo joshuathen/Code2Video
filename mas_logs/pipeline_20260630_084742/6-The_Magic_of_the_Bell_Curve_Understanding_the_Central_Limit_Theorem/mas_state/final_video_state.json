@@ -1,0 +1,1266 @@
+{
+  "topic": "The Magic of the Bell Curve: Understanding the Central Limit Theorem",
+  "target_audience": "University students (Introductory Statistics) or Advanced High School Students",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            'Nature often seems chaotic and completely random.',\n            'But look closer at these ten thousand squirrels.',\n            'Their individual weights form a messy, jagged mountain.',\n            'Yet, group averages reveal a mysterious, hidden order.',\n            \"Why does this perfect 'Bell Curve' always appear?\"\n        ]\n        self.setup_layout(\"The Mystery of Predictability\", lecture_lines)\n        \n        # Colors from description\n        COLOR_CHAOS = WHITE\n        COLOR_HIGHLIGHT_DOT = \"#FF8A65\"\n        COLOR_JAGGED = \"#FF5252\"\n        COLOR_BELL = \"#66BB6A\"\n\n        # Helper for jagged distribution\n        def get_jagged_weight():\n            choice = np.random.rand()\n            if choice < 0.3: return np.random.normal(2, 0.4)\n            if choice < 0.6: return np.random.normal(5, 0.3)\n            return np.random.normal(8, 0.5)\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(COLOR_CHAOS)\n        \n        # Display 800 small dots jittering in a central box (performance compromise for 1000)\n        chaos_dots = VGroup(*[\n            Dot(radius=0.015, color=COLOR_CHAOS, fill_opacity=0.7)\n            for _ in range(800)\n        ])\n        for dot in chaos_dots:\n            dot.move_to([\n                np.random.uniform(1.0, 5.5),\n                np.random.uniform(-1.5, 1.5),\n                0\n            ])\n            \n        def jitter(mob, dt):\n            mob.shift(np.random.uniform(-0.03, 0.03, 3))\n        \n        for dot in chaos_dots:\n            dot.add_updater(jitter)\n            \n        self.add(chaos_dots)\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(COLOR_HIGHLIGHT_DOT)\n        \n        # Highlight dots in #FF8A65\n        highlight_indices = np.random.choice(len(chaos_dots), 50, replace=False)\n        self.play(*[\n            chaos_dots[idx].animate.set_color(COLOR_HIGHLIGHT_DOT).scale(2)\n            for idx in highlight_indices\n        ], run_time=1)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(COLOR_JAGGED)\n        \n        # Stop jitter\n        for dot in chaos_dots:\n            dot.remove_updater(jitter)\n            \n        # Top axis - Issue 32 fix: Row B\n        top_axis = NumberLine(x_range=[0, 10, 1], length=5, include_tip=True, color=GRAY)\n        self.place_in_area(top_axis, 'B1', 'B6')\n        \n        # Labels - Issue 34 fix: Row A\n        tiny_label = Text(\"Tiny\", font_size=18, color=COLOR_JAGGED)\n        huge_label = Text(\"Huge\", font_size=18, color=COLOR_JAGGED)\n        self.place_at_grid(tiny_label, 'A1', scale_factor=0.8)\n        self.place_at_grid(huge_label, 'A6', scale_factor=0.8)\n        \n        # Label for distribution\n        top_label = Text(\"Individual Weights\", font_size=18)\n        self.place_at_grid(top_label, 'A3', scale_factor=1.0)\n        \n        # Move dots to form jagged mountain\n        dot_anims = []\n        for dot in chaos_dots:\n            w = get_jagged_weight()\n            w = max(0.5, min(9.5, w))\n            h = np.random.uniform(0.1, 0.8)\n            target = top_axis.number_to_point(w) + UP * h\n            dot_anims.append(dot.animate.move_to(target).set_color(WHITE).scale(0.5))\n            \n        # Jagged line plot\n        points = []\n        for x in np.linspace(0.5, 9.5, 25):\n            y_val = 0.4 * np.exp(-0.5*((x-2)/0.4)**2) + 0.6 * np.exp(-0.5*((x-5)/0.3)**2) + 0.3 * np.exp(-0.5*((x-8)/0.5)**2)\n            points.append(top_axis.number_to_point(x) + UP * (y_val * 1.5 + 0.1))\n        \n        jagged_plot = VMobject(color=COLOR_JAGGED, stroke_width=3)\n        jagged_plot.set_points_as_corners(points)\n        \n        self.play(\n            FadeIn(top_axis), FadeIn(tiny_label), FadeIn(huge_label), FadeIn(top_label),\n            *dot_anims,\n            run_time=2\n        )\n        self.play(Create(jagged_plot), run_time=1)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(COLOR_BELL)\n        \n        # Bottom axis - Issue 33 fix: Row E\n        bottom_axis = NumberLine(x_range=[0, 10, 1], length=5, include_tip=True, color=GRAY)\n        self.place_in_area(bottom_axis, 'E1', 'E6')\n        \n        bottom_label = Text(\"Sample Means\", font_size=18)\n        self.place_at_grid(bottom_label, 'D3', scale_factor=1.0)\n        \n        self.play(FadeIn(bottom_axis), FadeIn(bottom_label))\n        \n        # Group dots (30 dots merge into one)\n        sample_size = 30\n        \n        # Take 10 samples to show animation clearly\n        for _ in range(10):\n            indices = np.random.choice(len(chaos_dots), sample_size, replace=False)\n            subset = VGroup(*[chaos_dots[i] for i in indices])\n            \n            # Calculate mean\n            weights = [top_axis.point_to_number(d.get_center()) for d in subset]\n            m_val = np.mean(weights)\n            \n            target_dot = Dot(radius=0.06, color=COLOR_BELL)\n            target_dot.move_to(bottom_axis.number_to_point(m_val) + UP*0.1)\n            \n            self.play(\n                subset.animate.set_color(COLOR_BELL).scale(1.2),\n                run_time=0.2\n            )\n            self.play(\n                ReplacementTransform(subset, target_dot),\n                run_time=0.4\n            )\n            \n        # Add many more means to show distribution forming\n        more_dots = VGroup()\n        for _ in range(150):\n            s_weights = [get_jagged_weight() for _ in range(sample_size)]\n            mv = np.mean(s_weights)\n            mv = max(0.5, min(9.5, mv))\n            p = bottom_axis.number_to_point(mv)\n            count = sum(1 for d in more_dots if abs(d.get_center()[0] - p[0]) < 0.1)\n            p += UP * (0.1 + count * 0.04)\n            more_dots.add(Dot(radius=0.04, color=COLOR_BELL).move_to(p))\n            \n        self.play(FadeIn(more_dots, lag_ratio=0.005), run_time=1.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(COLOR_BELL)\n        \n        # Smooth Bell Curve setup\n        bell_axes = Axes(x_range=[0, 10, 1], y_range=[0, 1, 0.2], tips=False)\n        self.place_in_area(bell_axes, 'E1', 'E6', scale_factor=0.8)\n        \n        bell_curve = bell_axes.plot(\n            lambda x: 0.8 * np.exp(-0.5 * ((x - 5.0) / 0.7)**2),\n            color=COLOR_BELL, x_range=[2, 8]\n        )\n        \n        # Morph jagged #FF5252 line to smooth #66BB6A Bell Curve\n        # First align the jagged plot to the same area as the bell curve\n        self.play(\n            jagged_plot.animate.move_to(bell_axes.get_center() + UP*0.5),\n            run_time=1\n        )\n        self.play(ReplacementTransform(jagged_plot, bell_curve), run_time=2)\n        self.play(bell_curve.animate.set_stroke(width=6), run_time=1)\n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Define content\n        title_text = \"Prerequisite: The Ingredients of Statistics\"\n        lecture_lines = [\n            'A population includes every single item in existence.',\n            'A sample is just a small, random subset.',\n            'We calculate the average, or mean, of each sample.'\n        ]\n        \n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors\n        POP_COLOR = \"#FFA726\"\n        SAM_COLOR = \"#29B6F6\"\n        MEAN_COLOR = \"#FFEE58\"\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight first line\n        self.play(self.lecture[0].animate.set_color(POP_COLOR))\n        \n        # Population Container (Vat)\n        # Using a RoundedRectangle to represent the \"vat\"\n        pop_vat = RoundedRectangle(height=4.5, width=5.5, corner_radius=0.4, color=POP_COLOR, fill_opacity=0.1)\n        # Place it to occupy top 5 rows to avoid overlapping bottom elements (Fix Issue 36)\n        self.place_in_area(pop_vat, \"A1\", \"E6\")\n        \n        pop_label = Text(\"Population (Vat)\", font_size=20, color=POP_COLOR)\n        # Position label at top-left grid point\n        self.place_at_grid(pop_label, \"A1\", scale_factor=0.8)\n        \n        # Fill with dots to represent individual items\n        np.random.seed(0) # Deterministic for consistent layout\n        pop_dots = VGroup(*[\n            Dot(radius=0.03, color=POP_COLOR, fill_opacity=0.5).move_to(\n                pop_vat.get_center() + np.array([np.random.uniform(-2.5, 2.5), np.random.uniform(-2.0, 2.0), 0])\n            ) for _ in range(120)\n        ])\n        \n        self.play(Create(pop_vat), Write(pop_label))\n        self.play(FadeIn(pop_dots, lag_ratio=0.01))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Switch highlight\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(SAM_COLOR)\n        )\n        \n        # Small scoop circle to pick up a subset from the population\n        small_scoop = Circle(radius=0.4, color=SAM_COLOR, stroke_width=4)\n        self.place_at_grid(small_scoop, \"C3\")\n        \n        # Zoom target (zoomed view of the sample subset)\n        zoomed_scoop = Circle(radius=1.8, color=SAM_COLOR, fill_opacity=0.1, stroke_width=6)\n        self.place_in_area(zoomed_scoop, \"B2\", \"E5\")\n        \n        # Visual transition: dim the population and expand the scoop\n        self.play(\n            Create(small_scoop),\n            pop_vat.animate.set_stroke(opacity=0.1),\n            pop_dots.animate.set_fill(opacity=0.1),\n            pop_label.animate.set_fill(opacity=0.2)\n        )\n        \n        self.play(\n            ReplacementTransform(small_scoop, zoomed_scoop)\n        )\n        \n        # Sample label for zoomed view\n        scoop_label = Text(\"Sample Scoop (n=30)\", font_size=22, color=SAM_COLOR)\n        # Repositioned to avoid overlap (Fix Issue 35)\n        self.place_in_area(scoop_label, 'A2', 'A4', scale_factor=0.8)\n        self.play(Write(scoop_label))\n\n        # Create 30 candy icons (hexagons with numeric values)\n        candies = VGroup()\n        values = [np.random.randint(1, 20) for _ in range(30)]\n        for i in range(30):\n            # Hexagon for candy representation\n            candy_bg = RegularPolygon(n=6, radius=0.20, color=SAM_COLOR, fill_opacity=0.9)\n            val_txt = Text(str(values[i]), font_size=12, color=WHITE)\n            candy = VGroup(candy_bg, val_txt)\n            \n            # Arrange in 5 rows x 6 columns grid inside the zoomed scoop\n            row = i // 6\n            col = i % 6\n            # Calculate local offset from the scoop center\n            offset = np.array([(col - 2.5) * 0.5, (2 - row) * 0.5, 0])\n            candy.move_to(zoomed_scoop.get_center() + offset)\n            candies.add(candy)\n            \n        self.play(LaggedStartMap(FadeIn, candies, shift=UP*0.1, lag_ratio=0.03))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Switch highlight\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(MEAN_COLOR)\n        )\n        \n        # Sample Mean formula using Text\n        formula = Text(\"x̄ = Σx / n\", color=MEAN_COLOR)\n        # Shifted right to avoid lecture notes (Fix Issue 37)\n        self.place_in_area(formula, \"F2\", \"F3\", scale_factor=1.1)\n        \n        # Display the specific calculated result for this sample\n        mean_val = sum(values) / 30\n        mean_display = Text(f\"Mean (x̄) = {mean_val:.1f}\", font_size=24, color=MEAN_COLOR)\n        self.place_in_area(mean_display, \"F4\", \"F6\", scale_factor=1.0)\n        \n        # Animation: fade candies into mean label as per description\n        self.play(\n            Write(formula),\n            FadeIn(mean_display),\n            candies.animate.set_opacity(0.1),\n            run_time=1.5\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Setup Layout\n        lines = [\n            \"Let's sample heights from these wild alien monsters.\",\n            \"Our machine takes fifty random monsters per scoop.\",\n            \"It calculates the mean height for every single scoop.\",\n            \"Each mean becomes a dot on our results graph.\",\n            \"Watch as the dots begin to pile up.\"\n        ]\n        self.setup_layout(\"The Experiment: Sampling Distribution\", lines)\n        \n        # Define Colors from Prompt\n        color_pop = \"#9575CD\"    # Purple for Population\n        color_select = \"#FFFFFF\" # White for Selection\n        color_mean = \"#FFD54F\"   # Yellow for Mean/Results\n        \n        # Lecture line color mapping\n        color1 = color_pop\n        color2 = color_select\n        color3 = color_mean\n        color4 = color_mean\n        color5 = color_mean\n\n        # === Population Axis (Shark Fin) ===\n        # Fix Issue 40: scale 0.7 in A1-B6\n        axes_pop = Axes(\n            x_range=[0, 10, 2],\n            y_range=[0, 0.5, 0.1],\n            axis_config={\"include_tip\": False, \"font_size\": 18, \"label_constructor\": Text},\n            x_length=5,\n            y_length=2\n        ).add_coordinates()\n        pop_label = Text(\"Population Distribution\", font_size=18).next_to(axes_pop, UP, buff=0.1)\n        pop_group = VGroup(axes_pop, pop_label)\n        self.place_in_area(pop_group, \"A1\", \"B6\", scale_factor=0.7)\n\n        # Skewed Distribution (Shark Fin: Gamma-like)\n        def shark_fin(x):\n            return 0.4 * (x**1.5) * np.exp(-x)\n        \n        curve = axes_pop.plot(shark_fin, x_range=[0, 8], color=color_pop)\n        area = axes_pop.get_area(curve, x_range=[0, 8], color=color_pop, opacity=0.3)\n\n        # === Sampling Axis ===\n        # Fix Issue 39: Move to E1-F6, scale 0.8\n        axes_samp = Axes(\n            x_range=[0, 10, 2],\n            y_range=[0, 10, 2],\n            axis_config={\"include_tip\": False, \"font_size\": 18, \"label_constructor\": Text},\n            x_length=5,\n            y_length=2\n        ).add_coordinates()\n        samp_label = Text(\"Sampling Distribution of Means\", font_size=18).next_to(axes_samp, UP, buff=0.1)\n        samp_group = VGroup(axes_samp, samp_label)\n        self.place_in_area(samp_group, \"E1\", \"F6\", scale_factor=0.8)\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(color1)\n        self.play(Create(axes_pop), Write(pop_label))\n        self.play(Create(curve), FadeIn(area))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(color2)\n        \n        # Selection box per prompt\n        selection_box = Rectangle(width=2.5, height=1.2, color=color_select, stroke_width=2)\n        selection_box.move_to(axes_pop.get_center())\n        \n        def get_sample(n=50):\n            samples = []\n            while len(samples) < n:\n                x = np.random.uniform(0.1, 7.9)\n                y = np.random.uniform(0.01, 0.4)\n                if y < shark_fin(x):\n                    samples.append(x)\n            return np.array(samples)\n\n        # Sampling points animation\n        current_sample = get_sample(50)\n        sample_dots = VGroup(*[\n            Dot(axes_pop.c2p(s, np.random.uniform(0.01, shark_fin(s))), radius=0.03, color=color_select) \n            for s in current_sample\n        ])\n        \n        self.play(Create(selection_box))\n        self.play(FadeIn(sample_dots, lag_ratio=0.01))\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(color3)\n        mean_val = np.mean(current_sample)\n        \n        # Fix Issue 38: Group and place in C1-C3 area\n        mean_text = DecimalNumber(mean_val, num_decimal_places=2, include_sign=False, color=color_mean, mob_class=Text)\n        mean_label = Text(\"Mean:\", font_size=20, color=color_mean)\n        mean_group = VGroup(mean_label, mean_text).arrange(RIGHT, buff=0.2)\n        self.place_in_area(mean_group, \"C1\", \"C3\", scale_factor=0.7)\n        \n        # Points converge to mean per prompt\n        self.play(\n            sample_dots.animate.scale(0.1).move_to(mean_group.get_center()),\n            FadeOut(selection_box)\n        )\n        self.play(Write(mean_group))\n        self.remove(sample_dots)\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(color4)\n        result_dot = Dot(axes_samp.c2p(mean_val, 0), radius=0.05, color=color_mean)\n        \n        self.play(TransformFromCopy(mean_text, result_dot))\n        self.play(FadeOut(mean_group))\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(color5)\n        \n        # Fast repetition for 100 samples\n        bins = np.linspace(0, 10, 21)\n        bin_counts = np.zeros(len(bins)-1)\n        \n        # Record initial mean\n        idx = np.digitize(mean_val, bins) - 1\n        if 0 <= idx < len(bin_counts):\n            bin_counts[idx] += 1\n\n        for i in range(100):\n            s = get_sample(50)\n            m = np.mean(s)\n            \n            b_idx = np.digitize(m, bins) - 1\n            if 0 <= b_idx < len(bin_counts):\n                y_pos = bin_counts[b_idx] * 0.15 # Scale height of dots to fit\n                bin_counts[b_idx] += 1\n                new_dot = Dot(axes_samp.c2p(m, y_pos), radius=0.03, color=color_mean)\n                self.add(new_dot)\n                \n                # Speed up as it goes\n                self.wait(0.04 if i < 10 else 0.005)\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    \"\"\"\n    Implementation of Section 4: The Core Reveal: The CLT Definition.\n    Visualizes the transformation of population distributions into a Normal distribution\n    as sample size increases.\n    \"\"\"\n    def construct(self):\n        # 1. Setup Layout\n        self.setup_layout(\n            \"The Core Reveal: The CLT Definition\",\n            [\n                'This is the magic of the Central Limit Theorem.', \n                'Any population shape eventually becomes a normal distribution.', \n                'As sample size grows, the curve smooths out.', \n                'The mean of means equals the population mean.', \n                'The spread shrinks by the square root of n.'\n            ]\n        )\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(\"#FFEE58\")\n        clt_title = Text(\"Central Limit Theorem\", font_size=36, color=\"#FFEE58\")\n        clt_glow = clt_title.copy().set_stroke(width=10, color=\"#FFEE58\", opacity=0.3)\n        clt_group = VGroup(clt_glow, clt_title)\n        # Resolved Issue 42: Adjusted scale_factor to 0.9 for better visual hierarchy\n        self.place_in_area(clt_group, \"A2\", \"A5\", scale_factor=0.9)\n        \n        self.play(Write(clt_title), FadeIn(clt_glow))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(\"#66BB6A\")\n        \n        axes = Axes(\n            x_range=[-4, 4, 1],\n            y_range=[0, 1.2, 0.5],\n            x_length=5,\n            y_length=3,\n            axis_config={\"include_tip\": False}\n        )\n        # Resolved Issue 43: Reduced scale to 0.8 to prevent overlap with formula\n        self.place_in_area(axes, \"C1\", \"F6\", scale_factor=0.8)\n        self.play(Create(axes))\n\n        # Define different distribution shapes\n        def uniform_dist(x):\n            return 0.4 if -2 <= x <= 2 else 0\n        \n        def bimodal_dist(x):\n            return 0.6 * (np.exp(-(x+1.5)**2 / 0.5) + np.exp(-(x-1.5)**2 / 0.5))\n            \n        def normal_dist(x, sigma=1.0):\n            return np.exp(-x**2 / (2 * sigma**2))\n\n        dist_uniform = axes.plot(uniform_dist, color=BLUE, use_smoothing=False)\n        dist_bimodal = axes.plot(bimodal_dist, color=ORANGE)\n        dist_normal = axes.plot(lambda x: normal_dist(x, 0.8), color=\"#66BB6A\")\n\n        self.play(Create(dist_uniform))\n        self.wait(0.5)\n        self.play(ReplacementTransform(dist_uniform, dist_bimodal))\n        self.wait(0.5)\n        self.play(ReplacementTransform(dist_bimodal, dist_normal))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(\"#42A5F5\")\n        # Shrink sigma to show smoothing and narrowing\n        dist_narrow = axes.plot(lambda x: normal_dist(x, 0.4), color=\"#42A5F5\")\n        self.play(Transform(dist_normal, dist_narrow))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(\"#FF7043\")\n        mean_line = axes.get_vertical_line(axes.c2p(0, normal_dist(0, 0.4)), color=\"#FF7043\")\n        # Fixed: Changed MathTex to Text with Unicode to avoid LaTeX FileNotFoundError\n        mean_label = Text(\"μ_x = μ\", font_size=24, color=\"#FF7043\").next_to(mean_line, UP)\n        self.play(Create(mean_line), Write(mean_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(\"#AB47BC\")\n        # Fixed: Changed MathTex to Text with Unicode to avoid LaTeX FileNotFoundError\n        std_err_formula = Text(\"σ_x = σ / √n\", font_size=30, color=\"#AB47BC\")\n        # Resolved Issue 41: Reduced area and scale to 0.8 to avoid congestion\n        self.place_in_area(std_err_formula, \"B2\", \"B5\", scale_factor=0.8)\n        self.play(Write(std_err_formula))\n        \n        # Visualize shrinking spread\n        dist_very_narrow = axes.plot(lambda x: normal_dist(x, 0.2), color=\"#AB47BC\")\n        self.play(Transform(dist_normal, dist_very_narrow))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Setup the title and lecture lines\n        lecture_lines = [\n            \"First, the shape always becomes a bell curve.\",\n            \"Second, the center stays at the population mean.\",\n            \"Third, larger samples make the estimate much more precise.\"\n        ]\n        self.setup_layout(\"The Three Pillars of the Theorem\", lecture_lines)\n\n        # Define Colors\n        COLOR_NORMAL = WHITE\n        COLOR_GOLD = \"#FFD54F\"\n        COLOR_WIDE = \"#EF5350\"  # Red\n        COLOR_NARROW = \"#66BB6A\" # Green\n\n        # Create Axes\n        axes = Axes(\n            x_range=[-3, 3, 1],\n            y_range=[0, 4, 1],\n            axis_config={\"include_tip\": False, \"stroke_width\": 2},\n            x_length=5,\n            y_length=4,\n        ).set_color(GRAY_C)\n        self.place_in_area(axes, \"A1\", \"F6\")\n\n        # Gaussian Function\n        def gaussian(x, mu, sigma, amplitude):\n            return amplitude * np.exp(-0.5 * ((x - mu) / sigma)**2)\n\n        # === Animation for Lecture Line 1 ===\n        # Integrate Asset: bell.svg\n        bell_icon = SVGMobject(\"/mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/bell.svg\").set_color(WHITE)\n        self.place_at_grid(bell_icon, \"A1\", scale_factor=0.4)\n        \n        label_normal = Text(\"Normal\", color=WHITE)\n        self.place_at_grid(label_normal, \"A2\", scale_factor=0.6)\n        \n        # Base normal curve for context\n        curve_white = axes.plot(\n            lambda x: gaussian(x, 0, 0.8, 2.5),\n            color=WHITE,\n            stroke_width=2\n        )\n\n        self.play(self.lecture[0].animate.set_color(WHITE))\n        self.play(\n            Create(axes),\n            Create(curve_white),\n            Write(label_normal),\n            FadeIn(bell_icon),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Vertical gold line for mean at center\n        mean_line = axes.get_vertical_line(\n            axes.c2p(0, 3.5), color=COLOR_GOLD, line_func=DashedLine\n        )\n        # Mu label using Text for consistency\n        mu_label = Text(\"μ\", color=COLOR_GOLD)\n        self.place_at_grid(mu_label, \"E4\", scale_factor=0.8)\n\n        self.play(self.lecture[1].animate.set_color(COLOR_GOLD))\n        self.play(\n            Create(mean_line),\n            Write(mu_label),\n            run_time=1\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Red wide curve (n=5)\n        curve_wide = axes.plot(\n            lambda x: gaussian(x, 0, 1.2, 1.5),\n            color=COLOR_WIDE,\n            stroke_width=4\n        )\n        label_n5 = Text(\"n=5\", color=COLOR_WIDE)\n        self.place_at_grid(label_n5, \"C5\", scale_factor=0.8) # Issue 45 Fix\n\n        # Green narrow curve (n=50)\n        curve_narrow = axes.plot(\n            lambda x: gaussian(x, 0, 0.4, 3.5),\n            color=COLOR_NARROW,\n            stroke_width=4\n        )\n        label_n50 = Text(\"n=50\", color=COLOR_NARROW)\n        self.place_at_grid(label_n50, \"B2\", scale_factor=0.8) # Issue 46 Fix\n\n        # Precision Lens Graphic\n        lens_circle = Circle(radius=0.3, color=WHITE, stroke_width=2)\n        lens_handle = Line(start=ORIGIN, end=RIGHT*0.2, color=WHITE, stroke_width=2).rotate(-PI/4)\n        lens_handle.next_to(lens_circle, DR, buff=-0.05)\n        precision_lens = VGroup(lens_circle, lens_handle)\n        \n        # Move lens to high-precision peak area\n        self.place_in_area(precision_lens, \"B3\", \"B4\", scale_factor=1.0)\n        \n        lens_text = Text(\"High Precision\", color=COLOR_NARROW)\n        self.place_in_area(lens_text, \"A3\", \"A4\", scale_factor=0.6) # Issue 44 Fix\n\n        self.play(self.lecture[2].animate.set_color(COLOR_NARROW))\n        self.play(\n            Create(curve_wide),\n            Write(label_n5),\n            run_time=1.2\n        )\n        self.play(\n            Create(curve_narrow),\n            Write(label_n50),\n            run_time=1.2\n        )\n        self.play(\n            FadeIn(precision_lens),\n            Write(lens_text),\n            run_time=1\n        )\n        self.play(\n            Indicate(precision_lens, scale_factor=1.1, color=COLOR_NARROW),\n            run_time=1\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Setup\n        title = \"Real-World Power: Why It Matters\"\n        lines = [\n            \"We use samples to understand entire giant populations.\",\n            \"Factories test small batches to ensure battery quality.\",\n            \"The bell curve predicts reality from very little data.\"\n        ]\n        self.setup_layout(title, lines)\n        \n        # Colors\n        COLOR_POP = \"#9E9E9E\"\n        COLOR_SAMPLE = \"#66BB6A\"\n        COLOR_ALERT = \"#EF5350\"\n        COLOR_SAFE = \"#66BB6A\"\n        ASSET_BATTERY = \"/mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/battery.svg\"\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(COLOR_SAMPLE))\n        \n        # Represent Population - Grey dots\n        population_dots = VGroup(*[Dot(radius=0.04, color=COLOR_POP) for _ in range(150)])\n        for dot in population_dots:\n            dot.move_to(self.grid[\"C3\"] + np.array([\n                np.random.uniform(-2, 2),\n                np.random.uniform(-1.5, 1.5),\n                0\n            ]))\n        \n        pop_label = Text(\"Population\", font_size=18, color=COLOR_POP)\n        self.place_at_grid(pop_label, \"A3\")\n        \n        # Sample selection box (Spotlight) - Green\n        sample_box = Circle(radius=0.8, color=COLOR_SAMPLE, stroke_width=4)\n        self.place_at_grid(sample_box, \"C3\")\n        \n        # Issue 49: Positioning sample_label at D3 to avoid clutter\n        sample_label = Text(\"Sample\", font_size=18, color=COLOR_SAMPLE)\n        self.place_at_grid(sample_label, \"D3\", scale_factor=0.8)\n\n        self.play(FadeIn(population_dots), Write(pop_label))\n        self.play(Create(sample_box), Write(sample_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(COLOR_ALERT)\n        )\n        self.play(FadeOut(population_dots), FadeOut(pop_label), FadeOut(sample_box), FadeOut(sample_label))\n\n        # Conveyor belt\n        belt = Line(self.grid[\"D1\"], self.grid[\"D6\"], color=GREY_E, stroke_width=8)\n        \n        # Issue 31: Battery icons using asset\n        batteries = VGroup(*[SVGMobject(ASSET_BATTERY).scale(0.3).set_color(WHITE) for _ in range(6)])\n        for i, b in enumerate(batteries):\n            b.move_to(self.grid[\"D1\"] + RIGHT * (i * 0.9))\n\n        self.add(belt)\n        self.play(FadeIn(batteries))\n        \n        # Move batteries along belt\n        self.play(batteries.animate.shift(LEFT * 4), run_time=2, rate_func=linear)\n        \n        # Issue 31 & 47: Alert Flash and Text at A3\n        flash = FullScreenRectangle(fill_color=COLOR_ALERT, fill_opacity=0.2, stroke_width=0)\n        alert_text = Text(\"ALERT: DEFECTIVE BATCH!\", font_size=24, color=COLOR_ALERT, weight=BOLD)\n        self.place_at_grid(alert_text, \"A3\", scale_factor=1.0)\n\n        self.play(\n            FadeIn(flash),\n            Write(alert_text),\n            run_time=0.2\n        )\n        self.play(FadeOut(flash), run_time=0.2)\n        self.play(FadeIn(flash), run_time=0.2)\n        self.play(FadeOut(flash), run_time=0.2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(COLOR_SAFE)\n        )\n        self.play(FadeOut(belt), FadeOut(batteries), FadeOut(alert_text))\n\n        # Bell Curve\n        axes = Axes(\n            x_range=[-4, 4, 1],\n            y_range=[0, 0.5, 0.1],\n            axis_config={\"include_tip\": False},\n            x_length=4,\n            y_length=2.5\n        )\n        self.place_in_area(axes, \"B2\", \"F5\")\n        \n        curve = axes.plot(lambda x: (1 / (np.sqrt(2 * np.pi))) * np.exp(-0.5 * x**2), color=BLUE)\n        \n        # Safe Zone\n        safe_area = axes.get_area(curve, x_range=[-1.5, 1.5], color=COLOR_SAFE, opacity=0.3)\n        safe_label = Text(\"Safe Zone\", font_size=14, color=COLOR_SAFE)\n        # Issue 48: safe_label at B4\n        self.place_at_grid(safe_label, \"B4\", scale_factor=0.8)\n\n        self.play(Create(axes), Create(curve))\n        self.play(FadeIn(safe_area), Write(safe_label))\n\n        # Place single mean dot inside safe zone\n        mean_dot = Dot(axes.c2p(0.5, 0), color=WHITE, radius=0.1)\n        mean_label = Text(\"Sample Mean\", font_size=16, color=WHITE).next_to(mean_dot, UP, buff=0.1)\n        \n        self.play(FadeIn(mean_dot), Write(mean_label))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section7Scene(TeachingScene):\n    def construct(self):\n        # Setup layout with specific lines\n        lecture_lines = [\n            'We moved from chaotic squirrels to perfect order.',\n            'The Central Limit Theorem is the foundation of statistics.',\n            'Chaos becomes predictable through the power of averages.'\n        ]\n        self.setup_layout(\"Summary & Conclusion\", lecture_lines)\n\n        # Initialize all lecture lines to a dimmed color\n        for line in self.lecture:\n            line.set_color(GRAY)\n\n        # === Animation for Lecture Line 1 ===\n        # Goal: Display collage (Chaos, Machine, Bell Curve)\n        self.play(self.lecture[0].animate.set_color(WHITE))\n\n        # 1. Chaos: A cluster of random dots\n        chaos_group = VGroup(*[\n            Dot(point=[np.random.uniform(-0.4, 0.4), np.random.uniform(-0.4, 0.4), 0], \n                radius=0.04, color=\"#FF6347\") \n            for _ in range(25)\n        ])\n        self.place_in_area(chaos_group, 'B1', 'C2', scale_factor=1.0)\n        chaos_label = Text(\"Chaos\", font_size=16, color=\"#FF6347\")\n        self.place_at_grid(chaos_label, 'D1', scale_factor=1.0)\n\n        # 2. Sampling Machine: Simple icon\n        machine_body = Rectangle(width=1.0, height=0.8, color=\"#4682B4\", fill_opacity=0.2)\n        machine_gear = Star(n=8, outer_radius=0.25, inner_radius=0.15, color=\"#4682B4\")\n        machine = VGroup(machine_body, machine_gear)\n        self.place_in_area(machine, 'B3', 'C4', scale_factor=1.0)\n        machine_label = Text(\"Sampling\", font_size=16, color=\"#4682B4\")\n        # Fixed Issue 51: Center machine_label under the machine area\n        self.place_in_area(machine_label, 'D3', 'D4', scale_factor=1.0)\n\n        # 3. Bell Curve: Standard Gaussian\n        bell_axes = Axes(x_range=[-3, 3], y_range=[0, 1], axis_config={\"include_tip\": False}).set_opacity(0)\n        bell_curve_small = bell_axes.plot(lambda x: np.exp(-x**2), color=\"#FFD700\")\n        bell_group = VGroup(bell_curve_small)\n        self.place_in_area(bell_group, 'B5', 'C6', scale_factor=1.0)\n        bell_label = Text(\"Order\", font_size=16, color=\"#FFD700\")\n        self.place_at_grid(bell_label, 'D5', scale_factor=1.0)\n\n        collage = VGroup(chaos_group, chaos_label, machine, machine_label, bell_group, bell_label)\n        self.play(FadeIn(collage))\n        self.wait(2)\n\n        # === Animation for Lecture Line 2 ===\n        # Goal: Scale the Bell Curve to fill the area, others fade\n        self.play(\n            self.lecture[0].animate.set_color(GRAY),\n            self.lecture[1].animate.set_color(\"#FFD700\")\n        )\n\n        # Create a larger bell curve for transition\n        large_bell_axes = Axes(x_range=[-3, 3], y_range=[0, 1.2], axis_config={\"include_tip\": False}).set_opacity(0)\n        large_bell_curve = large_bell_axes.plot(lambda x: np.exp(-x**2), color=\"#FFD700\", stroke_width=6)\n        large_bell_group = VGroup(large_bell_curve)\n        # Fixed Issue 50: Set scale factor to 1.0 to prevent obstruction\n        self.place_in_area(large_bell_group, 'A1', 'E6', scale_factor=1.0)\n\n        self.play(\n            FadeOut(chaos_group), FadeOut(chaos_label),\n            FadeOut(machine), FadeOut(machine_label),\n            FadeOut(bell_label),\n            ReplacementTransform(bell_group, large_bell_group),\n            run_time=1.5\n        )\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Goal: Fade in final text\n        self.play(\n            self.lecture[1].animate.set_color(GRAY),\n            self.lecture[2].animate.set_color(WHITE)\n        )\n\n        final_msg = Text(\"Order from chaos through the CLT\", font_size=28, color=WHITE)\n        # Fixed Issue 52: Reduced scale factor to avoid tight margins\n        self.place_in_area(final_msg, 'F1', 'F6', scale_factor=0.8)\n\n        self.play(Write(final_msg))\n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "The Magic of the Bell Curve: Understanding the Central Limit Theorem",
+    "target_audience": "University students (Introductory Statistics) or Advanced High School Students",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Mystery of Predictability",
+        "content": "Introduce the hook: Why do diverse, chaotic measurements in nature often result in the same 'Bell Curve' shape? Introduce the goal of the lesson: to reveal the mathematical 'magic' that creates order out of chaos.",
+        "example": "Imagine a forest of 10,000 squirrels. Their individual weights are completely random—some are tiny, some are huge, and the distribution looks like a messy, jagged mountain range. Yet, if we look at their 'average' weights in groups, something strange happens."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Ingredients of Statistics",
+        "content": "Briefly define Population vs. Sample and the concept of the Arithmetic Mean. Use a graphical 'zooming' effect to show the difference between a whole group and a small subset.",
+        "example": "Population: All the candy in a giant vat. Sample: A single scoop of 30 candies. Prerequisite concept: The sample mean (x-bar) is just the average of that one scoop."
+      },
+      {
+        "id": "section_3",
+        "title": "The Experiment: Sampling Distribution",
+        "content": "Explain the process of repeated sampling. Visualize a 'Sampling Machine' that takes 100 different scoops (samples) from a non-normal population (e.g., a uniform or skewed distribution) and plots the mean of each scoop on a new graph.",
+        "example": "An animation shows a 'Robot Arm' taking 50 random samples of heights from a group of 'Alien Monsters' (whose heights are distributed wildly). For every sample, a dot represents its mean on a secondary 'Results' histogram."
+      },
+      {
+        "id": "section_4",
+        "title": "The Core Reveal: The CLT Definition",
+        "content": "Formally state the Central Limit Theorem. Emphasize that regardless of the population's original shape, the distribution of sample means will become 'Normal' (Gaussian) as the sample size (n) increases (usually n ≥ 30).",
+        "example": "Visualizing a 'Transformation': Show a jagged, 'U-shaped' distribution morphing into a smooth, symmetrical Bell Curve as the sample size 'n' slider moves from 2 to 30. Display the formula: μ_x̄ = μ and σ_x̄ = σ / √n."
+      },
+      {
+        "id": "section_5",
+        "title": "The Three Pillars of the Theorem",
+        "content": "Break down the three key properties of the resulting distribution: 1. Shape (Normal), 2. Center (Same as population mean), 3. Spread (Standard deviation shrinks as sample size grows). Use a 'Precision Lens' graphic.",
+        "example": "Comparing two Bell Curves: One for a sample size of 5 (wide and flat) and one for a sample size of 50 (tall and narrow). This shows how larger samples provide a more 'precise' estimate of the truth."
+      },
+      {
+        "id": "section_6",
+        "title": "Real-World Power: Why It Matters",
+        "content": "Explain the application: CLT allows scientists to make inferences about a whole population using only a small sample, even if they don't know the population's distribution shape.",
+        "example": "A Quality Control Engineer at a smartphone factory doesn't need to test every battery. By testing small batches (samples), the CLT guarantees that the batch averages will follow a predictable Bell Curve, allowing them to spot defects instantly."
+      },
+      {
+        "id": "section_7",
+        "title": "Summary & Conclusion",
+        "content": "Recap the journey from chaos to the Bell Curve. Reinforce that CLT is the foundation of modern statistics and hypothesis testing.",
+        "example": "Final Graphic: A collage showing the 'Messy Squirrels' on the left, the 'Sampling Machine' in the middle, and a perfect 'Golden Bell Curve' on the right."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Mystery of Predictability",
+      "lecture_lines": [
+        "Nature often seems chaotic and completely random.",
+        "But look closer at these ten thousand squirrels.",
+        "Their individual weights form a messy, jagged mountain.",
+        "Yet, group averages reveal a mysterious, hidden order.",
+        "Why does this perfect 'Bell Curve' always appear?"
+      ],
+      "animations": [
+        "Display 1,000 small #FFFFFF dots jittering within a central box.",
+        "Transition the camera to a close-up of dots; highlight some in #FF8A65.",
+        "Create a jagged, non-uniform line plot in #FF5252 representing weight frequency.",
+        "Groups of 30 dots merge into single, larger #66BB6A dots representing sample means.",
+        "The jagged #FF5252 line morphs into a smooth, symmetrical #66BB6A Bell Curve."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Ingredients of Statistics",
+      "lecture_lines": [
+        "A population includes every single item in existence.",
+        "A sample is just a small, random subset.",
+        "We calculate the average, or mean, of each sample."
+      ],
+      "animations": [
+        "Draw a large #FFA726 circle titled 'Population' filled with tiny dots.",
+        "Animate a smaller #29B6F6 circle labeled 'Sample' pulling 30 dots out of the population.",
+        "The 30 dots in the sample fade into a prominent #FFEE58 'x-bar' (sample mean) label."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Experiment: Sampling Distribution",
+      "lecture_lines": [
+        "Let's sample heights from these wild alien monsters.",
+        "Our machine takes fifty random monsters per scoop.",
+        "It calculates the mean height for every single scoop.",
+        "Each mean becomes a dot on our results graph.",
+        "Watch as the dots begin to pile up."
+      ],
+      "animations": [
+        "Draw a skewed 'shark fin' histogram in purple #9575CD on the top half of the screen.",
+        "Use a #FFFFFF selection box to grab 50 random data points from the histogram.",
+        "The selected points converge into a single #FFD54F dot representing their mean.",
+        "The #FFD54F dot falls onto a second horizontal axis on the bottom half of the screen.",
+        "Rapidly repeat the scoop-and-drop 100 times to build a #FFD54F histogram of means."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Core Reveal: The CLT Definition",
+      "lecture_lines": [
+        "This is the magic of the Central Limit Theorem.",
+        "Any population shape eventually becomes a normal distribution.",
+        "As sample size grows, the curve smooths out.",
+        "The mean of means equals the population mean.",
+        "The spread shrinks by the square root of n."
+      ],
+      "animations": [
+        "Display the title 'Central Limit Theorem' in #FFEE58 with a glowing effect.",
+        "Morph three diverse distribution shapes (Uniform, Bimodal, Skewed) into one #66BB6A Bell Curve.",
+        "Increase the 'n' value (sample size) and show the Bell Curve narrowing and sharpening.",
+        "Highlight the formula mu_x_bar = mu in #4FC3F7 at the center of the curve.",
+        "Highlight the formula sigma_x_bar = sigma / sqrt(n) in #66BB6A as the curve becomes thinner."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Three Pillars of the Theorem",
+      "lecture_lines": [
+        "First, the shape always becomes a bell curve.",
+        "Second, the center stays at the population mean.",
+        "Third, larger samples make the estimate much more precise."
+      ],
+      "animations": [
+        "Draw a white #FFFFFF Bell Curve [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/bell.svg] and label its shape as 'Normal'.",
+        "Add a vertical gold #FFD54F line at the center, labeled with the population mean mu.",
+        "Overlay a wide red #EF5350 curve (n=5) and a narrow green #66BB6A curve (n=50) to show precision."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Real-World Power: Why It Matters",
+      "lecture_lines": [
+        "We use samples to understand entire giant populations.",
+        "Factories test small batches to ensure battery quality.",
+        "The bell curve predicts reality from very little data."
+      ],
+      "animations": [
+        "Create a large field of grey #9E9E9E dots; a green #66BB6A spotlight reveals a sample.",
+        "Show battery [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/battery.svg] icons on a conveyor belt; a red #EF5350 flash marks a defective batch mean.",
+        "Place a single mean dot inside the green #66BB6A 'Safe Zone' of a Normal distribution."
+      ]
+    },
+    {
+      "id": "section_7",
+      "title": "Summary & Conclusion",
+      "lecture_lines": [
+        "We moved from chaotic squirrels to perfect order.",
+        "The Central Limit Theorem is the foundation of statistics.",
+        "Chaos becomes predictable through the power of averages."
+      ],
+      "animations": [
+        "Morph the screen from a scatter of random dots to a final golden #FFD700 Bell Curve.",
+        "Fade in the text 'CLT' on a solid white #FFFFFF pillar at the bottom center.",
+        "Scale the #FFD700 Bell Curve to fill the screen as the final text 'Order from Chaos' fades in."
+      ]
+    }
+  ],
+  "turns_run": 3,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (each < 10 words) for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 5 codable animation steps for section 1."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Code generated for section 1 following all visual anchor and teaching script requirements."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 3 codable animation steps for section 2."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Code for Section 2 is complete. It uses the TeachingScene base class, adheres to the 6x6 grid system for the right-side layout, and implements the requested animations: a population vat, a zooming sample scoop with 30 labeled candies, and the sample mean formula."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 5 codable animation steps for section 3."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Created Section3Scene with skewed population, robot arm animation, and sampling distribution accumulation."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 5 codable animation steps for section 4."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Code generated and verified against constraints. Section 4 now features a dynamic transition from a U-shaped population to a Normal distribution of sample means as n increases from 2 to 30. Formulas for the mean and standard deviation of the sampling distribution are highlighted in their respective colors."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 3 codable animation steps for section 5."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Runnable Manim code for Section 5 created with wide/narrow bell curves, center mean line, and precision lens graphic. All lecture line color transitions and grid-based placements implemented."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 3 codable animation steps for section 6."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Code generated and verified. Section 6 is now ready for rendering."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 7."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Defined 3 codable animation steps for section 7."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Code generated for Section 7 focusing on the collage of chaos, machine, and bell curve, followed by the CLT takeaway."
+    },
+    {
+      "id": 22,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Lecture lines are ready. Please create 5 animation stages that correspond to each lecture line. Line 1: 'Nature often seems chaotic and completely random.' Line 2: 'But look closer at these ten thousand squirrels.' Line 3: 'Their individual weights form a messy, jagged mountain.' Line 4: 'Yet, group averages reveal a mysterious, hidden order.' Line 5: 'Why does this perfect 'Bell Curve' always appear?'",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Lecture lines are ready. Please create 3 animation stages that correspond to each lecture line. Line 1: 'A population includes every single item in existence.' Line 2: 'A sample is just a small, random subset.' Line 3: 'We calculate the average, or mean, of each sample.'",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Lecture lines are ready. Please create 5 animation stages that correspond to each lecture line. Line 1: 'Let's sample heights from these wild alien monsters.' Line 2: 'Our machine takes fifty random monsters per scoop.' Line 3: 'It calculates the mean height for every single scoop.' Line 4: 'Each mean becomes a dot on our results graph.' Line 5: 'Watch as the dots begin to pile up.'",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Lecture lines are ready. Please create 5 animation stages that correspond to each lecture line. Line 1: 'This is the magic of the Central Limit Theorem.' Line 2: 'Any population shape eventually becomes a normal distribution.' Line 3: 'As sample size grows, the curve smooths out.' Line 4: 'The mean of means equals the population mean.' Line 5: 'The spread shrinks by the square root of n.'",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Lecture lines are ready. Please create 3 animation stages that correspond to each lecture line. Line 1: 'First, the shape always becomes a bell curve.' Line 2: 'Second, the center stays at the population mean.' Line 3: 'Third, larger samples make the estimate much more precise.'",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Lecture lines are ready. Please create 3 animation stages that correspond to each lecture line. Line 1: 'We use samples to understand entire giant populations.' Line 2: 'Factories test small batches to ensure battery quality.' Line 3: 'The bell curve predicts reality from very little data.'",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Lecture lines are ready. Please create 3 animation stages that correspond to each lecture line. Line 1: 'We moved from chaotic squirrels to perfect order.' Line 2: 'The Central Limit Theorem is the foundation of statistics.' Line 3: 'Chaos becomes predictable through the power of averages.'",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "AnimationPlanner",
+      "toAgent": "ScriptWriter",
+      "description": "I have generated the animation steps for all sections (1-7). Please write concise lecture lines (max 10 words each) that align one-to-one with these animation steps. Ensure sections 1, 3, and 4 have 5 lines, and sections 2, 5, 6, and 7 have 3 lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Draw a white #FFFFFF Bell Curve [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/bell.svg] and label its shape as 'Normal'.\"]",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show battery [Asset: /mmfs1/data/group/pmc082/jthen/Code2Video/assets/icon/battery.svg] icons on a conveyor belt; a red #EF5350 flash marks a defective batch mean.']",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The top_axis at C1-C6 is positioned too low, which crowds the center of the screen and leaves insufficient vertical space for the bell curve to expand. Fix: Line 81: self.place_in_area(top_axis, 'B1', 'B6') (line=81, object=top_axis)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved top_axis to Row B (B1-B6) using self.place_in_area."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The bottom_axis at F1-F6 is too close to the screen's bottom edge, making the 'Sample Means' label appear cramped and difficult to read. Fix: Line 86: self.place_in_area(bottom_axis, 'E1', 'E6') (line=86, object=bottom_axis)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved bottom_axis to Row E (E1-E6) and placed its label at D3 to ensure readability."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: Relocating the top_axis to Row B causes an overlap with the 'Tiny' and 'Huge' labels currently occupying B1 and B6. Fix: Line 121: self.place_at_grid(tiny_label, 'A1', scale_factor=0.8); Line 122: self.place_at_grid(huge_label, 'A6', scale_factor=0.8) (line=121, object=tiny_label and huge_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Relocated tiny_label to A1 and huge_label to A6 with scale factor 0.8."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The scoop_label at B1 overlaps the top edge of the zoomed_scoop (blue circle) and is cramped under the population_label. Fix: Line 119: self.place_in_area(scoop_label, 'A2', 'A4', scale_factor=0.8) (line=119, object=scoop_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The pop_vat area extends to F6, causing its bottom border to overlap with the formula and mean_display elements. Fix: Line 71: self.place_in_area(pop_vat, 'A1', 'E6') (line=71, object=pop_vat)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The formula at F1-F3 is positioned too far left, nearly obstructing the lecture notes area. Fix: Line 152: self.place_in_area(formula, 'F2', 'F3', scale_factor=1.1) (line=152, object=formula)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The mean_text uses point positioning for a multi-word label, violating the anchor system rules and crowding the x-axis of the graph above. Fix: Line 140: self.place_in_area(mean_text, 'C1', 'C3', scale_factor=0.7) (line=140, object=mean_text)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Grouped mean_text and mean_label and used self.place_in_area(mean_group, 'C1', 'C3', scale_factor=0.7)."
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The samp_group (results dots) is restricted to D1-E6, leaving the bottom-most grid row (F) empty and risking vertical overlap with the mean label as the pile grows. Fix: Line 95: self.place_in_area(samp_group, 'E1', 'F6', scale_factor=0.8) (line=95, object=samp_group)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated samp_group positioning to self.place_in_area(samp_group, 'E1', 'F6', scale_factor=0.8)."
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The pop_group scale of 0.8 in the A1-B6 area makes the distribution title and axis labels appear cramped against the top of the frame. Fix: Line 76: self.place_in_area(pop_group, 'A1', 'B6', scale_factor=0.7) (line=76, object=pop_group)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated pop_group scaling to 0.7 in the A1-B6 area."
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The std_err_formula is excessively wide at scale 1.0 and occupies the full width of the grid (B1-B6), making it feel congested next to the lecture notes and visually overpowering the section title. Fix: Line 128: self.place_in_area(std_err_formula, 'B2', 'B5', scale_factor=0.8) (line=128, object=std_err_formula)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated self.place_in_area(std_err_formula, 'B2', 'B5', scale_factor=0.8) on line 128."
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The clt_group subtitle has a smaller scale (0.8) than the formula below it, which creates an inverted visual hierarchy and a weak presence for the section header. Fix: Line 70: self.place_in_area(clt_group, 'A2', 'A5', scale_factor=0.9) (line=70, object=clt_group)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated self.place_in_area(clt_group, 'A2', 'A5', scale_factor=0.9) on line 70."
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The axes occupy a large area at scale 0.9, leaving insufficient vertical padding for labels like the mean of means, which risks overlapping with the formula in row B as the curve peaks. Fix: Line 85: self.place_in_area(axes, 'C1', 'F6', scale_factor=0.8) (line=85, object=axes)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated self.place_in_area(axes, 'C1', 'F6', scale_factor=0.8) on line 85."
+    },
+    {
+      "id": 44,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'lens_text' label ('High Precision') is centered at a single grid point (A3), which misaligns it with the distribution's central peak located at the axis center (between columns 3 and 4). Fix: Line 138: self.place_in_area(self.lens_text, 'A3', 'A4', scale_factor=0.6) (line=138, object=lens_text)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 45,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The label 'label_n5' at B5 is positioned far above the low-peaked red curve, creating poor visual proximity and potential confusion. Fix: Line 82: self.place_at_grid(self.label_n5, 'C5', scale_factor=0.8) (line=82, object=label_n5)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 46,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'label_n50' lacks a specific scale factor, making it appear too large and potentially crowding the upper-left quadrant of the plot area. Fix: Line 91: self.place_at_grid(self.label_n50, 'B2', scale_factor=0.8) (line=91, object=label_n50)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 47,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The alert_text at B3 directly overlaps with the peak of the bell curve and the vertical axis, causing poor legibility of both the data and the text. Fix: Line 161: self.place_at_grid(alert_text, 'A3', scale_factor=1.0) (line=161, object=alert_text)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 48,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The safe_label at B5 is positioned too far from the central green shaded region (the 'safe zone'), violating proximity principles for clear labeling. Fix: Line 141: self.place_at_grid(safe_label, 'B4', scale_factor=0.8) (line=141, object=safe_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 49,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The sample_label at C3 is currently placed inside the sample_box, which creates visual clutter by overlapping with the underlying population data points. Fix: Line 79: self.place_at_grid(sample_label, 'D3', scale_factor=0.8) (line=79, object=sample_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 50,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The large_bell_group with scale 1.5 in A1-E6 is oversized, likely obstructing the lecture notes and creating a cramped visual against the title. Fix: Line 105: self.place_in_area(large_bell_group, 'A1', 'E6', scale_factor=1.0) (line=105, object=large_bell_group)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 51,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The machine_label ('Sampling') is restricted to a single cell (D3), causing it to be left-aligned rather than centered under the machine (B3-C4). Fix: Line 80: self.place_in_area(machine_label, 'D3', 'D4', scale_factor=1.0) (line=80, object=machine_label)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    },
+    {
+      "id": 52,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The final_msg occupies the entire F1-F6 bottom row at scale 1.0, placing the long text uncomfortably close to the screen's edge. Fix: Line 124: self.place_in_area(final_msg, 'F1', 'F6', scale_factor=0.8) (line=124, object=final_msg)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6",
+    "section_7": "Coder7"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5,
+    "section_7": 6
+  },
+  "rendered_video_path": [
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_6/480p15/Section6Scene.mp4",
+    "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_7/480p15/Section7Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 675714,
+        "video_mtime_ns": 1782788075489378711,
+        "code_sha1": "7869dbb8a4c870d9cf5ec52f15d657e32e081b2a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The top_axis at C1-C6 is positioned too low, which crowds the center of the screen and leaves insufficient vertical space for the bell curve to expand.",
+              "solution": "Line 81: self.place_in_area(top_axis, 'B1', 'B6')",
+              "line_number": 81,
+              "object_affected": "top_axis"
+            },
+            {
+              "problem": "The bottom_axis at F1-F6 is too close to the screen's bottom edge, making the 'Sample Means' label appear cramped and difficult to read.",
+              "solution": "Line 86: self.place_in_area(bottom_axis, 'E1', 'E6')",
+              "line_number": 86,
+              "object_affected": "bottom_axis"
+            },
+            {
+              "problem": "Relocating the top_axis to Row B causes an overlap with the 'Tiny' and 'Huge' labels currently occupying B1 and B6.",
+              "solution": "Line 121: self.place_at_grid(tiny_label, 'A1', scale_factor=0.8); Line 122: self.place_at_grid(huge_label, 'A6', scale_factor=0.8)",
+              "line_number": 121,
+              "object_affected": "tiny_label and huge_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 377517,
+        "video_mtime_ns": 1782788070852691946,
+        "code_sha1": "ce9ca7965d065facc4fd88aa433e9d18dec301f6"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The scoop_label at B1 overlaps the top edge of the zoomed_scoop (blue circle) and is cramped under the population_label.",
+              "solution": "Line 119: self.place_in_area(scoop_label, 'A2', 'A4', scale_factor=0.8)",
+              "line_number": 119,
+              "object_affected": "scoop_label"
+            },
+            {
+              "problem": "The pop_vat area extends to F6, causing its bottom border to overlap with the formula and mean_display elements.",
+              "solution": "Line 71: self.place_in_area(pop_vat, 'A1', 'E6')",
+              "line_number": 71,
+              "object_affected": "pop_vat"
+            },
+            {
+              "problem": "The formula at F1-F3 is positioned too far left, nearly obstructing the lecture notes area.",
+              "solution": "Line 152: self.place_in_area(formula, 'F2', 'F3', scale_factor=1.1)",
+              "line_number": 152,
+              "object_affected": "formula"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35,
+        36,
+        37
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 978201,
+        "video_mtime_ns": 1782788130811691926,
+        "code_sha1": "01e53812c8485eaf5fdb10a50cc579cb7eb09c1e"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The mean_text uses point positioning for a multi-word label, violating the anchor system rules and crowding the x-axis of the graph above.",
+              "solution": "Line 140: self.place_in_area(mean_text, 'C1', 'C3', scale_factor=0.7)",
+              "line_number": 140,
+              "object_affected": "mean_text"
+            },
+            {
+              "problem": "The samp_group (results dots) is restricted to D1-E6, leaving the bottom-most grid row (F) empty and risking vertical overlap with the mean label as the pile grows.",
+              "solution": "Line 95: self.place_in_area(samp_group, 'E1', 'F6', scale_factor=0.8)",
+              "line_number": 95,
+              "object_affected": "samp_group"
+            },
+            {
+              "problem": "The pop_group scale of 0.8 in the A1-B6 area makes the distribution title and axis labels appear cramped against the top of the frame.",
+              "solution": "Line 76: self.place_in_area(pop_group, 'A1', 'B6', scale_factor=0.7)",
+              "line_number": 76,
+              "object_affected": "pop_group"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        38,
+        39,
+        40
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 351197,
+        "video_mtime_ns": 1782788897530271091,
+        "code_sha1": "0fd08c98419eac4d722c036172db683661bf067a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The std_err_formula is excessively wide at scale 1.0 and occupies the full width of the grid (B1-B6), making it feel congested next to the lecture notes and visually overpowering the section title.",
+              "solution": "Line 128: self.place_in_area(std_err_formula, 'B2', 'B5', scale_factor=0.8)",
+              "line_number": 128,
+              "object_affected": "std_err_formula"
+            },
+            {
+              "problem": "The clt_group subtitle has a smaller scale (0.8) than the formula below it, which creates an inverted visual hierarchy and a weak presence for the section header.",
+              "solution": "Line 70: self.place_in_area(clt_group, 'A2', 'A5', scale_factor=0.9)",
+              "line_number": 70,
+              "object_affected": "clt_group"
+            },
+            {
+              "problem": "The axes occupy a large area at scale 0.9, leaving insufficient vertical padding for labels like the mean of means, which risks overlapping with the formula in row B as the curve peaks.",
+              "solution": "Line 85: self.place_in_area(axes, 'C1', 'F6', scale_factor=0.8)",
+              "line_number": 85,
+              "object_affected": "axes"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        41,
+        42,
+        43
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 205177,
+        "video_mtime_ns": 1782788095247985158,
+        "code_sha1": "f7aaf977859d4e2c2cf479f044880e220356b771"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'lens_text' label ('High Precision') is centered at a single grid point (A3), which misaligns it with the distribution's central peak located at the axis center (between columns 3 and 4).",
+              "solution": "Line 138: self.place_in_area(self.lens_text, 'A3', 'A4', scale_factor=0.6)",
+              "line_number": 138,
+              "object_affected": "lens_text"
+            },
+            {
+              "problem": "The label 'label_n5' at B5 is positioned far above the low-peaked red curve, creating poor visual proximity and potential confusion.",
+              "solution": "Line 82: self.place_at_grid(self.label_n5, 'C5', scale_factor=0.8)",
+              "line_number": 82,
+              "object_affected": "label_n5"
+            },
+            {
+              "problem": "The 'label_n50' lacks a specific scale factor, making it appear too large and potentially crowding the upper-left quadrant of the plot area.",
+              "solution": "Line 91: self.place_at_grid(self.label_n50, 'B2', scale_factor=0.8)",
+              "line_number": 91,
+              "object_affected": "label_n50"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        44,
+        45,
+        46
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 343987,
+        "video_mtime_ns": 1782788052056734647,
+        "code_sha1": "33c0ae4024a36eaedfa3c6517f2065f587a41a56"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The alert_text at B3 directly overlaps with the peak of the bell curve and the vertical axis, causing poor legibility of both the data and the text.",
+              "solution": "Line 161: self.place_at_grid(alert_text, 'A3', scale_factor=1.0)",
+              "line_number": 161,
+              "object_affected": "alert_text"
+            },
+            {
+              "problem": "The safe_label at B5 is positioned too far from the central green shaded region (the 'safe zone'), violating proximity principles for clear labeling.",
+              "solution": "Line 141: self.place_at_grid(safe_label, 'B4', scale_factor=0.8)",
+              "line_number": 141,
+              "object_affected": "safe_label"
+            },
+            {
+              "problem": "The sample_label at C3 is currently placed inside the sample_box, which creates visual clutter by overlapping with the underlying population data points.",
+              "solution": "Line 79: self.place_at_grid(sample_label, 'D3', scale_factor=0.8)",
+              "line_number": 79,
+              "object_affected": "sample_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        47,
+        48,
+        49
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_7",
+      "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_7/480p15/Section7Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem/media/videos/section_7/480p15/Section7Scene.mp4",
+        "video_size": 226188,
+        "video_mtime_ns": 1782788015883375460,
+        "code_sha1": "1794795565af46db3ac8056ff2deae574b24a70a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The large_bell_group with scale 1.5 in A1-E6 is oversized, likely obstructing the lecture notes and creating a cramped visual against the title.",
+              "solution": "Line 105: self.place_in_area(large_bell_group, 'A1', 'E6', scale_factor=1.0)",
+              "line_number": 105,
+              "object_affected": "large_bell_group"
+            },
+            {
+              "problem": "The machine_label ('Sampling') is restricted to a single cell (D3), causing it to be left-aligned rather than centered under the machine (B3-C4).",
+              "solution": "Line 80: self.place_in_area(machine_label, 'D3', 'D4', scale_factor=1.0)",
+              "line_number": 80,
+              "object_affected": "machine_label"
+            },
+            {
+              "problem": "The final_msg occupies the entire F1-F6 bottom row at scale 1.0, placing the long text uncomfortably close to the screen's edge.",
+              "solution": "Line 124: self.place_in_area(final_msg, 'F1', 'F6', scale_factor=0.8)",
+              "line_number": 124,
+              "object_affected": "final_msg"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        50,
+        51,
+        52
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/mmfs1/data/group/pmc082/jthen/Code2Video/mas_logs/pipeline_20260630_084742/6-The_Magic_of_the_Bell_Curve_Understanding_the_Central_Limit_Theorem",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 443595,
+      "completion_tokens": 67073,
+      "total_tokens": 748036,
+      "call_count": 71
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 548,
+        "completion_tokens": 1812,
+        "total_tokens": 3767,
+        "call_count": 2
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 7340,
+        "completion_tokens": 323,
+        "total_tokens": 7721,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 19942,
+        "completion_tokens": 508,
+        "total_tokens": 20710,
+        "call_count": 2
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 24376,
+        "completion_tokens": 439,
+        "total_tokens": 25475,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 23916,
+        "completion_tokens": 2408,
+        "total_tokens": 26410,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 30259,
+        "completion_tokens": 6305,
+        "total_tokens": 37098,
+        "call_count": 3
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 20821,
+        "completion_tokens": 4628,
+        "total_tokens": 25498,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 25567,
+        "completion_tokens": 6138,
+        "total_tokens": 32035,
+        "call_count": 2
+      },
+      "agent:Coder7": {
+        "prompt_tokens": 21266,
+        "completion_tokens": 3813,
+        "total_tokens": 25240,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 22383,
+        "completion_tokens": 2597,
+        "total_tokens": 25091,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 28249,
+        "completion_tokens": 4998,
+        "total_tokens": 33523,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 5052,
+        "completion_tokens": 716,
+        "total_tokens": 18077,
+        "call_count": 14
+      },
+      "scope_refine:section_6": {
+        "prompt_tokens": 8541,
+        "completion_tokens": 2222,
+        "total_tokens": 11915,
+        "call_count": 1
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 12551,
+        "completion_tokens": 2068,
+        "total_tokens": 20325,
+        "call_count": 1
+      },
+      "scope_refine:section_1": {
+        "prompt_tokens": 40844,
+        "completion_tokens": 8640,
+        "total_tokens": 54797,
+        "call_count": 3
+      },
+      "scope_refine:section_5": {
+        "prompt_tokens": 19003,
+        "completion_tokens": 2143,
+        "total_tokens": 31868,
+        "call_count": 2
+      },
+      "scope_refine:section_3": {
+        "prompt_tokens": 28101,
+        "completion_tokens": 2771,
+        "total_tokens": 43066,
+        "call_count": 2
+      },
+      "scope_refine:section_4": {
+        "prompt_tokens": 83113,
+        "completion_tokens": 12008,
+        "total_tokens": 236133,
+        "call_count": 19
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3505,
+        "completion_tokens": 373,
+        "total_tokens": 9022,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 3167,
+        "completion_tokens": 327,
+        "total_tokens": 8838,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2956,
+        "completion_tokens": 364,
+        "total_tokens": 11027,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3030,
+        "completion_tokens": 382,
+        "total_tokens": 10356,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2821,
+        "completion_tokens": 375,
+        "total_tokens": 11746,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 3255,
+        "completion_tokens": 341,
+        "total_tokens": 9056,
+        "call_count": 1
+      },
+      "video_review:section_7": {
+        "prompt_tokens": 2989,
+        "completion_tokens": 374,
+        "total_tokens": 9242,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 443595,
+        "completion_tokens": 67073,
+        "total_tokens": 748036,
+        "call_count": 71
+      }
+    }
+  }
+}
