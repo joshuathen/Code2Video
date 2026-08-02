@@ -11,8 +11,22 @@ logger = logging.getLogger(__name__)
 
 
 def get_completion_only(result):
+    """Return textual model output across legacy and Interactions adapters."""
     if isinstance(result, tuple) and len(result) >= 1:
-        return result[0]
+        result = result[0]
+
+    if isinstance(result, str) or result is None:
+        return result
+
+    # Gemini Interactions compatibility response.
+    for attribute in ("output_text", "text"):
+        value = getattr(result, attribute, None)
+        if isinstance(value, str):
+            return value
+
+    # Preserve legacy OpenAI-style response objects for the existing choices
+    # branch in the caller.
+    return result
 
 
 class ManimCodeErrorAnalyzer:
@@ -375,11 +389,15 @@ class ScopeRefineFixer:
         if not code:
             return None
 
-        # Remove markdown code block markers
-        if "```python" in code:
-            code = code.split("```python")[1].split("```")[0].strip()
-        elif "```" in code:
-            code = code.split("```")[1].strip()
+        # Remove one Markdown code fence while discarding any surrounding
+        # explanation. Gemini may use either ```python or an unlabelled fence.
+        fenced = re.search(
+            r"```(?:python|py)?\s*\n?(.*?)(?:```|\Z)",
+            code,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if fenced:
+            code = fenced.group(1).strip()
 
         # Remove extra empty lines
         lines = code.split("\n")
@@ -558,7 +576,9 @@ class ScopeRefineFixer:
                 if not is_valid_syntax:
                     logger.warning(f"Attempt {attempt}: Syntax error - {syntax_error}")
                     error_msg = syntax_error  # Update the error message for the next fix
-                    current_code = fixed_code  # Update the current code
+                    # Keep the last syntactically valid source as the next
+                    # attempt's baseline. A malformed model response must not
+                    # poison all subsequent repair prompts.
                     continue
 
                 logger.info(f"Attempt {attempt}: Syntax validation passed")
