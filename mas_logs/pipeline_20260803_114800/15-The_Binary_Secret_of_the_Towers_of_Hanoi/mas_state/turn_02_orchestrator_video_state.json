@@ -1,0 +1,888 @@
+{
+  "topic": "The Binary Secret of the Towers of Hanoi",
+  "target_audience": "High school students and introductory Computer Science students",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Data from storyboard\n        lecture_lines = [\n            \"Legend says monks move sixty-four disks between three pillars.\",\n            \"Only one disk moves at a time.\",\n            \"Larger disks cannot sit on smaller ones.\"\n        ]\n        self.setup_layout(\"The Legend and the Rules\", lecture_lines)\n\n        # Colors from storyboard\n        PILLAR_COLOR = \"#808080\"\n        RED_COLOR = \"#FF0000\"\n        GREEN_COLOR = \"#00FF00\"\n        BLUE_COLOR = \"#0000FF\"\n        GLOW_COLOR = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        # Legend says monks move sixty-four disks between three pillars.\n        self.play(self.lecture[0].animate.set_color(PILLAR_COLOR))\n        \n        # Create 3 pillars\n        # Height 3.5 roughly covers rows C to F\n        p1 = Rectangle(height=3.5, width=0.2, fill_color=PILLAR_COLOR, fill_opacity=1, stroke_width=0)\n        p2 = Rectangle(height=3.5, width=0.2, fill_color=PILLAR_COLOR, fill_opacity=1, stroke_width=0)\n        p3 = Rectangle(height=3.5, width=0.2, fill_color=PILLAR_COLOR, fill_opacity=1, stroke_width=0)\n        \n        self.place_in_area(p1, \"C2\", \"F2\")\n        self.place_in_area(p2, \"C4\", \"F4\")\n        self.place_in_area(p3, \"C6\", \"F6\")\n        \n        # Create Disks as specified\n        # Heights are set to 0.6 to look good in 1.0 unit grid cells\n        d_blue = RoundedRectangle(corner_radius=0.1, height=0.6, width=1.6, fill_color=BLUE_COLOR, fill_opacity=1, stroke_color=WHITE, stroke_width=1)\n        d_green = RoundedRectangle(corner_radius=0.1, height=0.6, width=1.1, fill_color=GREEN_COLOR, fill_opacity=1, stroke_color=WHITE, stroke_width=1)\n        d_red = RoundedRectangle(corner_radius=0.1, height=0.6, width=0.6, fill_color=RED_COLOR, fill_opacity=1, stroke_color=WHITE, stroke_width=1)\n        \n        # Initial stack on Pillar 1\n        self.place_at_grid(d_blue, \"F2\")\n        self.place_at_grid(d_green, \"E2\")\n        self.place_at_grid(d_red, \"D2\")\n        \n        self.play(\n            Create(VGroup(p1, p2, p3)),\n            FadeIn(VGroup(d_blue, d_green, d_red), shift=UP*0.5),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Only one disk moves at a time.\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(RED_COLOR)\n        )\n        \n        # Move smallest Red disk from P1 (D2) to P2 (F4)\n        # Using path_arc to create a \"jump\" effect\n        self.play(\n            d_red.animate.move_to(self.grid[\"F4\"]),\n            path_arc=-PI/2,\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Larger disks cannot sit on smaller ones.\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(BLUE_COLOR)\n        )\n        \n        # Try to move largest Blue disk onto Red disk (on P2)\n        # Target is E4 (cell above Red disk which is at F4)\n        start_pos_blue = d_blue.get_center()\n        invalid_target = self.grid[\"E4\"]\n        \n        self.play(\n            d_blue.animate.move_to(invalid_target),\n            path_arc=-PI/3,\n            run_time=1.2\n        )\n        \n        # Show red \"X\" to indicate illegal move\n        cross = VGroup(\n            Line(UP+LEFT, DOWN+RIGHT),\n            Line(UP+RIGHT, DOWN+LEFT)\n        ).set_color(RED_COLOR).scale(0.4).move_to(invalid_target + UP*0.5)\n        \n        self.play(Create(cross))\n        self.play(Flash(cross, color=RED_COLOR, line_length=0.2, flash_radius=0.3))\n        self.wait(0.5)\n        \n        # Illegal move: return Blue disk to start\n        self.play(\n            FadeOut(cross),\n            d_blue.animate.move_to(start_pos_blue),\n            path_arc=PI/3,\n            run_time=1.2\n        )\n        self.wait(1)\n\n        # Final setup highlight with glow\n        glow = SurroundingRectangle(VGroup(p1, p2, p3, d_blue, d_green, d_red), color=GLOW_COLOR, buff=0.4, stroke_width=2)\n        self.play(Create(glow))\n        self.play(glow.animate.set_stroke(opacity=0.3))\n        self.wait(2)\n        \n        # Final cleanup\n        self.play(\n            FadeOut(glow),\n            self.lecture[2].animate.set_color(WHITE)\n        )\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Initialize the scene with title and lecture lines\n        self.setup_layout(\"Prerequisite: The Binary Counter\", [\n            \"Binary counting uses only zeros and ones.\",\n            \"In three bits, we count from zero to seven.\",\n            \"Notice how each bit toggles at a specific frequency.\"\n        ])\n        \n        # === Animation for Lecture Line 1 ===\n        # Color match: #ADD8E6 (Light Blue) for the initial binary text\n        self.lecture[0].set_color(\"#ADD8E6\")\n        \n        binary_val_text = Text(\"000\", font_size=60, color=\"#ADD8E6\")\n        self.place_in_area(binary_val_text, \"C2\", \"D5\")\n        \n        self.play(Write(binary_val_text))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Color match: #555555 (Dark Gray) for the initial state of the circles\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(\"#555555\")\n        )\n        \n        # Create 3 circles representing the bits\n        circles = VGroup(*[\n            Circle(radius=0.35, fill_opacity=1, color=\"#555555\", stroke_width=2) \n            for _ in range(3)\n        ]).arrange(RIGHT, buff=0.6)\n        self.place_in_area(circles, \"C2\", \"D5\")\n        \n        # Replace the digits with the circles\n        self.play(\n            ReplacementTransform(binary_val_text, circles)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Color match: #FFFF00 (Bright Yellow) for the toggling bits\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(\"#FFFF00\")\n        )\n        \n        # Target position for circles (shifting down)\n        circles_target_pos = self.grid[\"D3\"] + RIGHT * 0.9 # Visual centering hack within grid\n        \n        # Reposition circles to make room for text above\n        self.play(\n            circles.animate.move_to(circles_target_pos)\n        )\n        \n        # Display the corresponding binary string above the circles\n        counter_text = Text(\"000\", font_size=48, color=\"#ADD8E6\")\n        self.place_in_area(counter_text, \"B2\", \"C5\")\n        self.play(FadeIn(counter_text))\n        self.wait(0.5)\n        \n        # Increment from 001 (1) to 111 (7)\n        for i in range(1, 8):\n            bin_str = bin(i)[2:].zfill(3)\n            \n            # Prepare new text and bit colors\n            new_text_mob = Text(bin_str, font_size=48, color=\"#ADD8E6\")\n            new_text_mob.move_to(counter_text.get_center())\n            \n            anims = [Transform(counter_text, new_text_mob)]\n            \n            for bit_idx, char in enumerate(bin_str):\n                # The circles index is 0, 1, 2 for bits from left to right\n                target_color = \"#FFFF00\" if char == '1' else \"#555555\"\n                anims.append(circles[bit_idx].animate.set_color(target_color))\n            \n            self.play(*anims, run_time=0.6)\n            self.wait(0.4)\n            \n        self.wait(3)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Initialize Scene\n        lecture_lines = [\n            \"Every disk corresponds to a specific binary bit.\",\n            \"Disk one is the rightmost, least significant bit.\",\n            \"Moving n disks requires two to the n minus one moves.\",\n            \"The current move number identifies which disk to move.\",\n            \"Watch as move numbers map to specific disks.\"\n        ]\n        self.setup_layout(\"The Mapping: Disks as Bits\", lecture_lines)\n        \n        # Color definitions from storyboard\n        DISK_COLOR = \"#90EE90\"  # Light Green\n        BIT_COLOR = \"#00FFFF\"   # Cyan\n        FORMULA_COLOR = \"#FFFFFF\" # White\n\n        # === Animation for Lecture Line 1 ===\n        # \"Every disk corresponds to a specific binary bit.\"\n        self.lecture[0].set_color(WHITE)\n        \n        # Visual representations of disks\n        disk1 = RoundedRectangle(corner_radius=0.05, height=0.3, width=0.8, color=DISK_COLOR, fill_opacity=0.8)\n        disk2 = RoundedRectangle(corner_radius=0.05, height=0.3, width=1.1, color=DISK_COLOR, fill_opacity=0.8)\n        disk3 = RoundedRectangle(corner_radius=0.05, height=0.3, width=1.4, color=DISK_COLOR, fill_opacity=0.8)\n        \n        # Labels for disks\n        l1 = Text(\"Disk 1\", font_size=18, color=DISK_COLOR)\n        l2 = Text(\"Disk 2\", font_size=18, color=DISK_COLOR)\n        l3 = Text(\"Disk 3\", font_size=18, color=DISK_COLOR)\n        \n        # Positioning\n        self.place_at_grid(disk1, \"B2\")\n        self.place_at_grid(l1, \"B3\")\n        self.place_at_grid(disk2, \"C2\")\n        self.place_at_grid(l2, \"C3\")\n        self.place_at_grid(disk3, \"D2\")\n        self.place_at_grid(l3, \"D3\")\n        \n        self.play(\n            Create(disk1), Write(l1),\n            Create(disk2), Write(l2),\n            Create(disk3), Write(l3),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"Disk one is the rightmost, least significant bit.\"\n        self.lecture[1].set_color(BIT_COLOR)\n        \n        # Mapping labels as requested: \"Disk X -> Bit Y\"\n        m1 = Text(\"Disk 1 -> Bit 0\", font_size=18, color=BIT_COLOR)\n        m2 = Text(\"Disk 2 -> Bit 1\", font_size=18, color=BIT_COLOR)\n        m3 = Text(\"Disk 3 -> Bit 2\", font_size=18, color=BIT_COLOR)\n        \n        self.place_at_grid(m1, \"B5\")\n        self.place_at_grid(m2, \"C5\")\n        self.place_at_grid(m3, \"D5\")\n        \n        arrow1 = Arrow(start=l1.get_right(), end=m1.get_left(), color=BIT_COLOR, buff=0.1)\n        arrow2 = Arrow(start=l2.get_right(), end=m2.get_left(), color=BIT_COLOR, buff=0.1)\n        arrow3 = Arrow(start=l3.get_right(), end=m3.get_left(), color=BIT_COLOR, buff=0.1)\n        \n        self.play(Create(arrow1), Write(m1))\n        self.play(Create(arrow2), Write(m2), Create(arrow3), Write(m3))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"Moving n disks requires two to the n minus one moves.\"\n        self.lecture[2].set_color(FORMULA_COLOR)\n        \n        formula = MathTex(r\"\\text{Total Moves} = 2^n - 1\", color=FORMULA_COLOR)\n        self.place_in_area(formula, \"A2\", \"A5\", scale_factor=0.9)\n        \n        self.play(Write(formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # \"The current move number identifies which disk to move.\"\n        self.lecture[3].set_color(DISK_COLOR)\n        \n        binary_info_text = Text(\"Move Number in Binary:\", font_size=18, color=WHITE)\n        binary_info_math = MathTex(r\"\\dots b_2 b_1 b_0\", color=BIT_COLOR)\n        binary_info = VGroup(binary_info_text, binary_info_math).arrange(DOWN)\n        self.place_in_area(binary_info, \"E2\", \"F5\", scale_factor=0.8)\n        \n        self.play(FadeIn(binary_info))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # \"Watch as move numbers map to specific disks.\"\n        self.lecture[4].set_color(WHITE)\n        \n        # Sequence of highlights to emphasize the mapping\n        self.play(\n            Indicate(disk1, color=BIT_COLOR),\n            Indicate(m1, color=WHITE),\n            run_time=0.8\n        )\n        self.play(\n            Indicate(disk2, color=BIT_COLOR),\n            Indicate(m2, color=WHITE),\n            run_time=0.8\n        )\n        self.play(\n            Indicate(disk3, color=BIT_COLOR),\n            Indicate(m3, color=WHITE),\n            run_time=0.8\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"To find the disk, write the move number in binary.\",\n            \"Find the position of the rightmost digit one.\",\n            \"Position one means move the smallest disk.\",\n            \"Position two means move the second smallest disk.\",\n            \"This pattern holds for every move in the puzzle.\"\n        ]\n        self.setup_layout(\"The Rule of the Rightmost Set Bit\", lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Show the decimal number '4' and its binary equivalent '100'\n        decimal_4 = Text(\"4\", font_size=48, color=WHITE)\n        arrow_to_bin = MathTex(\"\\\\rightarrow\", color=WHITE)\n        binary_4 = MathTex(\"1\", \"0\", \"0\", font_size=48, color=WHITE)\n        \n        # Placing at grid locations\n        self.place_at_grid(decimal_4, \"B3\", scale_factor=1.0)\n        self.place_at_grid(arrow_to_bin, \"B4\", scale_factor=1.0)\n        self.place_at_grid(binary_4, \"B5\", scale_factor=1.0)\n        \n        self.lecture[0].set_color(YELLOW)\n        self.play(Write(decimal_4), Write(arrow_to_bin), Write(binary_4))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Underline the '1' in '100' with a gold color (#FFD700) \n        # and display the text 'Rightmost 1 at position 3' below it.\n        # binary_4[0] is the digit '1' in '100'\n        underline = Underline(binary_4[0], color=\"#FFD700\", buff=0.1)\n        pos_label = Text(\"Rightmost 1\\nat position 3\", font_size=20, color=\"#FFD700\")\n        self.place_at_grid(pos_label, \"C5\", scale_factor=0.9)\n\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        self.play(Create(underline))\n        self.play(FadeIn(pos_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Position one means move the smallest disk.\n        disk1 = RoundedRectangle(corner_radius=0.1, width=0.5, height=0.2, color=\"#1E90FF\", fill_opacity=0.8)\n        disk1_label = Text(\"Disk 1\", font_size=16, color=WHITE).next_to(disk1, DOWN, buff=0.1)\n        disk1_group = VGroup(disk1, disk1_label)\n        self.place_at_grid(disk1_group, \"E3\", scale_factor=1.0)\n        \n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        self.play(FadeIn(disk1_group))\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 4 ===\n        # Position two means move the second smallest disk.\n        disk2 = RoundedRectangle(corner_radius=0.1, width=0.8, height=0.2, color=\"#1E90FF\", fill_opacity=0.8)\n        disk2_label = Text(\"Disk 2\", font_size=16, color=WHITE).next_to(disk2, DOWN, buff=0.1)\n        disk2_group = VGroup(disk2, disk2_label)\n        self.place_at_grid(disk2_group, \"E4\", scale_factor=1.0)\n\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        self.play(FadeIn(disk2_group))\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 5 ===\n        # This pattern holds for every move... \n        # Show an arrow pointing from the gold '1' to a graphic of 'Disk 3'\n        disk3 = RoundedRectangle(corner_radius=0.1, width=1.1, height=0.2, color=\"#1E90FF\", fill_opacity=0.8)\n        disk3_label = Text(\"Disk 3\", font_size=16, color=WHITE).next_to(disk3, DOWN, buff=0.1)\n        disk3_group = VGroup(disk3, disk3_label)\n        self.place_at_grid(disk3_group, \"E5\", scale_factor=1.0)\n\n        # Arrow from the underlined '1' to Disk 3\n        rule_arrow = Arrow(\n            start=underline.get_bottom(),\n            end=disk3_group.get_top(),\n            color=\"#FFD700\",\n            stroke_width=3,\n            buff=0.1\n        )\n\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        self.play(FadeIn(disk3_group))\n        self.play(Create(rule_arrow))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"Move one is binary zero-zero-one; move disk one.\",\n            \"Move two is zero-one-zero; move disk two.\",\n            \"Move three is zero-one-one; move disk one again.\",\n            \"Move four is one-zero-zero; move disk three.\",\n            \"Binary counting guides every single disk placement perfectly.\"\n        ]\n        self.setup_layout(\"Animated Walkthrough: 3-Disk Demo\", lecture_lines)\n\n        # Assets/Colors\n        COLOR_DISK1 = \"#FF6347\"  # Tomato\n        COLOR_DISK2 = \"#32CD32\"  # LimeGreen\n        COLOR_DISK3 = \"#1E90FF\"  # DodgerBlue\n        COLOR_PEGS = \"#888888\"\n        HIGHLIGHT_COLOR = \"#FFFF00\"\n\n        # Pegs - Using visual grid\n        peg1 = Line(self.grid[\"C2\"], self.grid[\"F2\"], color=COLOR_PEGS, stroke_width=8)\n        peg2 = Line(self.grid[\"C4\"], self.grid[\"F4\"], color=COLOR_PEGS, stroke_width=8)\n        peg3 = Line(self.grid[\"C6\"], self.grid[\"F6\"], color=COLOR_PEGS, stroke_width=8)\n        \n        base = Line(self.grid[\"F1\"] + LEFT*0.5, self.grid[\"F6\"] + RIGHT*0.5, color=COLOR_PEGS, stroke_width=4)\n        \n        # Labels for Pegs\n        peg1_label = Text(\"Peg 1\", font_size=18).next_to(peg1, DOWN, buff=0.2)\n        peg2_label = Text(\"Peg 2\", font_size=18).next_to(peg2, DOWN, buff=0.2)\n        peg3_label = Text(\"Peg 3\", font_size=18).next_to(peg3, DOWN, buff=0.2)\n\n        # Disks\n        disk1 = RoundedRectangle(corner_radius=0.1, width=0.6, height=0.3, fill_color=COLOR_DISK1, fill_opacity=1.0, stroke_width=1)\n        disk2 = RoundedRectangle(corner_radius=0.1, width=1.0, height=0.3, fill_color=COLOR_DISK2, fill_opacity=1.0, stroke_width=1)\n        disk3 = RoundedRectangle(corner_radius=0.1, width=1.4, height=0.3, fill_color=COLOR_DISK3, fill_opacity=1.0, stroke_width=1)\n\n        # Initial Placement (Peg 1)\n        self.place_at_grid(disk3, \"F2\")\n        self.place_at_grid(disk2, \"E2\")\n        self.place_at_grid(disk1, \"D2\")\n\n        # Binary Counter UI\n        counter_label = Text(\"Step:\", font_size=24)\n        self.place_at_grid(counter_label, \"A3\")\n        \n        binary_val = Text(\"000\", font_size=32, color=YELLOW)\n        binary_val.next_to(counter_label, RIGHT, buff=0.3)\n\n        self.add(peg1, peg2, peg3, base, peg1_label, peg2_label, peg3_label, disk3, disk2, disk1, counter_label, binary_val)\n\n        # Helper to update binary text efficiently\n        def get_binary_text(val):\n            return f\"{val:03b}\"\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(HIGHLIGHT_COLOR), run_time=0.5)\n        \n        new_binary = Text(get_binary_text(1), font_size=32, color=YELLOW).move_to(binary_val)\n        self.play(\n            Transform(binary_val, new_binary),\n            Succession(\n                disk1.animate.move_to(self.grid[\"B2\"]),\n                disk1.animate.move_to(self.grid[\"B6\"]),\n                disk1.animate.move_to(self.grid[\"F6\"])\n            ),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(HIGHLIGHT_COLOR),\n            run_time=0.5\n        )\n        \n        new_binary = Text(get_binary_text(2), font_size=32, color=YELLOW).move_to(binary_val)\n        self.play(\n            Transform(binary_val, new_binary),\n            Succession(\n                disk2.animate.move_to(self.grid[\"B2\"]),\n                disk2.animate.move_to(self.grid[\"B4\"]),\n                disk2.animate.move_to(self.grid[\"F4\"])\n            ),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(HIGHLIGHT_COLOR),\n            run_time=0.5\n        )\n        \n        new_binary = Text(get_binary_text(3), font_size=32, color=YELLOW).move_to(binary_val)\n        self.play(\n            Transform(binary_val, new_binary),\n            Succession(\n                disk1.animate.move_to(self.grid[\"B6\"]),\n                disk1.animate.move_to(self.grid[\"B4\"]),\n                disk1.animate.move_to(self.grid[\"E4\"])\n            ),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(HIGHLIGHT_COLOR),\n            run_time=0.5\n        )\n        \n        new_binary = Text(get_binary_text(4), font_size=32, color=YELLOW).move_to(binary_val)\n        self.play(\n            Transform(binary_val, new_binary),\n            Succession(\n                disk3.animate.move_to(self.grid[\"B2\"]),\n                disk3.animate.move_to(self.grid[\"B6\"]),\n                disk3.animate.move_to(self.grid[\"F6\"])\n            ),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(HIGHLIGHT_COLOR),\n            run_time=0.5\n        )\n        \n        # Fast forward Step 5 (100 -> 101): Disk 1 from Peg 2 to Peg 1\n        new_binary_5 = Text(get_binary_text(5), font_size=32, color=YELLOW).move_to(binary_val)\n        self.play(\n            Transform(binary_val, new_binary_5),\n            Succession(\n                disk1.animate.move_to(self.grid[\"B4\"]),\n                disk1.animate.move_to(self.grid[\"B2\"]),\n                disk1.animate.move_to(self.grid[\"F2\"])\n            ),\n            run_time=0.8\n        )\n        \n        # Fast forward Step 6 (101 -> 110): Disk 2 from Peg 2 to Peg 3\n        new_binary_6 = Text(get_binary_text(6), font_size=32, color=YELLOW).move_to(binary_val)\n        self.play(\n            Transform(binary_val, new_binary_6),\n            Succession(\n                disk2.animate.move_to(self.grid[\"B4\"]),\n                disk2.animate.move_to(self.grid[\"B6\"]),\n                disk2.animate.move_to(self.grid[\"E6\"])\n            ),\n            run_time=0.8\n        )\n\n        # Final Step 7: 111, Disk 1 from Peg 1 to Peg 3\n        new_binary_7 = Text(get_binary_text(7), font_size=32, color=YELLOW).move_to(binary_val)\n        self.play(\n            Transform(binary_val, new_binary_7),\n            Succession(\n                disk1.animate.move_to(self.grid[\"B2\"]),\n                disk1.animate.move_to(self.grid[\"B6\"]),\n                disk1.animate.move_to(self.grid[\"D6\"])\n            ),\n            run_time=1.5\n        )\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Initialize Scene\n        title_str = \"Conclusion: Mathematical Elegance\"\n        lines = [\n            \"Binary logic transforms a complex puzzle into simple counting.\",\n            \"Computers use this efficiency to solve recursive problems.\",\n            \"The Tower of Hanoi hides a binary heartbeat.\"\n        ]\n        self.setup_layout(title_str, lines)\n\n        # Colors for matching lecture lines with animation elements\n        bridge_color = \"#B0C4DE\"\n        tower_highlight = \"#FFA500\"\n        final_white = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        # Set matching color for line 1\n        self.lecture[0].set_color(bridge_color)\n        \n        # Create 'Binary Bridge' visual\n        # Top and bottom horizontal lines\n        top_line = Line(start=self.grid[\"B1\"], end=self.grid[\"B6\"], color=bridge_color, stroke_width=4)\n        bottom_line = Line(start=self.grid[\"D1\"], end=self.grid[\"D6\"], color=bridge_color, stroke_width=4)\n        \n        # Floating binary digits in between\n        digits = VGroup()\n        binary_pattern = [\"1\", \"0\", \"1\", \"1\", \"0\", \"1\"]\n        for idx, bit in enumerate(binary_pattern):\n            d_tex = Text(bit, font_size=32, color=WHITE)\n            # Use column indices 1 through 6 in Row C\n            self.place_at_grid(d_tex, f\"C{idx+1}\")\n            digits.add(d_tex)\n        \n        bridge_group = VGroup(top_line, bottom_line, digits)\n        \n        self.play(Create(top_line), Create(bottom_line), run_time=1.5)\n        self.play(FadeIn(digits, lag_ratio=0.15, shift=UP*0.2), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Update lecture line colors\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(tower_highlight)\n        \n        # Formula '2^n - 1' on the left side of the bridge area\n        formula = MathTex(\"2^n - 1\", color=WHITE, font_size=48)\n        self.place_in_area(formula, \"B1\", \"D2\")\n        \n        # 3-disk Tower of Hanoi stack on the right side of the bridge area\n        # Define internal structure relative to its own center, then place group\n        t_base = Line(LEFT, RIGHT, color=WHITE).scale(0.8)\n        t_peg = Line(DOWN*0.5, UP*1.0, color=WHITE)\n        d3 = Rectangle(width=1.2, height=0.2, color=\"#FF4500\", fill_opacity=1).shift(UP*0.1)\n        d2 = Rectangle(width=0.9, height=0.2, color=\"#FFA500\", fill_opacity=1).next_to(d3, UP, buff=0.05)\n        d1 = Rectangle(width=0.6, height=0.2, color=\"#FFD700\", fill_opacity=1).next_to(d2, UP, buff=0.05)\n        tower = VGroup(t_base, t_peg, d3, d2, d1)\n        # Position the whole tower in the right side area\n        self.place_in_area(tower, \"B5\", \"E6\")\n        \n        self.play(\n            Write(formula),\n            FadeIn(tower, shift=RIGHT),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Update lecture line colors\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(final_white)\n        \n        # Group bridge, formula, and tower\n        bridge_and_logic = VGroup(bridge_group, formula, tower)\n        \n        # Fade in the final 'Mathematical Elegance' title in the center of the grid area\n        final_conclusion_title = Text(\"Mathematical Elegance\", color=final_white, font_size=44)\n        self.place_in_area(final_conclusion_title, \"A1\", \"F6\")\n        \n        self.play(\n            bridge_and_logic.animate.scale(0.5).set_opacity(0.2),\n            FadeIn(final_conclusion_title, scale=1.1),\n            run_time=2.5\n        )\n        self.wait(5)\n"
+  ],
+  "outline": {
+    "topic": "The Binary Secret of the Towers of Hanoi",
+    "target_audience": "High school students and introductory Computer Science students",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Legend and the Rules",
+        "content": "Introduce the puzzle through the 'Legend of Brahma'. A character (a monk) must move 64 golden disks between three needles. Rules: 1. Move only one disk at a time. 2. A larger disk can never be placed on a smaller one. State the goal: How can we find the perfect sequence of moves without getting lost?",
+        "example": "Visualizing a monk at an ancient temple with three stone pillars and 3 colorful disks to start."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Binary Counter",
+        "content": "Explain binary counting (base-2) using a visual 3-bit flip-counter. Show how numbers increment from 000 to 111. Emphasize the 'rightmost bit' (the least significant bit) and how it toggles every step, while the second bit toggles every two steps, and so on.",
+        "example": "A series of 3 light bulbs where 'On' is 1 and 'Off' is 0, counting from 0 (off-off-off) to 7 (on-on-on)."
+      },
+      {
+        "id": "section_3",
+        "title": "The Mapping: Disks as Bits",
+        "content": "Establish the connection: The total number of moves for $n$ disks is $2^n - 1$. Map each disk to a bit position in a binary number. Disk 1 (smallest) corresponds to the 1st bit (2^0), Disk 2 to the 2nd bit (2^1), and so on. The 'Move Number' in binary tells us exactly which disk to touch.",
+        "example": "A graphic showing 3 disks stacked, with Disk 1 labeled 'Bit 0', Disk 2 'Bit 1', and Disk 3 'Bit 2'."
+      },
+      {
+        "id": "section_4",
+        "title": "The Rule of the Rightmost Set Bit",
+        "content": "Introduce the 'Magic Rule': To know which disk to move at any step $k$, look at the binary representation of $k$. The position of the 'rightmost 1' (the lowest set bit) identifies the disk. If the rightmost 1 is at the first position, move Disk 1. If it's at the second, move Disk 2.",
+        "example": "Step 4 in binary is '100'. The rightmost '1' is in the 3rd position. Therefore, at Step 4, you move Disk 3."
+      },
+      {
+        "id": "section_5",
+        "title": "Animated Walkthrough: 3-Disk Demo",
+        "content": "Sync a binary counter with the puzzle moves. Show the counter incrementing and the corresponding disk moving. Step 1 (001): Move Disk 1. Step 2 (010): Move Disk 2. Step 3 (011): Move Disk 1. Step 4 (100): Move Disk 3. Explain that Disk 1 always moves in a consistent cycle (A->B->C), while others follow based on availability.",
+        "example": "A split-screen animation: Left side shows a digital counter incrementing; Right side shows the physical disks jumping between pegs in real-time."
+      },
+      {
+        "id": "section_6",
+        "title": "Conclusion: Mathematical Elegance",
+        "content": "Summarize how binary counting transforms a complex recursive problem into a simple linear sequence. Highlight that this connection is why computers (which think in binary) are so efficient at solving recursive structures.",
+        "example": "A final graphic showing the 'Binary Bridge' connecting the world of numbers to the world of physical logic puzzles."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Legend and the Rules",
+      "lecture_lines": [
+        "Legend says monks move sixty-four disks between three pillars.",
+        "Only one disk moves at a time.",
+        "Larger disks cannot sit on smaller ones."
+      ],
+      "animations": [
+        "Draw three gray pillars (#808080) on a black background. Place a stack of three disks (Red #FF0000, Green #00FF00, Blue #0000FF) on the leftmost pillar.",
+        "Move the smallest Red disk (#FF0000) from the first pillar to the second pillar using a smooth arc.",
+        "Try to move the largest Blue disk (#0000FF) from the first pillar onto the Red disk on the second pillar. Show a red \"X\" (#FF0000) over the move and return the Blue disk to the first pillar.",
+        "Highlight all three pillars and the stack with a soft white glow (#FFFFFF) to emphasize the puzzle setup."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Binary Counter",
+      "lecture_lines": [
+        "Binary counting uses only zeros and ones.",
+        "In three bits, we count from zero to seven.",
+        "Notice how each bit toggles at a specific frequency."
+      ],
+      "animations": [
+        "Display the text '000' in the center with a light blue color (#ADD8E6).",
+        "Replace the digits with three circles. Initially, all are dark gray (#555555).",
+        "Animate the circles toggling between dark gray (#555555) and bright yellow (#FFFF00) as the counter increments from 001 to 111, with the corresponding binary string displayed above."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Mapping: Disks as Bits",
+      "lecture_lines": [
+        "Every disk corresponds to a specific binary bit.",
+        "Disk one is the rightmost, least significant bit.",
+        "Moving n disks requires two to the n minus one moves.",
+        "The current move number identifies which disk to move.",
+        "Watch as move numbers map to specific disks."
+      ],
+      "animations": [
+        "Display the formula 'Total Moves = 2^n - 1' in a bold white font (#FFFFFF) at the top of the screen.",
+        "Show three disks [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] stacked vertically. Label them from top to bottom: 'Disk 1', 'Disk 2', 'Disk 3' in light green (#90EE90).",
+        "Add a mapping label next to each disk [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg]: 'Disk 1 -> Bit 0', 'Disk 2 -> Bit 1', 'Disk 3 -> Bit 2' in a contrasting cyan (#00FFFF)."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Rule of the Rightmost Set Bit",
+      "lecture_lines": [
+        "To find the disk, write the move number in binary.",
+        "Find the position of the rightmost digit one.",
+        "Position one means move the smallest disk.",
+        "Position two means move the second smallest disk.",
+        "This pattern holds for every move in the puzzle."
+      ],
+      "animations": [
+        "Show the decimal number '4' and its binary equivalent '100' in large white text (#FFFFFF).",
+        "Underline the '1' in '100' with a gold color (#FFD700) and display the text 'Rightmost 1 at position 3' below it.",
+        "Show an arrow pointing from the gold '1' to a graphic of 'Disk 3' [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] (#1E90FF) to indicate it is the disk to move."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Animated Walkthrough: 3-Disk Demo",
+      "lecture_lines": [
+        "Move one is binary zero-zero-one; move disk one.",
+        "Move two is zero-one-zero; move disk two.",
+        "Move three is zero-one-one; move disk one again.",
+        "Move four is one-zero-zero; move disk three.",
+        "Binary counting guides every single disk placement perfectly."
+      ],
+      "animations": [
+        "Display 'Step 1: 001' on the left and move Disk 1 [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] (#FF6347) from Peg 1 to Peg 3 on the right.",
+        "Display 'Step 2: 010' and move Disk 2 [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] (#32CD32) from Peg 1 to Peg 2.",
+        "Display 'Step 3: 011' and move Disk 1 [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] (#FF6347) from Peg 3 to Peg 2.",
+        "Display 'Step 4: 100' and move Disk 3 [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] (#1E90FF) from Peg 1 to Peg 3.",
+        "Display 'Step 7: 111' and move the final Disk 1 [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] (#FF6347) to Peg 3, completing the stack."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Conclusion: Mathematical Elegance",
+      "lecture_lines": [
+        "Binary logic transforms a complex puzzle into simple counting.",
+        "Computers use this efficiency to solve recursive problems.",
+        "The Tower of Hanoi hides a binary heartbeat."
+      ],
+      "animations": [
+        "Create a 'Binary Bridge' visual using two horizontal lines (#B0C4DE) with binary digits (0, 1) floating between them.",
+        "Fade in a 3-disk Tower of Hanoi stack [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/tower.svg] on the right side of the bridge and the formula '2^n - 1' on the left side.",
+        "Group all elements and scale them down while a final 'Mathematical Elegance' title (#FFFFFF) fades in at the center."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 4 animation steps for section_1 based on the outline. Missing lecture lines did not block drafting."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section1Scene with 3 pillars, stack of 3 disks (Red, Green, Blue), and animations for legal move (arc) and illegal move (with red X and flash). Followed grid system and color coding."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animation steps for section_2 based on the outline."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented binary counter animation for section_2. Added 3-bit binary logic with toggling circles (#555555 to #FFFF00) and synced binary text (#ADD8E6). Applied color matching to lecture lines as per instructions."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 3 (key section)."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animation steps for section_3 based on the outline."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section3Scene with the mapping of Disks to Bits, the formula for total moves, and clear labels/visuals as per the storyboard."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 4 (key section)."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animation steps for section_4 based on the outline."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for Section 4, visualizing the 'Rightmost Set Bit' rule. Used decimal 4 (binary 100) as the primary example, pointing to Disk 3. Included references to Disk 1 and Disk 2 for general context. Used the 6x6 grid system for positioning."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 5 (key section)."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animation steps for section_5 (key section) based on the walkthrough outline."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section5Scene with a synced binary walkthrough of a 3-disk Towers of Hanoi solution. Disks 1, 2, and 3 are color-coded (#FF6347, #32CD32, #1E90FF) and move between three pegs based on the binary step count (001 to 111). Added a UI counter to display the binary steps alongside the disk movements."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animation steps for section_6 based on the conclusion outline."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_6. Implemented 'Binary Bridge' with floating digits, the '2^n - 1' formula, and a 3-disk Tower of Hanoi. Followed color matching and grid positioning rules. Added a final 'Mathematical Elegance' title animation."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Show three disks [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] stacked vertically. Label them from top to bottom: 'Disk 1', 'Disk 2', 'Disk 3' in light green (#90EE90).\", \"Add a mapping label next to each disk [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg]: 'Disk 1 -> Bit 0', 'Disk 2 -> Bit 1', 'Disk 3 -> Bit 2' in a contrasting cyan (#00FFFF).\"]",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Show an arrow pointing from the gold '1' to a graphic of 'Disk 3' [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] (#1E90FF) to indicate it is the disk to move.\"]",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Display 'Step 1: 001' on the left and move Disk 1 [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] (#FF6347) from Peg 1 to Peg 3 on the right.\", \"Display 'Step 2: 010' and move Disk 2 [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] (#32CD32) from Peg 1 to Peg 2.\", \"Display 'Step 3: 011' and move Disk 1 [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] (#FF6347) from Peg 3 to Peg 2.\", \"Display 'Step 4: 100' and move Disk 3 [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] (#1E90FF) from Peg 1 to Peg 3.\", \"Display 'Step 7: 111' and move the final Disk 1 [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/disk.svg] (#FF6347) to Peg 3, completing the stack.\"]",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 22,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Fade in a 3-disk Tower of Hanoi stack [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/tower.svg] on the right side of the bridge and the formula '2^n - 1' on the left side.\"]",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The binary digits (binary_val_text) and the toggle circles overlap in the same grid area C2-D5, making the counter hard to read. Fix: Line 59: self.place_in_area(self.binary_val_text, 'D2', 'D5') (line=59, object=binary_val_text)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Both the binary text and the circles overlap with the title (counter_text) in row C of the grid area. Fix: Line 76: self.place_in_area(self.circles, 'E2', 'E5') (line=76, object=circles)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The vertical separation between the binary conversion (Row B) and the disks (Row E) is too large, making the connecting arrow unnecessarily long and the relationship less clear. Fix: Line 91, 103, 116: Move the disks up to Row D. self.place_at_grid(disk1_group, 'D4'), self.place_at_grid(disk2_group, 'D5'), self.place_at_grid(disk3_group, 'D6') (line=91, object=disk1_group)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The right-side visual components are shifted slightly too far left, encroaching on the lecture text area and creating a crowded feel. Fix: Line 64, 65, 66: Shift the binary conversion one column to the right. self.place_at_grid(decimal_4, 'B4'), self.place_at_grid(arrow_to_bin, 'B5'), self.place_at_grid(binary_4, 'B6') (line=64, object=decimal_4)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The position label 'Rightmost 1 at position 3' is poorly aligned after shifting the binary objects and appears slightly too large for its space. Fix: Line 78: Realign and scale the label to stay directly under the binary number at column 6. self.place_at_grid(pos_label, 'C6', scale_factor=0.8) (line=78, object=pos_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The counter_label is currently positioned at A3, which is too central and may interfere with the parabolic animation paths of the disks as they move between pegs. Fix: Line 88: self.place_at_grid(counter_label, 'A5', scale_factor=1.0) (line=88, object=counter_label)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: Disks at the default scale appear crowded when stacked at D2, E2, and F2, and the largest disk (disk3) may risk clipping the screen edge if moved to Peg 3 (column 6). Fix: Line 82: self.place_at_grid(disk3, 'F2', scale_factor=0.8); Line 83: self.place_at_grid(disk2, 'E2', scale_factor=0.8); Line 84: self.place_at_grid(disk1, 'D2', scale_factor=0.8) (line=82, object=disk3, disk2, disk1)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The final_conclusion_title ('Mathematical Elegance' at the end) is assigned to the entire grid area (A1-F6), causing it to overlap and obscure both the formula and the tower animations. Fix: Line 122: self.place_in_area(final_conclusion_title, 'F1', 'F6', scale_factor=0.8) (line=122, object=final_conclusion_title)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The binary formula and tower animations have overlapping vertical grid assignments (B1-D2 and B5-E6), resulting in a cramped visual display. Fix: Line 92: self.place_in_area(formula, 'B1', 'C6', scale_factor=0.9) (line=92, object=formula)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The Tower of Hanoi asset is poorly positioned, potentially clashing with the binary sequence it represents. Fix: Line 103: self.place_in_area(tower, 'D4', 'E6', scale_factor=0.7) (line=103, object=tower)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Layout Imbalance and Obstruction Risk. The pillars and disks start from row C, leaving A and B empty. Also, disks at the bottom (D-F) may be obstructed by UI. Fix: Shift all pillars up to B-E (Lines 73-75: use grid rows B through E). Shift initial disk stack up to match (Lines 84-86: place d_blue at E2, d_green at D2, d_red at C2).",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Alignment Consistency. The formula at the top (A2-A5) is off-center relative to the disks and labels below (columns 2, 3, 5). Fix: Adjust 'formula' to cover A2-A6 (Line 118) to match the horizontal span of the content below.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 292880,
+        "video_mtime_ns": 1785733820000000000,
+        "code_sha1": "32af4114b97a0e7b59db5cba9b4a79214830ffd5"
+      },
+      "analysis": {
+        "raw_response": "```json\n{\n    \"layout\": {\n        \"has_issues\": true,\n        \"improvements\": [\n            {\n                \"problem\": \"The pillars and disks are positioned starting from row C, leaving rows A and B completely empty on the right side. This creates a visual imbalance and separates the pillars from the first lecture line mentioning them.\",\n                \"solution\": \"Shift all pillars up by one row to B-E: Line 73: self.place_in_area(p1, 'B2', 'E2'); Line 74: self.place_in_area(p2, 'B4', 'E4'); Line 75: self.place_in_area(p3, 'B6', 'E6')\",\n                \"line_number\": 73,\n                \"object_affected\": \"p1, p2, p3\"\n            },\n            {\n                \"problem\": \"The disks are currently stacked at the very bottom of the grid (rows D-F), which might be obstructed by video player controls or progress bars on some platforms.\",\n                \"solution\": \"Shift the initial disk stack up by one row to match the new pillar positions: Line 84: self.place_at_grid(d_blue, 'E2'); Line 85: self.place_at_grid(d_green, 'D2'); Line 86: self.place_at_grid(d_red, '"
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 360518,
+        "video_mtime_ns": 1785733828000000000,
+        "code_sha1": "5cf43824b6d5173ca80d022ea5a98dbfe50a11f5"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The binary digits (binary_val_text) and the toggle circles overlap in the same grid area C2-D5, making the counter hard to read.",
+              "solution": "Line 59: self.place_in_area(self.binary_val_text, 'D2', 'D5')",
+              "line_number": 59,
+              "object_affected": "binary_val_text"
+            },
+            {
+              "problem": "Both the binary text and the circles overlap with the title (counter_text) in row C of the grid area.",
+              "solution": "Line 76: self.place_in_area(self.circles, 'E2', 'E5')",
+              "line_number": 76,
+              "object_affected": "circles"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        23,
+        24
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 354730,
+        "video_mtime_ns": 1785733818000000000,
+        "code_sha1": "9ce441c7b05ccfacce6547972ba80cc4d2c5a9af"
+      },
+      "analysis": {
+        "raw_response": "', 'D6', ...)` for `m3` to define a proper container for the text.\n\nProblem 3: **Consistency of Alignment**. The `formula` at the top is A2-A5, while the disks/labels are at columns 2, 3, and 5. This is slightly off-center relative to the content below it.\nSolution: Line 118: Adjust `formula` to A2-A6 to match the horizontal span of the mapping labels if they are extended to column 6. Or just keep it as is if it looks balanced.\nActually, A2-A5 is fine.\n\nLet's look at the mapping logic again.\nDisk 1 -> Bit 0 (Top)\nDisk 2 -> Bit 1\nDisk 3 -> Bit 2 (Bottom)\nIn binary strings, Bit 0 is the rightmost.\nSo \"Disk 1\" is the \"rightmost\" in the binary representation.\nThe lecture says \"Disk one is the rightmost, least significant bit.\"\nThe visual stack is Disk 1 (top), Disk 2, Disk 3 (bottom).\nThis means the binary number is read from top to bottom (bit 0 at top, bit 2 at bottom).\nThis is 100% opposite of standard convention where top=MSB and bottom=LSB.\nHowever, I should not change the pedagogical order, just fix the layout.\n\nOne more check:\nLine 77"
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 261848,
+        "video_mtime_ns": 1785733816000000000,
+        "code_sha1": "7118271dc5ccff7e2aeb55f65fdfb4019390bdc4"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The vertical separation between the binary conversion (Row B) and the disks (Row E) is too large, making the connecting arrow unnecessarily long and the relationship less clear.",
+              "solution": "Line 91, 103, 116: Move the disks up to Row D. self.place_at_grid(disk1_group, 'D4'), self.place_at_grid(disk2_group, 'D5'), self.place_at_grid(disk3_group, 'D6')",
+              "line_number": 91,
+              "object_affected": "disk1_group"
+            },
+            {
+              "problem": "The right-side visual components are shifted slightly too far left, encroaching on the lecture text area and creating a crowded feel.",
+              "solution": "Line 64, 65, 66: Shift the binary conversion one column to the right. self.place_at_grid(decimal_4, 'B4'), self.place_at_grid(arrow_to_bin, 'B5'), self.place_at_grid(binary_4, 'B6')",
+              "line_number": 64,
+              "object_affected": "decimal_4"
+            },
+            {
+              "problem": "The position label 'Rightmost 1 at position 3' is poorly aligned after shifting the binary objects and appears slightly too large for its space.",
+              "solution": "Line 78: Realign and scale the label to stay directly under the binary number at column 6. self.place_at_grid(pos_label, 'C6', scale_factor=0.8)",
+              "line_number": 78,
+              "object_affected": "pos_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        25,
+        26,
+        27
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 413524,
+        "video_mtime_ns": 1785733916000000000,
+        "code_sha1": "e8c9f8857290c14efde6de0b09773dff3f16bcec"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The counter_label is currently positioned at A3, which is too central and may interfere with the parabolic animation paths of the disks as they move between pegs.",
+              "solution": "Line 88: self.place_at_grid(counter_label, 'A5', scale_factor=1.0)",
+              "line_number": 88,
+              "object_affected": "counter_label"
+            },
+            {
+              "problem": "Disks at the default scale appear crowded when stacked at D2, E2, and F2, and the largest disk (disk3) may risk clipping the screen edge if moved to Peg 3 (column 6).",
+              "solution": "Line 82: self.place_at_grid(disk3, 'F2', scale_factor=0.8); Line 83: self.place_at_grid(disk2, 'E2', scale_factor=0.8); Line 84: self.place_at_grid(disk1, 'D2', scale_factor=0.8)",
+              "line_number": 82,
+              "object_affected": "disk3, disk2, disk1"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        28,
+        29
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 184477,
+        "video_mtime_ns": 1785733805000000000,
+        "code_sha1": "7fb13e85124e375de20c5b956fcf0bdb47d332f4"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The final_conclusion_title ('Mathematical Elegance' at the end) is assigned to the entire grid area (A1-F6), causing it to overlap and obscure both the formula and the tower animations.",
+              "solution": "Line 122: self.place_in_area(final_conclusion_title, 'F1', 'F6', scale_factor=0.8)",
+              "line_number": 122,
+              "object_affected": "final_conclusion_title"
+            },
+            {
+              "problem": "The binary formula and tower animations have overlapping vertical grid assignments (B1-D2 and B5-E6), resulting in a cramped visual display.",
+              "solution": "Line 92: self.place_in_area(formula, 'B1', 'C6', scale_factor=0.9)",
+              "line_number": 92,
+              "object_affected": "formula"
+            },
+            {
+              "problem": "The Tower of Hanoi asset is poorly positioned, potentially clashing with the binary sequence it represents.",
+              "solution": "Line 103: self.place_in_area(tower, 'D4', 'E6', scale_factor=0.7)",
+              "line_number": 103,
+              "object_affected": "tower"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        30,
+        31,
+        32
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/15-The_Binary_Secret_of_the_Towers_of_Hanoi",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 362433,
+      "completion_tokens": 37030,
+      "total_tokens": 504631,
+      "call_count": 31
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 282,
+        "completion_tokens": 926,
+        "total_tokens": 2088,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 23625,
+        "completion_tokens": 1023,
+        "total_tokens": 26556,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 16493,
+        "completion_tokens": 1504,
+        "total_tokens": 20820,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 123430,
+        "completion_tokens": 2035,
+        "total_tokens": 128942,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 32616,
+        "completion_tokens": 6127,
+        "total_tokens": 40690,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 22777,
+        "completion_tokens": 2004,
+        "total_tokens": 32117,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 33750,
+        "completion_tokens": 2345,
+        "total_tokens": 42642,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 22923,
+        "completion_tokens": 2505,
+        "total_tokens": 34042,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 24071,
+        "completion_tokens": 3984,
+        "total_tokens": 38034,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 25687,
+        "completion_tokens": 6533,
+        "total_tokens": 41727,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4696,
+        "completion_tokens": 1088,
+        "total_tokens": 13781,
+        "call_count": 12
+      },
+      "scope_refine:section_5": {
+        "prompt_tokens": 13817,
+        "completion_tokens": 4985,
+        "total_tokens": 28242,
+        "call_count": 2
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3254,
+        "completion_tokens": 319,
+        "total_tokens": 11250,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 3069,
+        "completion_tokens": 228,
+        "total_tokens": 9028,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3047,
+        "completion_tokens": 318,
+        "total_tokens": 11043,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 2785,
+        "completion_tokens": 442,
+        "total_tokens": 8262,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3244,
+        "completion_tokens": 314,
+        "total_tokens": 9873,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2867,
+        "completion_tokens": 350,
+        "total_tokens": 5494,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 362433,
+        "completion_tokens": 37030,
+        "total_tokens": 504631,
+        "call_count": 31
+      }
+    }
+  }
+}

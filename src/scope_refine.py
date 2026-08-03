@@ -9,6 +9,138 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+EXCEPTION_SUMMARY_RE = re.compile(
+    r"^(?:[A-Za-z_][\w.]*\.)?([A-Za-z_][\w]*(?:Error|Exception|Warning))\s*:\s*(.*)$"
+)
+
+
+def _normalize_diagnostic_lines(error_msg: str) -> List[str]:
+    """Remove terminal presentation without discarding diagnostic content."""
+    lines = []
+    for raw_line in ANSI_ESCAPE_RE.sub("", error_msg or "").splitlines():
+        line = raw_line.strip().strip("│").strip()
+        if not line or set(line) <= set("─━═╭╮╰╯┌┐└┘"):
+            continue
+        lines.append(line)
+    return lines
+
+
+def _bounded_lines(lines: List[str], *, max_lines: int, max_chars: int) -> List[str]:
+    selected = lines[-max_lines:]
+    while selected and len("\n".join(selected)) > max_chars:
+        selected.pop(0)
+    return selected
+
+
+def build_compact_error_diagnostic(
+    error_msg: str,
+    code: str,
+    section_id: str,
+) -> Dict[str, Any]:
+    """Build the bounded diagnostic sent to the repair model.
+
+    Complete stderr remains in the caller's attempt artifact.  This function
+    removes rendering noise while preserving the evidence needed to repair the
+    generated section.
+    """
+    lines = _normalize_diagnostic_lines(error_msg)
+    lowered = "\n".join(lines).lower()
+    category = "unknown"
+    if "timed out" in lowered or "timeout" in lowered:
+        category = "timeout"
+    elif any(marker in lowered for marker in ("latex", "tex error", "converting to dvi", ".dvi")):
+        category = "latex"
+    elif "ffmpeg" in lowered:
+        category = "ffmpeg"
+    elif any(marker in lowered for marker in ("filenotfounderror", "no such file or directory", "file not found")):
+        category = "missing_asset"
+
+    exceptions = []
+    for line in lines:
+        match = EXCEPTION_SUMMARY_RE.match(line)
+        if match:
+            exceptions.append({"type": match.group(1), "message": match.group(2)[:1200]})
+    exceptions = exceptions[-3:]
+    if exceptions and category == "unknown":
+        exception_type = exceptions[-1]["type"]
+        category = {
+            "SyntaxError": "syntax",
+            "IndentationError": "syntax",
+            "TypeError": "runtime_type",
+            "AttributeError": "runtime_attribute",
+            "NameError": "runtime_name",
+            "IndexError": "runtime_index",
+            "ImportError": "runtime_import",
+        }.get(exception_type, "python_runtime")
+
+    frames = []
+    seen_frames = set()
+    conventional = re.compile(r'File "([^"]+\.py)", line (\d+)(?:, in ([\w<>]+))?')
+    rich = re.compile(r"([^\s│]+\.py):(\d+)(?:\s+in\s+([\w<>]+))?")
+    for line in lines:
+        match = conventional.search(line) or rich.search(line)
+        if not match:
+            continue
+        path, line_number, function = match.group(1), int(match.group(2)), match.group(3)
+        key = (path, line_number, function)
+        if key in seen_frames:
+            continue
+        seen_frames.add(key)
+        frames.append(
+            {
+                "file": path,
+                "line": line_number,
+                "function": function,
+                "generated_code": Path(path).name == f"{section_id}.py",
+            }
+        )
+
+    generated_frames = [frame for frame in frames if frame["generated_code"]][-2:]
+    framework_frames = [frame for frame in frames if not frame["generated_code"]][-1:]
+    source_context = []
+    if generated_frames:
+        code_lines = (code or "").splitlines()
+        line_number = generated_frames[-1]["line"]
+        start = max(1, line_number - 3)
+        end = min(len(code_lines), line_number + 3)
+        source_context = [
+            f"{number:4d} | {code_lines[number - 1]}"
+            for number in range(start, end + 1)
+        ]
+
+    if category == "latex":
+        diagnostic_indexes = [
+            index
+            for index, line in enumerate(lines)
+            if line.startswith("!")
+            or re.search(r"undefined control sequence|latex error|converting to dvi|\.tex\b", line, re.I)
+        ]
+        if diagnostic_indexes:
+            first = diagnostic_indexes[0]
+            primary = lines[max(0, first - 3) : first + 17]
+        else:
+            primary = _bounded_lines(lines, max_lines=20, max_chars=5000)
+    elif category == "ffmpeg":
+        primary = _bounded_lines(lines, max_lines=40, max_chars=6000)
+    elif category in {"timeout", "missing_asset"}:
+        primary = _bounded_lines(lines, max_lines=20, max_chars=4000)
+    elif exceptions:
+        primary = _bounded_lines(lines, max_lines=12, max_chars=3000)
+    else:
+        primary = _bounded_lines(lines, max_lines=60, max_chars=6000)
+
+    return {
+        "category": category,
+        "final_exception": exceptions[-1] if exceptions else None,
+        "exception_chain": exceptions[:-1],
+        "generated_frames": generated_frames,
+        "relevant_framework_frames": framework_frames,
+        "source_context": source_context,
+        "primary_diagnostic": primary,
+        "raw_stderr_retained_locally": True,
+    }
+
 
 def get_completion_only(result):
     """Return textual model output across legacy and Interactions adapters."""
@@ -162,21 +294,29 @@ class ManimCodeErrorAnalyzer:
     def _extract_relevant_code_block(self, code: str, error_info: Dict) -> str:
         """Extract the relevant code block based on the error information"""
         lines = code.split("\n")
+        line_number = error_info.get("line_number")
 
-        if error_info["fix_scope"] == "single_line" and error_info["line_number"]:
+        # Some Manim/Rich tracebacks omit or wrap the source line in a form
+        # that the parser cannot recover.  A missing location means the safe
+        # repair scope is the complete source; never pass None into the
+        # line-based extractors below.
+        if line_number is None:
+            return code
+
+        if error_info["fix_scope"] == "single_line":
             # Single line error: return the error line and surrounding lines
-            line_num = error_info["line_number"] - 1  # Convert to 0-indexed
+            line_num = line_number - 1  # Convert to 0-indexed
             start = max(0, line_num - 5)
             end = min(len(lines), line_num + 5)
             return "\n".join(lines[start:end])
 
         elif error_info["fix_scope"] == "function":
             # Function level error: find the function containing the error
-            return self._extract_function_containing_line(code, error_info["line_number"])
+            return self._extract_function_containing_line(code, line_number)
 
         elif error_info["fix_scope"] == "section":
             # Section level error: find the animation section containing the error
-            return self._extract_animation_section(code, error_info["line_number"])
+            return self._extract_animation_section(code, line_number)
 
         return code  # If the scope cannot be determined, return the entire code
 
@@ -418,6 +558,11 @@ class ScopeRefineFixer:
         """Generate high-quality fix prompt"""
         error_type, error_category, suggestions = self.classify_error(error_msg)
         error_context = self.extract_error_context(error_msg)
+        compact_diagnostic = build_compact_error_diagnostic(
+            error_msg,
+            current_code,
+            section_id,
+        )
 
         # Adjust fix strategy based on attempt number
         if attempt == 1:
@@ -445,9 +590,9 @@ class ScopeRefineFixer:
         - Attempt: {attempt}/3
         - Strategy: {strategy}
 
-        **Error Message:**
-        ```
-        {error_msg}
+        **Compact Error Diagnostic:**
+        ```json
+        {json.dumps(compact_diagnostic, ensure_ascii=False, indent=2)}
         ```
 
         **Current Code:**
@@ -607,6 +752,11 @@ class ScopeRefineFixer:
         # Enhanced error analysis information
         error_type, error_category, suggestions = self.classify_error(error_msg)
         error_context = self.extract_error_context(error_msg)
+        compact_diagnostic = build_compact_error_diagnostic(
+            error_msg,
+            code_block,
+            section_id,
+        )
 
         belief_block = f"""
 
@@ -626,9 +776,9 @@ class ScopeRefineFixer:
         - Fix Scope: {error_info.get('fix_scope', 'unknown')}
         - Suggested Fix: {error_info.get('suggested_fix', 'None')}
 
-        **Error Message:**
-        ```
-        {error_msg}
+        **Compact Error Diagnostic:**
+        ```json
+        {json.dumps(compact_diagnostic, ensure_ascii=False, indent=2)}
         ```
 
         **Error Context:**

@@ -12,6 +12,7 @@ import subprocess
 import sys
 from threading import Lock
 import time
+import traceback
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from type_utils import *
@@ -1505,7 +1506,14 @@ class CoderRuntime:
             except Exception as e:
                 elapsed_seconds = time.perf_counter() - render_started_at
                 last_elapsed_seconds = elapsed_seconds
-                last_error = str(e)
+                runtime_exception_message = str(e)
+                # If Manim already returned stderr and the subsequent repair
+                # machinery failed, retain the original render diagnostic in
+                # the attempt artifact instead of masking it with the
+                # secondary exception.
+                if not last_error:
+                    last_error = runtime_exception_message
+                exception_traceback = traceback.format_exc()
                 self._write_attempt_record(
                     section_id=section_id,
                     attempt_number=attempt_number,
@@ -1524,7 +1532,13 @@ class CoderRuntime:
                     },
                     command=command,
                 )
-                print(f"❌ {topic_prefix}{section_id} failed with exception: {e}", flush=True)
+                print(
+                    f"❌ {topic_prefix}{section_id} failed with exception: "
+                    f"{runtime_exception_message}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                print(exception_traceback, file=sys.stderr, flush=True)
                 break
 
         failure_result = {

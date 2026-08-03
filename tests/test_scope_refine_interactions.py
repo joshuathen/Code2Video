@@ -7,10 +7,75 @@ from types import SimpleNamespace
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from scope_refine import ScopeRefineFixer, get_completion_only  # noqa: E402
+from scope_refine import (  # noqa: E402
+    ManimCodeErrorAnalyzer,
+    ScopeRefineFixer,
+    build_compact_error_diagnostic,
+    get_completion_only,
+)
 
 
 class ScopeRefineInteractionsTests(unittest.TestCase):
+    def test_compacts_python_traceback_to_generated_frame_and_source(self):
+        code = "\n".join(
+            [
+                "class Section3Scene:",
+                "    def construct(self):",
+                "        value = 1",
+                "        self.play(None)",
+                "        return value",
+            ]
+        )
+        error = "\n".join(
+            [
+                'File "/tmp/section_3.py", line 4, in construct',
+                "    self.play(None)",
+                'File "/venv/manim/scene.py", line 100, in play',
+                "TypeError: Unexpected argument None",
+            ]
+        )
+
+        diagnostic = build_compact_error_diagnostic(error, code, "section_3")
+
+        self.assertEqual(diagnostic["category"], "runtime_type")
+        self.assertEqual(diagnostic["generated_frames"][0]["line"], 4)
+        self.assertTrue(any("self.play(None)" in line for line in diagnostic["source_context"]))
+        self.assertEqual(diagnostic["final_exception"]["type"], "TypeError")
+
+    def test_latex_diagnostic_is_bounded(self):
+        error = "\n".join(
+            ["startup noise"] * 100
+            + ["! Undefined control sequence.", "l.8 \\invalidcommand{x}"]
+            + ["latex error converting to dvi"]
+            + ["trailing noise"] * 100
+        )
+
+        diagnostic = build_compact_error_diagnostic(error, "", "section_1")
+
+        self.assertEqual(diagnostic["category"], "latex")
+        self.assertLessEqual(len(diagnostic["primary_diagnostic"]), 20)
+        self.assertTrue(
+            any("Undefined control sequence" in line for line in diagnostic["primary_diagnostic"])
+        )
+
+    def test_unknown_diagnostic_has_bounded_fallback(self):
+        error = "\n".join(f"unknown diagnostic line {index} " + "x" * 100 for index in range(200))
+
+        diagnostic = build_compact_error_diagnostic(error, "", "section_1")
+
+        self.assertEqual(diagnostic["category"], "unknown")
+        self.assertLessEqual(len("\n".join(diagnostic["primary_diagnostic"])), 6000)
+
+    def test_missing_error_line_uses_complete_source(self):
+        analyzer = ManimCodeErrorAnalyzer()
+        code = "def construct(self):\n    self.wait(1)"
+
+        result = analyzer.analyze_error(code, "TypeError: invalid argument")
+
+        self.assertIsNone(result["line_number"])
+        self.assertEqual(result["fix_scope"], "function")
+        self.assertEqual(result["relevant_code_block"], code)
+
     def test_extracts_tuple_wrapped_interactions_output_text(self):
         response = SimpleNamespace(
             output_text="```python\nfrom manim import *\n```",

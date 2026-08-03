@@ -1,0 +1,524 @@
+{
+  "topic": "From Average Speed to Instantaneous Change: The Magic of the Derivative",
+  "target_audience": "High school students or first-year university students",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Initial Setup\n        title = \"The Speedometer Paradox\"\n        lines = [\n            \"Calculating average speed needs distance over time.\",\n            \"But how fast is a cheetah exactly now?\",\n            \"The speedometer shows speed at a single instant.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Use YELLOW for current line\n        self.lecture[0].set_color(YELLOW)\n        \n        # Speedometer setup\n        speed_tracker = ValueTracker(0)\n        \n        # Speedometer Mobjects (Right side area D4 to F6)\n        arc = Arc(radius=1.2, start_angle=PI, angle=-PI, color=BLUE_B)\n        ticks = VGroup(*[\n            Line(arc.point_from_proportion(i/4), arc.point_from_proportion(i/4)*0.8, color=WHITE)\n            for i in range(5)\n        ])\n        \n        # Needle pivot is the arc center\n        needle = Line(ORIGIN, LEFT * 1.0, color=RED, stroke_width=5)\n        \n        speed_num = DecimalNumber(0, num_decimal_places=0, font_size=36, color=WHITE)\n        unit_label = Text(\"km/h\", font_size=18, color=GREY_B)\n        \n        speedometer = VGroup(arc, ticks, needle, speed_num, unit_label)\n        self.place_in_area(speedometer, \"D4\", \"F6\", scale_factor=0.8)\n        \n        # Post-placement positions for sub-elements\n        cp = arc.get_arc_center()\n        speed_num.move_to(cp + DOWN * 0.4)\n        unit_label.next_to(speed_num, DOWN, buff=0.1)\n        \n        # Efficient Updaters\n        speed_num.add_updater(lambda d: d.set_value(speed_tracker.get_value()))\n        \n        def update_needle(m):\n            val = speed_tracker.get_value()\n            angle = PI - (val / 100) * PI\n            length = 1.0 * 0.8 # Account for group scaling\n            new_end = cp + np.array([np.cos(angle), np.sin(angle), 0]) * length\n            m.set_points_as_corners([cp, new_end])\n        \n        needle.add_updater(update_needle)\n        \n        # Cheetah representation (Grid B1 to B6)\n        cheetah_body = Square(side_length=0.4, fill_color=ORANGE, fill_opacity=0.8, color=YELLOW)\n        cheetah_label = Text(\"Cheetah\", font_size=18, color=WHITE).next_to(cheetah_body, UP, buff=0.1)\n        cheetah = VGroup(cheetah_body, cheetah_label)\n        self.place_at_grid(cheetah, \"B1\")\n        \n        # Ground Path\n        path = Line(self.grid[\"B1\"], self.grid[\"B6\"], color=GREY_E, stroke_width=2)\n        dist_label = Text(\"Distance\", font_size=18, color=GREY_C).next_to(path, UP, buff=0.8)\n        \n        self.add(path, speedometer)\n        self.play(FadeIn(cheetah, dist_label))\n        \n        # Movement 1: Demonstrate \"Distance over Time\"\n        self.play(\n            cheetah.animate.move_to(self.grid[\"B6\"]),\n            speed_tracker.animate.set_value(100),\n            run_time=4,\n            rate_func=linear\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Update lecture colors\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Reset for the \"instantaneous\" demonstration\n        self.play(\n            cheetah.animate.move_to(self.grid[\"B1\"]),\n            speed_tracker.animate.set_value(0),\n            run_time=1\n        )\n        \n        # Move and freeze at \"4.5s\" mark (visualized as 75% through the path)\n        freeze_pos = self.grid[\"B1\"] + 0.75 * (self.grid[\"B6\"] - self.grid[\"B1\"])\n        \n        self.play(\n            cheetah.animate.move_to(freeze_pos),\n            speed_tracker.animate.set_value(100),\n            run_time=2.5,\n            rate_func=linear\n        )\n        \n        # Freeze action highlight\n        self.play(Indicate(cheetah, color=YELLOW, scale_factor=1.2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Update lecture colors\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Highlight speedometer value '100' with yellow glow (#FFFF00)\n        glow_rect = SurroundingRectangle(speed_num, color=\"#FFFF00\", buff=0.1, stroke_width=2)\n        \n        self.play(\n            speed_num.animate.set_color(\"#FFFF00\"),\n            Create(glow_rect)\n        )\n        \n        # Paradox text near cheetah (Red #FF0000)\n        paradox_text = Text(\"Distance/Time = 0/0?\", color=\"#FF0000\", font_size=28)\n        self.place_at_grid(paradox_text, \"C4\", scale_factor=0.9)\n        \n        self.play(Write(paradox_text))\n        self.play(Flash(paradox_text, color=\"#FF0000\"))\n        \n        self.wait(3)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Initialize layout with section details from storyboard\n        title = \"Prerequisite: The Slope of a Line\"\n        lines = [\n            \"- A straight line has a constant slope.\",\n            \"- We calculate slope as rise over run.\",\n            \"- This value represents a steady rate of change.\"\n        ]\n        self.setup_layout(title, lines)\n        \n        # Define colors from storyboard\n        COLOR_BLUE = \"#0000FF\"\n        COLOR_GREEN = \"#00FF00\"\n        COLOR_WHITE = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        # Color transition for the first lecture line\n        self.play(self.lecture[0].animate.set_color(COLOR_BLUE))\n        \n        # Line between (1,1) and (3,5) mapped to grid E2 and A4\n        # E2: x=1.5, y=-1.8 | A4: x=3.5, y=2.2 | Slope = (2.2 - -1.8) / (3.5 - 1.5) = 2.0\n        p1 = self.grid['E2']\n        p2 = self.grid['A4']\n        \n        blue_line = Line(p1, p2, color=COLOR_BLUE)\n        dot1 = Dot(p1, color=COLOR_BLUE)\n        dot2 = Dot(p2, color=COLOR_BLUE)\n        \n        # Point labels (1,1) and (3,5) positioned using grid\n        label1 = MathTex(\"(1, 1)\", font_size=20, color=COLOR_BLUE)\n        self.place_at_grid(label1, \"F2\", scale_factor=1.0)\n        \n        label2 = MathTex(\"(3, 5)\", font_size=20, color=COLOR_BLUE)\n        self.place_at_grid(label2, \"A5\", scale_factor=1.0)\n        \n        self.play(Create(blue_line), FadeIn(dot1, dot2))\n        self.play(Write(label1), Write(label2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Color transition for the second lecture line\n        self.play(self.lecture[1].animate.set_color(COLOR_GREEN))\n        \n        # Rise and Run visualization\n        p_corner = self.grid['E4'] # (3.5, -1.8)\n        \n        run_seg = Line(p1, p_corner, color=COLOR_GREEN)\n        rise_seg = Line(p_corner, p2, color=COLOR_GREEN)\n        \n        # Labels for Rise and Run segments\n        run_text = Text(\"Run\", font_size=18, color=COLOR_GREEN)\n        self.place_at_grid(run_text, \"F3\", scale_factor=1.0)\n        \n        rise_text = Text(\"Rise\", font_size=18, color=COLOR_GREEN)\n        self.place_at_grid(rise_text, \"C5\", scale_factor=1.0)\n        \n        self.play(Create(run_seg))\n        self.play(FadeIn(run_text))\n        self.play(Create(rise_seg))\n        self.play(FadeIn(rise_text))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Color transition for the third lecture line\n        self.play(self.lecture[2].animate.set_color(COLOR_WHITE))\n        \n        # Final slope value label\n        slope_label = MathTex(r\"\\text{Slope} = \\frac{\\text{Rise}}{\\text{Run}} = 2\", font_size=24, color=COLOR_WHITE)\n        self.place_in_area(slope_label, \"B5\", \"C6\", scale_factor=1.0)\n        \n        self.play(Write(slope_label))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Data from storyboard\n        title_text = \"The Secant Line Animation\"\n        lecture_lines = [\n            \"Most real-world movement follows a curved path.\",\n            \"A secant line connects two points on the curve.\",\n            \"Its slope shows the average speed between them.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors as specified\n        curve_color = \"#FFFFFF\"   # White\n        point_color = \"#ADD8E6\"   # Light Blue\n        secant_color = \"#0000FF\"  # Blue\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight matching the curve color\n        self.lecture[0].set_color(curve_color)\n\n        # Setup Axes\n        axes = Axes(\n            x_range=[0, 3, 1],\n            y_range=[0, 9, 2],\n            axis_config={\"include_tip\": True, \"color\": WHITE},\n            x_length=4,\n            y_length=4\n        )\n        self.place_in_area(axes, \"A1\", \"F6\")\n        \n        # Create curve y = x^2\n        curve = axes.plot(lambda x: x**2, x_range=[0, 2.5], color=curve_color)\n        curve_label = MathTex(\"y = x^2\", font_size=24, color=curve_color)\n        self.place_at_grid(curve_label, \"A6\")\n\n        self.play(Create(axes), Create(curve), Write(curve_label), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Update colors: dim previous, highlight current with point/line color\n        self.lecture[0].set_color(GRAY)\n        self.lecture[1].set_color(point_color)\n\n        # Points A and B with ValueTracker for B\n        x_a = 0.5\n        x_b_start = 2.0\n        x_b_tracker = ValueTracker(x_b_start)\n        \n        dot_a = Dot(axes.c2p(x_a, x_a**2), color=point_color)\n        label_a = MathTex(\"A\", font_size=24, color=point_color)\n        label_a.next_to(dot_a, LEFT, buff=0.1)\n        \n        dot_b = Dot(color=point_color)\n        dot_b.move_to(axes.c2p(x_b_start, x_b_start**2))\n        dot_b.add_updater(lambda d: d.move_to(axes.c2p(x_b_tracker.get_value(), x_b_tracker.get_value()**2)))\n        \n        label_b = MathTex(\"B\", font_size=24, color=point_color)\n        label_b.add_updater(lambda l: l.next_to(dot_b, RIGHT, buff=0.1))\n        \n        # Secant Line connecting A and B\n        secant_line = Line(axes.c2p(x_a, x_a**2), axes.c2p(x_b_start, x_b_start**2), color=secant_color, stroke_width=4)\n        \n        def update_secant(line):\n            start = axes.c2p(x_a, x_a**2)\n            end = axes.c2p(x_b_tracker.get_value(), x_b_tracker.get_value()**2)\n            line.set_points_by_ends(start, end)\n        \n        secant_line.add_updater(update_secant)\n\n        self.play(\n            FadeIn(dot_a), Write(label_a),\n            FadeIn(dot_b), Write(label_b),\n            Create(secant_line),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Update colors: dim previous, highlight current with secant color\n        self.lecture[1].set_color(GRAY)\n        self.lecture[2].set_color(secant_color)\n\n        # Label for the slope\n        slope_label = Text(\"Slope = Average Speed\", font_size=20, color=secant_color)\n        self.place_at_grid(slope_label, \"F2\")\n        \n        self.play(Write(slope_label))\n        self.wait(1)\n\n        # Animate point B sliding along the curve toward point A\n        self.play(\n            x_b_tracker.animate.set_value(0.7),\n            run_time=4,\n            rate_func=linear\n        )\n        self.wait(2)\n\n        # Final cleanup: keep colors or reset\n        self.play(self.lecture.animate.set_color(WHITE), run_time=1)\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Setup layout\n        title_text = \"The Concept of the Limit (h \\u2192 0)\"\n        lecture_lines = [\n            \"Let the distance between points be 'h'.\",\n            \"Watch as we move the points closer together.\",\n            \"As 'h' shrinks, the interval nearly disappears.\",\n            \"We are finding the limit as 'h' approaches zero.\",\n            \"The curve starts to look like a straight line.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors\n        COLOR_H = \"#FFFF00\"\n        COLOR_CURVE = \"#87CEEB\"\n        COLOR_POINT = \"#FF6347\"\n\n        # Coordinate system setup\n        ax = Axes(\n            x_range=[0, 3, 1],\n            y_range=[0, 3, 1],\n            axis_config={\"include_tip\": False},\n            x_length=5,\n            y_length=5\n        )\n        self.place_in_area(ax, \"A1\", \"F6\", scale_factor=0.8)\n\n        def func(x):\n            return 0.2 * x**2 + 0.5\n\n        curve = ax.plot(func, x_range=[0, 3], color=COLOR_CURVE)\n        \n        # Point A is fixed at a specific spot on the curve\n        ax_pos_a = [1.2, func(1.2)]\n        dot_a = Dot(ax.c2p(*ax_pos_a), color=COLOR_POINT)\n        label_a = MathTex(\"A\", font_size=24).next_to(dot_a, DL, buff=0.1)\n\n        # Value tracker for h (distance between points)\n        h_tracker = ValueTracker(1.2)\n\n        # Persistent mobjects for dynamic elements\n        dot_b = Dot(color=COLOR_POINT)\n        h_line = Line(color=COLOR_H, stroke_width=4)\n        h_label = MathTex(\"h\", color=COLOR_H, font_size=24)\n        secant = Line(color=WHITE, stroke_width=2)\n\n        # Updaters for dynamic elements\n        def update_dot_b(d):\n            h = h_tracker.get_value()\n            d.move_to(ax.c2p(ax_pos_a[0] + h, func(ax_pos_a[0] + h)))\n\n        def update_h_line(l):\n            h = h_tracker.get_value()\n            l.set_points_as_corners([\n                ax.c2p(ax_pos_a[0], ax_pos_a[1]),\n                ax.c2p(ax_pos_a[0] + h, ax_pos_a[1])\n            ])\n\n        def update_h_label(m):\n            m.next_to(h_line, DOWN, buff=0.1)\n\n        def update_secant(l):\n            p1 = ax.c2p(*ax_pos_a)\n            h = h_tracker.get_value()\n            p2 = ax.c2p(ax_pos_a[0] + h, func(ax_pos_a[0] + h))\n            vec = p2 - p1\n            if np.linalg.norm(vec) > 0.001:\n                u = vec / np.linalg.norm(vec)\n                l.set_points_as_corners([p1 - u * 1.5, p1 + u * 3.5])\n            else:\n                # Tangent fallback\n                p2_alt = ax.c2p(ax_pos_a[0] + 0.01, func(ax_pos_a[0] + 0.01))\n                u = (p2_alt - p1) / np.linalg.norm(p2_alt - p1)\n                l.set_points_as_corners([p1 - u * 1.5, p1 + u * 3.5])\n\n        dot_b.add_updater(update_dot_b)\n        h_line.add_updater(update_h_line)\n        h_label.add_updater(update_h_label)\n        secant.add_updater(update_secant)\n\n        # === Animation for Lecture Line 1 ===\n        # \"Let the distance between points be 'h'.\"\n        self.lecture[0].set_color(COLOR_H)\n        self.play(Create(ax), Create(curve))\n        self.play(FadeIn(dot_a), Write(label_a))\n        \n        # Zoom in on A as per storyboard\n        zoom_center = ax.c2p(*ax_pos_a)\n        all_visuals = VGroup(ax, curve, dot_a, label_a, dot_b, h_line, h_label)\n        \n        self.add(dot_b, h_line, h_label)\n        self.play(\n            all_visuals.animate.scale(2.5, about_point=zoom_center),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"Watch as we move the points closer together.\"\n        self.lecture[1].set_color(COLOR_H)\n        self.play(Create(secant))\n        self.play(h_tracker.animate.set_value(0.6), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"As 'h' shrinks, the interval nearly disappears.\"\n        self.lecture[2].set_color(COLOR_H)\n        self.play(h_tracker.animate.set_value(0.2), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # \"We are finding the limit as 'h' approaches zero.\"\n        self.lecture[3].set_color(COLOR_H)\n        self.play(h_tracker.animate.set_value(0.02), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # \"The curve starts to look like a straight line.\"\n        self.lecture[4].set_color(COLOR_H)\n        all_visuals.add(secant)\n        # Final zoom to emphasize the linearity\n        self.play(\n            all_visuals.animate.scale(2, about_point=zoom_center),\n            secant.animate.set_stroke(width=4),\n            run_time=3\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Section 5 Data\n        title = \"The Tangent Line and the Derivative\"\n        lecture_lines = [\n            \"The secant line finally becomes a tangent line.\",\n            \"It touches the curve at exactly one point.\",\n            \"This slope is the instantaneous rate of change.\",\n            \"We call this new value the derivative.\",\n            \"The formal limit definition defines this magic moment.\"\n        ]\n        \n        self.setup_layout(title, lecture_lines)\n        \n        # Colors\n        ORANGE = \"#FFA500\"\n        BLUE = \"#0000FF\"\n        YELLOW = \"#FFFF00\"\n        WHITE_COLOR = \"#FFFFFF\"\n\n        # Helper for lines\n        func = lambda x: 0.5 * x**2\n        \n        # === Animation for Lecture Line 1 ===\n        # Create Graph\n        axes = Axes(\n            x_range=[-0.5, 3.5, 1],\n            y_range=[-0.5, 4.5, 1],\n            axis_config={\"include_tip\": True}\n        ).scale(0.8)\n        self.place_in_area(axes, 'C2', 'F6', scale_factor=0.8)\n        \n        curve = axes.plot(func, x_range=[-0.2, 3], color=WHITE_COLOR)\n        \n        # Points for Secant\n        x_a = 1.0\n        x_b = 2.5\n        dot_a = Dot(axes.c2p(x_a, func(x_a)), color=RED)\n        dot_b = Dot(axes.c2p(x_b, func(x_b)), color=BLUE)\n        \n        # Label for Point A\n        label_a = MathTex(\"A\", font_size=24).next_to(dot_a, LEFT, buff=0.1)\n        \n        def get_line(x1, x2, color, length=4):\n            y1, y2 = func(x1), func(x2)\n            slope = (y2 - y1) / (x2 - x1) if abs(x2 - x1) > 0.0001 else x1\n            mid_x = (x1 + x2) / 2\n            mid_y = (y1 + y2) / 2\n            \n            angle = np.arctan(slope)\n            p1 = axes.c2p(mid_x - length/2 * np.cos(angle), mid_y - length/2 * np.sin(angle))\n            p2 = axes.c2p(mid_x + length/2 * np.cos(angle), mid_y + length/2 * np.sin(angle))\n            return Line(p1, p2, color=color)\n\n        secant_line = get_line(x_a, x_b, BLUE, length=3.5)\n\n        self.add(axes, curve, dot_a, dot_b, label_a, secant_line)\n        self.wait(1)\n\n        # Transition to Tangent\n        tangent_line = get_line(x_a, x_a, ORANGE, length=4.0)\n        \n        self.play(self.lecture[0].animate.set_color(ORANGE))\n        self.play(\n            Transform(secant_line, tangent_line),\n            dot_b.animate.move_to(dot_a.get_center()).set_opacity(0),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(ORANGE))\n        \n        tangent_label = Text(\"Tangent: Instantaneous Rate\", font_size=16, color=ORANGE)\n        self.place_at_grid(tangent_label, 'C5', scale_factor=0.9)\n        \n        self.play(Write(tangent_label))\n        self.play(Indicate(dot_a, color=ORANGE))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(WHITE_COLOR))\n        \n        # Formula: f'(x) = lim_{h -> 0} (f(x+h) - f(x)) / h\n        formula = MathTex(\n            \"f'(x)\", \"=\", \"\\\\lim_{h \\\\to 0}\", \"\\\\frac{f(x+h) - f(x)}{h}\",\n            font_size=32, color=WHITE_COLOR\n        )\n        self.place_in_area(formula, 'A2', 'B5', scale_factor=1.0)\n        \n        self.play(Write(formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # \"We call this new value the derivative.\"\n        self.play(self.lecture[3].animate.set_color(YELLOW))\n        \n        # Flash \"h -> 0\" (which is index 2 in formula parts)\n        self.play(formula[2].animate.set_color(YELLOW))\n        self.play(Flash(formula[2], color=YELLOW, flash_radius=0.3))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # \"The formal limit definition defines this magic moment.\"\n        self.play(self.lecture[4].animate.set_color(WHITE_COLOR))\n        \n        # Arrow from tangent slope to f'(x)\n        arrow = Arrow(\n            start=tangent_label.get_top(),\n            end=formula[0].get_bottom(),\n            color=WHITE_COLOR,\n            buff=0.1\n        )\n        self.play(Create(arrow))\n        self.play(Indicate(formula[0], color=ORANGE))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Data from storyboard\n        title = \"Application: The Rocket Launch\"\n        lecture_lines = [\n            \"Derivatives calculate precise changes in real-time.\",\n            \"This rocket's speed changes at every single moment.\",\n            \"The derivative gives the exact velocity needed.\"\n        ]\n        \n        self.setup_layout(title, lecture_lines)\n        \n        # Colors\n        PATH_COLOR = \"#FFFFFF\"\n        TANGENT_COLOR = \"#FFA500\"\n        ROCKET_COLOR = \"#FFFFFF\"\n        HIGHLIGHT_COLOR = YELLOW\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight first line\n        self.lecture[0].set_color(HIGHLIGHT_COLOR)\n        \n        # Define the parabolic path: y = 0.12(x-0.5)^2 - 1.8\n        # Domain x in [0.5, 5.5]\n        path = ParametricFunction(\n            lambda t: np.array([\n                t, \n                0.12 * (t - 0.5)**2 - 1.8, \n                0\n            ]),\n            t_range=[0.5, 5.5],\n            color=PATH_COLOR\n        )\n        \n        # Represent rocket as a simple triangle\n        rocket = Triangle(color=ROCKET_COLOR, fill_opacity=1).scale(0.2)\n        rocket.rotate(-PI/2) # Orient to point along the x-axis initially\n        \n        # Setup position tracker\n        t_tracker = ValueTracker(0) # proportion from 0 to 1\n        \n        def get_pos():\n            return path.point_from_proportion(t_tracker.get_value())\n            \n        def get_angle():\n            # Derivative at proportion p (x = 0.5 + 5p)\n            # dy/dx = 0.24 * (x - 0.5)\n            p = t_tracker.get_value()\n            x = 0.5 + 5 * p\n            slope = 0.24 * (x - 0.5)\n            return np.arctan2(slope, 1)\n\n        # Move rocket to start\n        rocket.move_to(path.get_start())\n        rocket.set_angle(get_angle())\n\n        self.play(Create(path), run_time=2)\n        self.play(FadeIn(rocket))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight second line\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(HIGHLIGHT_COLOR)\n        \n        # Tangent line representing velocity\n        tangent_line = Line(LEFT, RIGHT, color=TANGENT_COLOR, stroke_width=4).scale(1.2)\n        \n        # Add updaters for smooth motion\n        rocket.add_updater(lambda m: m.move_to(get_pos()))\n        rocket.add_updater(lambda m: m.set_angle(get_angle()))\n        \n        tangent_line.add_updater(lambda m: m.move_to(get_pos()))\n        tangent_line.add_updater(lambda m: m.set_angle(get_angle()))\n        \n        self.play(FadeIn(tangent_line))\n        # Move along part of the path\n        self.play(t_tracker.animate.set_value(0.4), run_time=2, rate_func=linear)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Highlight third line\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(HIGHLIGHT_COLOR)\n        \n        # Slope value indicator\n        slope_label = MathTex(r\"v = \", color=TANGENT_COLOR)\n        self.place_at_grid(slope_label, \"A5\", scale_factor=0.8) # Positioning in top right grid area\n        \n        slope_value = DecimalNumber(0, color=TANGENT_COLOR, num_decimal_places=2)\n        slope_value.next_to(slope_label, RIGHT)\n        \n        # Update function for the decimal number\n        def update_slope_val(m):\n            p = t_tracker.get_value()\n            x = 0.5 + 5 * p\n            slope = 0.24 * (x - 0.5)\n            m.set_value(slope)\n            \n        slope_value.add_updater(update_slope_val)\n        \n        self.play(FadeIn(slope_label), FadeIn(slope_value))\n        \n        # Finish ascent\n        self.play(t_tracker.animate.set_value(1.0), run_time=3, rate_func=smooth)\n        self.wait(3)\n        \n        # Clean up\n        rocket.clear_updaters()\n        tangent_line.clear_updaters()\n        slope_value.clear_updaters()\n"
+  ],
+  "outline": {
+    "topic": "From Average Speed to Instantaneous Change: The Magic of the Derivative",
+    "target_audience": "High school students or first-year university students",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Speedometer Paradox",
+        "content": "Introduce the concept of 'speed at an exact moment' through a relatable scenario. Explain that while average speed is distance over time, a speedometer shows a value for a single point in time where the time elapsed is zero.",
+        "example": "A cheetah chasing a gazelle. We can calculate its average speed over 10 seconds, but how fast is it moving exactly at the 4.5-second mark? The speedometer shows a specific number even though 'time' hasn't passed yet at that 'instant'."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Slope of a Line",
+        "content": "Review the fundamental concept of slope (Rise over Run). Establish that for a straight line, the rate of change is constant and easy to calculate using two points (x1, y1) and (x2, y2).",
+        "example": "An animation of a climber walking up a steady mountain slope. The slope is calculated as (Change in Height) / (Horizontal Distance). This visual establishes the baseline for 'Rate of Change'."
+      },
+      {
+        "id": "section_3",
+        "title": "The Secant Line Animation",
+        "content": "Transition to a curved graph (distance vs. time). Introduce the 'Secant Line'—a line connecting two points on the curve. Explain that the slope of the secant represents the 'Average Rate of Change' between those two points.",
+        "example": "On a graph of y = x², plot points A and B. Draw a blue line through them. Show that as point B moves closer to point A along the curve, the line changes its tilt."
+      },
+      {
+        "id": "section_4",
+        "title": "The Concept of the Limit (h → 0)",
+        "content": "Visually demonstrate the 'Shrinking Interval'. As the horizontal distance (h) between point A and point B approaches zero, the two points almost merge. This is the 'Limit'—the core of the derivative.",
+        "example": "A magnifying glass effect zooming into the curve at point A. As we zoom in, the curve starts to look like a straight line. The interval 'h' is shown as a shrinking slider moving toward 0."
+      },
+      {
+        "id": "section_5",
+        "title": "The Tangent Line and the Derivative",
+        "content": "Define the Instantaneous Rate of Change as the slope of the Tangent Line (the line that touches the curve at exactly one point). Formally introduce the derivative notation and the limit definition formula.",
+        "example": "The blue secant line from Section 3 turns bright orange and snaps into a 'Tangent' position. The formula f'(x) = lim(h->0) [f(x+h)-f(x)]/h appears, with visual labels connecting the formula parts to the graph's geometry."
+      },
+      {
+        "id": "section_6",
+        "title": "Application: The Rocket Launch",
+        "content": "Summarize how derivatives allow us to calculate precise changes in real-time. Emphasize that the derivative is simply a function that gives us the 'slope' or 'rate' at any given point.",
+        "example": "A rocket launching into space. The curve represents its position. The derivative at any point 't' tells the mission control the rocket's exact instantaneous velocity, ensuring it reaches the correct orbit."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Speedometer Paradox",
+      "lecture_lines": [
+        "Calculating average speed needs distance over time.",
+        "But how fast is a cheetah *exactly* now?",
+        "The speedometer shows speed at a single instant."
+      ],
+      "animations": [
+        "Show a cheetah [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cheetah.svg] running across the screen.",
+        "Display a speedometer [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/speed.svg] showing 100 km/h.",
+        "Freeze the action at 4.5 seconds.",
+        "Highlight the speedometer [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/speed.svg] value '100' with a yellow glow (#FFFF00).",
+        "The text 'Distance/Time = 0/0?' appears in red (#FF0000) near the cheetah [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cheetah.svg]."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Slope of a Line",
+      "lecture_lines": [
+        "A straight line has a constant slope.",
+        "We calculate slope as rise over run.",
+        "This value represents a steady rate of change."
+      ],
+      "animations": [
+        "Draw a straight line with points (1,1) and (3,5) in blue (#0000FF).",
+        "Animate 'Rise' (vertical) and 'Run' (horizontal) segments in green (#00FF00).",
+        "Label 'Slope = 2' in white (#FFFFFF) next to the line."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Secant Line Animation",
+      "lecture_lines": [
+        "Most real-world movement follows a curved path.",
+        "A secant line connects two points on the curve.",
+        "Its slope shows the average speed between them."
+      ],
+      "animations": [
+        "Plot a curve y = x^2 in white (#FFFFFF).",
+        "Mark points A and B on the curve in light blue (#ADD8E6).",
+        "Draw a blue (#0000FF) secant line passing through A and B.",
+        "Animate point B, represented by a vehicle [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/vehicle.svg], sliding along the curve toward point A.",
+        "The secant line's tilt updates dynamically as B moves towards A."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Concept of the Limit (h → 0)",
+      "lecture_lines": [
+        "Let the distance between points be 'h'.",
+        "Watch as we move the points closer together.",
+        "As 'h' shrinks, the interval nearly disappears.",
+        "We are finding the limit as 'h' approaches zero.",
+        "The curve starts to look like a straight line."
+      ],
+      "animations": [
+        "Zoom in on the region around point A to show the curve's detail.",
+        "Show a horizontal segment 'h' between A and B in yellow (#FFFF00).",
+        "Animate 'h' shrinking until it reaches zero, making the curve look linear."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Tangent Line and the Derivative",
+      "lecture_lines": [
+        "The secant line finally becomes a tangent line.",
+        "It touches the curve at exactly one point.",
+        "This slope is the instantaneous rate of change.",
+        "We call this new value the derivative.",
+        "The formal limit definition defines this magic moment."
+      ],
+      "animations": [
+        "The blue secant line turns into a bright orange (#FFA500) tangent line at point A.",
+        "Label the line as 'Tangent: Instantaneous Rate' in orange (#FFA500).",
+        "Display the derivative formula f'(x) = lim(h->0) [f(x+h)-f(x)]/h in white (#FFFFFF).",
+        "Flash the 'h to 0' part of the formula in yellow (#FFFF00) to emphasize the limit.",
+        "An arrow points from the tangent slope to the f'(x) result in the formula."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Application: The Rocket Launch",
+      "lecture_lines": [
+        "Derivatives calculate precise changes in real-time.",
+        "This rocket's speed changes at every single moment.",
+        "The derivative gives the exact velocity needed."
+      ],
+      "animations": [
+        "Show a rocket [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/rocket.svg] taking off along a parabolic path in white (#FFFFFF).",
+        "Draw a tangent line at a point on the path in orange (#FFA500) representing velocity.",
+        "The tangent line's slope value updates as the rocket [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/rocket.svg] ascends."
+      ]
+    }
+  ],
+  "turns_run": 1,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and example. Ready for review."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated initial Manim code for section_1. Implemented Cheetah movement, speedometer with ValueTracker/Updaters, and the '0/0' paradox highlight using the 6x6 grid system."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and example. Ready for review."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated complete Manim code for Section 2, following the storyboard and constraints. Used grid-based positioning (A1-F6) for all elements and matched lecture line colors with animation elements."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and example. Ready for review."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for Section 3 following the storyboard and lecture lines. Implemented y=x^2 curve, points A and B, and a dynamic secant line using ValueTracker and add_updater. Used the 6x6 grid system for positioning. Matched lecture line colors with visual elements."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 4 (Key Section)."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and example. Ready for review."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated complete Manim code for Section 4 following the storyboard and visual anchor system. Implemented persistent mobjects with updaters for 'h' line, 'h' label, dot B, and the secant line. Simulated a zoom effect to show linearity as h approaches zero."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 5 (Key Section)."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and example. Ready for review."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Section5Scene with secant-to-tangent transition, tangent label, and the formal limit definition formula. Applied requested color mapping to lecture lines and animations. Used the 6x6 grid system for layout."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations drafted based on section outline and example. Ready for review."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_6 using the grid system. Implemented the rocket launch animation with a dynamic tangent line and slope display."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a cheetah [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cheetah.svg] running across the screen.', 'Display a speedometer [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/speed.svg] showing 100 km/h.', \"Highlight the speedometer [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/speed.svg] value '100' with a yellow glow (#FFFF00).\", \"The text 'Distance/Time = 0/0?' appears in red (#FF0000) near the cheetah [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cheetah.svg].\"]",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Animate point B, represented by a vehicle [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/vehicle.svg], sliding along the curve toward point A.']",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a rocket [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/rocket.svg] taking off along a parabolic path in white (#FFFFFF).', \"The tangent line's slope value updates as the rocket [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/rocket.svg] ascends.\"]",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/7-From_Average_Speed_to_Instantaneous_Change_The_Magic_of_the_Derivative/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/7-From_Average_Speed_to_Instantaneous_Change_The_Magic_of_the_Derivative/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/7-From_Average_Speed_to_Instantaneous_Change_The_Magic_of_the_Derivative/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/7-From_Average_Speed_to_Instantaneous_Change_The_Magic_of_the_Derivative/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/7-From_Average_Speed_to_Instantaneous_Change_The_Magic_of_the_Derivative/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/7-From_Average_Speed_to_Instantaneous_Change_The_Magic_of_the_Derivative/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_114800/7-From_Average_Speed_to_Instantaneous_Change_The_Magic_of_the_Derivative",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 263558,
+      "completion_tokens": 33796,
+      "total_tokens": 362762,
+      "call_count": 23
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 279,
+        "completion_tokens": 849,
+        "total_tokens": 1980,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 13359,
+        "completion_tokens": 1008,
+        "total_tokens": 15386,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 24819,
+        "completion_tokens": 1146,
+        "total_tokens": 27540,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 18152,
+        "completion_tokens": 544,
+        "total_tokens": 19501,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 21688,
+        "completion_tokens": 4461,
+        "total_tokens": 33690,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 34271,
+        "completion_tokens": 4061,
+        "total_tokens": 45058,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 22448,
+        "completion_tokens": 4465,
+        "total_tokens": 34362,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 37675,
+        "completion_tokens": 4007,
+        "total_tokens": 50561,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 39423,
+        "completion_tokens": 3443,
+        "total_tokens": 52776,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 41657,
+        "completion_tokens": 7015,
+        "total_tokens": 56559,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4073,
+        "completion_tokens": 813,
+        "total_tokens": 14774,
+        "call_count": 12
+      },
+      "scope_refine:section_5": {
+        "prompt_tokens": 5714,
+        "completion_tokens": 1984,
+        "total_tokens": 10575,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 263558,
+        "completion_tokens": 33796,
+        "total_tokens": 362762,
+        "call_count": 23
+      }
+    }
+  }
+}

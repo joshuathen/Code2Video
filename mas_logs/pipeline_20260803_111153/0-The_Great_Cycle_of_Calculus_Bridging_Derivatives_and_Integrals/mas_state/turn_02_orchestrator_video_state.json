@@ -1,0 +1,1188 @@
+{
+  "topic": "The Great Cycle of Calculus: Bridging Derivatives and Integrals",
+  "target_audience": "High school seniors or first-year university students",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # --- Setup ---\n        title = \"The Hook: The Speeding Cheetah\"\n        lines = [\n            \"A cheetah sprints across the savannah at high speed.\",\n            \"The speedometer measures its instantaneous rate of change.\",\n            \"This specific value is known as the derivative.\",\n            \"The total distance covered represents the accumulated change.\",\n            \"In calculus, this total accumulation is called the integral.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Shared value tracker for time/progress\n        time_tracker = ValueTracker(0)\n\n        # Velocity function: v(t) = 0.2*t^2 + 1 (Smooth acceleration)\n        def velocity_func(t):\n            return 0.15 * t**2 + 1\n\n        # --- Animation for Lecture Line 1 ---\n        # \"A cheetah sprints across the savannah at high speed.\"\n        self.lecture[0].set_color(ORANGE)\n        \n        # Representing cheetah with a simple triangle and label\n        cheetah_body = Triangle(color=ORANGE, fill_opacity=1).rotate(-PI/2).scale(0.2)\n        cheetah_label = Text(\"Cheetah\", font_size=16, color=ORANGE)\n        cheetah = VGroup(cheetah_body, cheetah_label)\n        cheetah_label.next_to(cheetah_body, UP, buff=0.1)\n\n        # Path: Bottom grid row F1 to F6\n        start_pos = self.grid[\"F1\"]\n        end_pos = self.grid[\"F6\"]\n        cheetah.move_to(start_pos)\n\n        self.play(FadeIn(cheetah))\n        # Initial run to show the cheetah moving\n        self.play(cheetah.animate.move_to(end_pos), run_time=3, rate_func=slow_into)\n        self.wait(0.5)\n\n        # --- Animation for Lecture Line 2 ---\n        # \"The speedometer measures its instantaneous rate of change.\"\n        self.lecture[1].set_color(WHITE)\n        \n        axes = Axes(\n            x_range=[0, 4, 1],\n            y_range=[0, 4, 1],\n            x_length=4.5,\n            y_length=3.0,\n            axis_config={\"color\": WHITE, \"include_tip\": True},\n            tips=False\n        )\n        axes_labels = axes.get_axis_labels(\n            x_label=Text(\"Time\", font_size=16), \n            y_label=Text(\"Speed\", font_size=16)\n        )\n        graph_group = VGroup(axes, axes_labels)\n        # Position graph in the upper/middle area\n        self.place_in_area(graph_group, \"A1\", \"D6\", scale_factor=0.9)\n        \n        curve = axes.plot(velocity_func, x_range=[0, 4], color=WHITE)\n        \n        self.play(Create(axes), Write(axes_labels))\n        self.play(Create(curve))\n        self.wait(1)\n\n        # --- Animation for Lecture Line 3 ---\n        # \"This specific value is known as the derivative.\"\n        self.lecture[2].set_color(\"#00FF00\")\n        \n        # Reset time and cheetah for the synchronized demonstration\n        time_tracker.set_value(0)\n        cheetah.move_to(start_pos)\n        \n        # Point on the graph curve\n        dot_on_graph = Dot(color=\"#00FF00\")\n        dot_on_graph.add_updater(lambda d: d.move_to(\n            axes.c2p(time_tracker.get_value(), velocity_func(time_tracker.get_value()))\n        ))\n        \n        # Highlight on the y-axis\n        h_line = always_redraw(lambda: axes.get_horizontal_line(\n            dot_on_graph.get_center(), color=\"#00FF00\", stroke_width=2\n        ))\n        \n        y_axis_dot = Dot(color=\"#00FF00\", radius=0.06)\n        y_axis_dot.add_updater(lambda d: d.move_to(\n            axes.c2p(0, velocity_func(time_tracker.get_value()))\n        ))\n        \n        deriv_label = Text(\"Derivative (Speed)\", font_size=14, color=\"#00FF00\")\n        # Position label relative to the y-axis point\n        deriv_label.add_updater(lambda l: l.next_to(y_axis_dot, LEFT, buff=0.1))\n\n        # Sync cheetah movement with the time tracker\n        cheetah.add_updater(lambda m: m.move_to(\n            start_pos + (end_pos - start_pos) * (time_tracker.get_value() / 4.0)\n        ))\n\n        self.add(dot_on_graph, h_line, y_axis_dot, deriv_label)\n        self.play(time_tracker.animate.set_value(4), run_time=5, rate_func=linear)\n        self.wait(1)\n\n        # --- Animation for Lecture Line 4 ---\n        # \"The total distance covered represents the accumulated change.\"\n        self.lecture[3].set_color(\"#FFFF00\")\n        \n        # Shade the area under the curve\n        shaded_area = axes.get_area(curve, x_range=[0, 4], color=\"#FFFF00\", opacity=0.3)\n        \n        self.play(FadeIn(shaded_area))\n        self.wait(1)\n\n        # --- Animation for Lecture Line 5 ---\n        # \"In calculus, this total accumulation is called the integral.\"\n        self.lecture[4].set_color(\"#FFFF00\")\n        \n        integral_label = Text(\"Integral (Distance)\", font_size=18, color=\"#FFFF00\")\n        # Place label inside or near the shaded area\n        self.place_at_grid(integral_label, \"C4\")\n        \n        self.play(Write(integral_label))\n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        title = \"Prerequisite Recap: The Slope of Change\"\n        lines = [\n            \"Differentiation helps us calculate the rate of change.\",\n            \"Graphically, the derivative is the slope of the tangent.\",\n            \"It transforms a position function into a velocity function.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        POSITION_COLOR = \"#ADD8E6\"\n        VELOCITY_COLOR = \"#FFA500\"\n        HIGHLIGHT_COLOR = YELLOW\n\n        # === Animation for Lecture Line 1 ===\n        # \"Differentiation helps us calculate the rate of change.\"\n        self.play(self.lecture[0].animate.set_color(HIGHLIGHT_COLOR))\n        \n        # Create axes for the graph\n        axes = Axes(\n            x_range=[0, 5, 1],\n            y_range=[0, 5, 1],\n            axis_config={\"include_tip\": True, \"color\": WHITE},\n            x_length=4,\n            y_length=4\n        )\n        self.place_in_area(axes, \"B2\", \"E5\")\n        \n        # Position-time curve (a hiker climbing)\n        # f(x) = 0.2*x^2\n        curve = axes.plot(lambda x: 0.2 * x**2, x_range=[0, 4.5], color=POSITION_COLOR)\n        \n        # Labels for axes\n        x_label = Text(\"Time (t)\", font_size=16).next_to(axes.x_axis, DOWN, buff=0.2)\n        y_label = Text(\"Position (s)\", font_size=16).rotate(90 * DEGREES).next_to(axes.y_axis, LEFT, buff=0.2)\n        \n        self.play(Create(axes), Create(x_label), Create(y_label))\n        self.play(Create(curve))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"Graphically, the derivative is the slope of the tangent.\"\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(HIGHLIGHT_COLOR)\n        )\n        \n        # Tangent point at t=3\n        t_val = 3.0\n        point_on_curve = axes.c2p(t_val, 0.2 * t_val**2)\n        dot = Dot(point_on_curve, color=WHITE)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\n            \"The Inverse Concept: Working Backwards\", \n            [\n                \"Integration is the inverse process of finding the derivative.\",\n                \"If we have velocity, we can recover total distance.\",\n                \"We call this process anti-differentiation or finding the integral.\"\n            ]\n        )\n        \n        # Colors for consistency\n        LINE1_COLOR = WHITE\n        LINE2_COLOR = \"#87CEEB\" # Light blue\n        LINE3_COLOR = \"#90EE90\" # Light green\n        MACHINE_COLOR = \"#C0C0C0\"\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(LINE1_COLOR)\n        \n        # Create Function Machine\n        machine_box = RoundedRectangle(corner_radius=0.2, width=3.5, height=4, color=MACHINE_COLOR, fill_opacity=0.1)\n        self.place_in_area(machine_box, \"B2\", \"E5\")\n        \n        machine_label = Text(\"FUNCTION MACHINE\", font_size=20, color=MACHINE_COLOR)\n        # Position label manually relative to machine box to ensure it fits the visual style\n        machine_label.move_to(machine_box.get_top() + DOWN * 0.4)\n        \n        # Levers\n        derivative_lever = VGroup(\n            Line(LEFT*0.3, RIGHT*0.3, color=LINE2_COLOR),\n            Circle(radius=0.1, color=LINE2_COLOR, fill_opacity=1)\n        ).move_to(machine_box.get_right() + LEFT*0.3 + UP*0.5)\n        \n        derivative_text = Text(\"Derivative\", font_size=16, color=LINE2_COLOR)\n        derivative_text.next_to(derivative_lever, LEFT, buff=0.1)\n        \n        integral_lever = VGroup(\n            Line(LEFT*0.3, RIGHT*0.3, color=LINE3_COLOR),\n            Circle(radius=0.1, color=LINE3_COLOR, fill_opacity=1)\n        ).move_to(machine_box.get_right() + LEFT*0.3 + DOWN*0.5)\n        \n        integral_text = Text(\"Integral\", font_size=16, color=LINE3_COLOR)\n        integral_text.next_to(integral_lever, LEFT, buff=0.1)\n\n        self.play(\n            Create(machine_box),\n            Write(machine_label),\n            FadeIn(derivative_lever),\n            FadeIn(derivative_text),\n            FadeIn(integral_lever),\n            FadeIn(integral_text),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(LINE2_COLOR)\n        \n        # x^2 enters\n        input_x2 = MathTex(\"x^2\", color=WHITE)\n        self.place_at_grid(input_x2, \"C1\")\n        \n        self.play(FadeIn(input_x2))\n        self.play(input_x2.animate.move_to(machine_box.get_center()), run_time=1)\n        \n        # Lever pull animation\n        self.play(\n            derivative_lever.animate.shift(DOWN * 0.2),\n            derivative_text.animate.set_color(YELLOW),\n            rate_func=there_and_back,\n            run_time=0.5\n        )\n        derivative_text.set_color(LINE2_COLOR)\n        \n        # 2x exits\n        output_2x = MathTex(\"2x\", color=LINE2_COLOR)\n        output_2x.move_to(machine_box.get_center())\n        \n        self.play(\n            ReplacementTransform(input_x2, output_2x),\n            run_time=0.5\n        )\n        \n        end_pos_2x = self.grid[\"C6\"]\n        self.play(output_2x.animate.move_to(end_pos_2x), run_time=1)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[0].set_color(WHITE) # Keep visible but not highlighted\n        self.lecture[2].set_color(LINE3_COLOR)\n        \n        # 2x enters back\n        input_2x = MathTex(\"2x\", color=LINE2_COLOR)\n        self.place_at_grid(input_2x, \"D1\")\n        \n        self.play(FadeIn(input_2x))\n        self.play(input_2x.animate.move_to(machine_box.get_center()), run_time=1)\n        \n        # Integral lever pull\n        self.play(\n            integral_lever.animate.shift(DOWN * 0.2),\n            integral_text.animate.set_color(YELLOW),\n            rate_func=there_and_back,\n            run_time=0.5\n        )\n        integral_text.set_color(LINE3_COLOR)\n        \n        # x^2 exits\n        output_x2_final = MathTex(\"x^2\", color=LINE3_COLOR)\n        output_x2_final.move_to(machine_box.get_center())\n        \n        self.play(\n            ReplacementTransform(input_2x, output_x2_final),\n            run_time=0.5\n        )\n        \n        end_pos_x2 = self.grid[\"D6\"]\n        self.play(output_x2_final.animate.move_to(end_pos_x2), run_time=1)\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # Data from storyboard\n        title_text = \"Visualizing Accumulation: The Area Under the Curve\"\n        lecture_lines = [\n            \"Visually, the integral represents the area under a curve.\",\n            \"It sums up infinite tiny changes over an interval.\",\n            \"This total area equals the accumulated value of change.\"\n        ]\n        \n        self.setup_layout(title_text, lecture_lines)\n        \n        # Colors\n        CURVE_COLOR = \"#FF69B4\"\n        LABEL_COLOR = \"#FFFF00\"\n        SHADE_COLOR = \"#FF69B4\"\n        \n        # Setup Axes and Graph Elements\n        axes = Axes(\n            x_range=[0, 6, 1],\n            y_range=[0, 4, 1],\n            x_length=4.5,\n            y_length=3.0,\n            axis_config={\"color\": WHITE, \"include_tip\": True},\n        )\n        self.place_in_area(axes, \"B1\", \"E6\")\n        \n        func = lambda x: 0.1 * (x - 1) * (x - 3) * (x - 5) + 2\n        curve = axes.plot(func, x_range=[0.5, 5.5], color=CURVE_COLOR)\n        \n        f_label = MathTex(\"f(x)\", color=CURVE_COLOR).scale(0.8)\n        self.place_at_grid(f_label, \"B5\")\n        \n        # === Animation for Lecture Line 1 ===\n        # Highlight first lecture line in curve color\n        self.play(self.lecture[0].animate.set_color(CURVE_COLOR))\n        \n        # Create axes and curve\n        self.play(Create(axes), run_time=1)\n        self.play(Create(curve), Write(f_label), run_time=1.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight second lecture line in curve color (accumulation)\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(CURVE_COLOR)\n        )\n        \n        # ValueTracker for the sweep animation\n        x_tracker = ValueTracker(0.5)\n        \n        # Shaded area that updates with the tracker\n        shade = always_redraw(lambda: axes.get_area(\n            curve, \n            x_range=[0.5, x_tracker.get_value()], \n            color=SHADE_COLOR, \n            opacity=0.3\n        ))\n        \n        # Vertical sweeping line\n        v_line = always_redraw(lambda: axes.get_vertical_line(\n            axes.input_to_graph_point(x_tracker.get_value(), curve),\n            color=WHITE\n        ))\n        \n        self.add(shade, v_line)\n        self.play(x_tracker.animate.set_value(5.5), run_time=4, rate_func=linear)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Highlight third lecture line in label color (result)\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(LABEL_COLOR)\n        )\n        \n        # Final label for the integral/accumulation\n        integral_label = Text(\"Integral\", font_size=24, color=LABEL_COLOR)\n        self.place_at_grid(integral_label, \"D3\", scale_factor=1.2)\n        \n        self.play(Write(integral_label))\n        self.wait(3)\n        \n        # Final cleanup\n        self.play(self.lecture[2].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"The Fundamental Theorem of Calculus bridges slope and area.\",\n            \"It connects the derivative of a function to its integral.\",\n            \"The definite integral calculates net change over an interval.\",\n            \"Evaluation uses the anti-derivative at the boundary points.\",\n            \"This theorem unites the two main branches of calculus.\"\n        ]\n        self.setup_layout(\"The Fundamental Theorem: The Bridge\", lecture_lines)\n        \n        # Dim all lecture lines initially\n        for line in self.lecture:\n            line.set_color(GRAY)\n\n        # === Animation for Lecture Line 1 ===\n        # The Fundamental Theorem of Calculus bridges slope and area.\n        # FTC formula \\int_a^b f(x)dx = F(b) - F(a) appears in #FFFFFF.\n        self.play(self.lecture[0].animate.set_color(WHITE))\n        formula = MathTex(r\"\\int_a^b f(x)dx = F(b) - F(a)\", color=WHITE)\n        self.place_in_area(formula, \"E2\", \"F5\", scale_factor=1.0)\n        self.play(Write(formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # It connects the derivative of a function to its integral.\n        # The screen splits into two panels: Panel A (left) and Panel B (right).\n        self.play(self.lecture[1].animate.set_color(WHITE))\n        \n        # Panel A: f(x) = 2x\n        ax_a = Axes(x_range=[0, 3], y_range=[0, 6], x_length=2.5, y_length=2.5, \n                   axis_config={\"include_tip\": False}).set_color(GRAY)\n        label_a = Text(\"Rate: f(x)\", font_size=16, color=WHITE)\n        panel_a = VGroup(ax_a, label_a)\n        label_a.next_to(ax_a, UP, buff=0.1)\n        self.place_in_area(panel_a, \"A1\", \"C3\", scale_factor=0.8)\n        \n        # Panel B: F(x) = x^2\n        ax_b = Axes(x_range=[0, 3], y_range=[0, 9], x_length=2.5, y_length=2.5,\n                   axis_config={\"include_tip\": False}).set_color(GRAY)\n        label_b = Text(\"Accumulation: F(x)\", font_size=16, color=WHITE)\n        panel_b = VGroup(ax_b, label_b)\n        label_b.next_to(ax_b, UP, buff=0.1)\n        self.place_in_area(panel_b, \"A4\", \"C6\", scale_factor=0.8)\n        \n        self.play(Create(ax_a), Create(label_a), Create(ax_b), Create(label_b))\n        self.wait(1)\n\n        # Prepare for sync animations\n        tracker = ValueTracker(0.01)\n        \n        f_curve = ax_a.plot(lambda x: 2*x, x_range=[0, 2.5], color=WHITE)\n        F_curve = ax_b.plot(lambda x: x**2, x_range=[0, 2.5], color=WHITE)\n        self.add(f_curve, F_curve)\n\n        # Area under f(x) - persistent mobject\n        area = VMobject(color=\"#00FF00\", fill_opacity=0.5, stroke_width=0)\n        area.add_updater(lambda m: m.set_points_as_corners([\n            ax_a.c2p(0, 0),\n            *[ax_a.c2p(x, 2*x) for x in np.linspace(0, tracker.get_value(), 20)],\n            ax_a.c2p(tracker.get_value(), 0),\n            ax_a.c2p(0, 0)\n        ]))\n\n        # Point on F(x) - persistent mobject\n        dot_b = Dot(color=\"#00BFFF\")\n        dot_b.add_updater(lambda d: d.move_to(ax_b.c2p(tracker.get_value(), tracker.get_value()**2)))\n\n        # === Animation for Lecture Line 3 ===\n        # The definite integral calculates net change over an interval.\n        # Panel A shows area under f(x) filling up in #00FF00.\n        self.play(self.lecture[2].animate.set_color(\"#00FF00\"))\n        self.add(area)\n        self.play(tracker.animate.set_value(2), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Evaluation uses the anti-derivative at the boundary points.\n        # Panel B shows a point on the graph of F(x) rising in #00BFFF.\n        self.play(self.lecture[3].animate.set_color(\"#00BFFF\"))\n        self.add(dot_b)\n        self.play(Indicate(dot_b), run_time=1)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # This theorem unites the two main branches of calculus.\n        # A bridge icon in #FFD700 connects the panels as they animate in sync.\n        self.play(self.lecture[4].animate.set_color(\"#FFD700\"))\n        \n        bridge = DoubleArrow(\n            start=ax_a.get_right(), \n            end=ax_b.get_left(), \n            color=\"#FFD700\", \n            buff=0.1, \n            stroke_width=4\n        )\n        bridge_label = Text(\"FTC BRIDGE\", font_size=14, color=\"#FFD700\").next_to(bridge, UP, buff=0.05)\n        \n        self.play(Create(bridge), Write(bridge_label))\n        \n        # Final sync movement\n        self.play(tracker.animate.set_value(2.5), run_time=2)\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # 1. Setup Layout and Titles\n        self.setup_layout(\n            \"Bridging Derivatives and Integrals\",\n            [\n                \"- The Great Cycle of Calculus\",\n                \"- Fundamental Theorem Connection\",\n                \"- From Rate of Change to Accumulation\",\n                \"- Visualizing the Inverse Relationship\"\n            ]\n        )\n\n        # 2. Mathematical Content - Graphing Axes\n        axes = Axes(\n            x_range=[0, 4, 1],\n            y_range=[0, 4, 1],\n            x_length=4,\n            y_length=4,\n            axis_config={\"include_tip\": True, \"color\": GREY_B}\n        )\n        self.place_in_area(axes, \"B2\", \"F6\", scale_factor=0.8)\n\n        # 3. Define Functions\n        # f(x) = x (Derivative of 0.5x^2)\n        # F(x) = 0.5x^2 (Integral of x)\n        func = axes.plot(lambda x: x, x_range=[0, 3], color=BLUE)\n        func_label = MathTex(\"f(x) = x\", color=BLUE).scale(0.7)\n        self.place_at_grid(func_label, \"A4\")\n\n        # 4. Integral Visualization (Area)\n        area = axes.get_area(func, x_range=[0, 2], color=YELLOW, opacity=0.4)\n        area_label = MathTex(r\"\\text{Area} = \\int_{0}^{2} x \\, dx\", color=YELLOW).scale(0.7)\n        self.place_at_grid(area_label, \"A6\")\n\n        # 5. Derivative Visualization (Slope)\n        # We visualize the change in area as the change in F(x)\n        line_at_2 = axes.get_vertical_line(axes.c2p(2, 2), color=WHITE, line_func=Line)\n        \n        # 6. Animation Sequence\n        self.play(\n            Write(self.title),\n            FadeIn(self.lecture, shift=RIGHT),\n            run_time=1.5\n        )\n        \n        self.play(Create(axes), run_time=1)\n        self.play(Create(func), Write(func_label), run_time=1)\n        \n        self.play(\n            FadeIn(area),\n            Write(area_label),\n            Create(line_at_2),\n            run_time=1.5\n        )\n\n        # Result calculation text\n        result_tex = MathTex(r\"= \\left[ \\frac{1}{2}x^2 \\right]_0^2 = 2\", color=YELLOW).scale(0.7)\n        self.place_at_grid(result_tex, \"B6\")\n        \n        self.play(Write(result_tex))\n        \n        self.wait(3)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section7Scene(TeachingScene):\n    def construct(self):\n        # Initial Setup\n        title_text = \"Summary: The Calculus Loop\"\n        lecture_lines = [\n            \"- Derivatives and integrals form a beautiful, continuous cycle.\",\n            \"- Differentiation breaks a whole down into its parts.\",\n            \"- Integration builds those parts back into a whole.\",\n            \"- They are two sides of the same mathematical coin.\",\n            \"- Master this connection to unlock the power of calculus.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n        \n        # === Animation for Lecture Line 1 ===\n        # \"Derivatives and integrals form a beautiful, continuous cycle.\"\n        self.lecture[0].set_color(WHITE)\n        \n        # Infinity symbol (Lemniscate of Bernoulli)\n        # x = a * cos(t) / (1 + sin^2(t)), y = a * sin(t) * cos(t) / (1 + sin^2(t))\n        a_val = 1.8\n        infinity_func = lambda t: np.array([\n            a_val * np.cos(t) / (1 + (np.sin(t))**2),\n            a_val * np.sin(t) * np.cos(t) / (1 + (np.sin(t))**2),\n            0\n        ])\n        infinity_track = ParametricFunction(infinity_func, t_range=[0, TAU], color=WHITE)\n        self.place_in_area(infinity_track, 'B1', 'E6', scale_factor=0.9)\n        \n        self.play(Create(infinity_track), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"Differentiation breaks a whole down into its parts.\"\n        self.lecture[1].set_color(\"#00FF00\")\n        \n        derivatives_label = Text(\"Derivatives\\n(Rates)\", font_size=20, color=\"#00FF00\")\n        # Positioning label near the left loop of the lemniscate\n        self.place_at_grid(derivatives_label, 'C1', scale_factor=0.8)\n        \n        self.play(Write(derivatives_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"Integration builds those parts back into a whole.\"\n        self.lecture[2].set_color(\"#FFFF00\")\n        \n        integrals_label = Text(\"Integrals\\n(Totals)\", font_size=20, color=\"#FFFF00\")\n        # Positioning label near the right loop of the lemniscate\n        self.place_at_grid(integrals_label, 'C6', scale_factor=0.8)\n        \n        self.play(Write(integrals_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # \"They are two sides of the same mathematical coin.\"\n        self.lecture[3].set_color(\"#FFD700\")\n        \n        # Glowing spark travels around the track from left to right.\n        # Proportion 0.5 is the leftmost point (t=PI). Proportion 1.0/0.0 is the rightmost point (t=0/TAU).\n        spark_core = Dot(color=\"#FFD700\", radius=0.08)\n        spark_glow = Dot(color=\"#FFD700\", radius=0.18, fill_opacity=0.3)\n        spark = VGroup(spark_glow, spark_core)\n        \n        # Set spark at left loop (proportion 0.5)\n        spark.move_to(infinity_track.point_from_proportion(0.5))\n        self.add(spark)\n        \n        # Use ValueTracker for smooth continuous movement\n        prop_tracker = ValueTracker(0.5)\n        spark.add_updater(lambda m: m.move_to(infinity_track.point_from_proportion(prop_tracker.get_value())))\n        \n        # Move from left (0.5) to right (1.0)\n        self.play(prop_tracker.animate.set_value(1.0), run_time=2.5, rate_func=linear)\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 5 ===\n        # \"Master this connection to unlock the power of calculus.\"\n        self.lecture[4].set_color(\"#FFD700\")\n        \n        # Complete the circuit: travels from right back to left.\n        # Seamlessly transition from 1.0 (end) to 0.0 (start) at the right tip.\n        prop_tracker.set_value(0.0)\n        # Move from right (0.0) back to left (0.5)\n        self.play(prop_tracker.animate.set_value(0.5), run_time=2.5, rate_func=linear)\n        \n        spark.clear_updaters()\n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "The Great Cycle of Calculus: Bridging Derivatives and Integrals",
+    "target_audience": "High school seniors or first-year university students",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Hook: The Speeding Cheetah",
+        "content": "Introduce the concept of change versus accumulation using a Cheetah. A Cheetah's speedometer shows its 'Derivative' (velocity at an instant), while the total distance it covers represents the 'Integral' (accumulation over time). The goal is to show these aren't separate math topics, but two sides of the same coin.",
+        "example": "Visual: A Cheetah running across a savannah. An overlay shows a graph where the x-axis is time and the y-axis is speed. As the cheetah speeds up, the point on the graph moves higher."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite Recap: The Slope of Change",
+        "content": "Briefly review the Derivative as the rate of change. Visually represent this as the slope of a tangent line on a position-time graph. Remind students that if we have Position, the Derivative gives us Velocity.",
+        "example": "Visual: A curve representing a hiker climbing a hill. A zooming lens shows a 'magnified' straight line (the tangent) at a specific point, highlighting the steepness."
+      },
+      {
+        "id": "section_3",
+        "title": "The Inverse Concept: Working Backwards",
+        "content": "Introduce the idea of 'Anti-differentiation.' If we have the velocity (the derivative), how do we find the total distance (the original function)? This sets the stage for the Integral as the 'undoing' of the Derivative.",
+        "example": "Visual: A 'Function Machine' where you drop in a function like x². The 'Derivative Lever' turns it into 2x. To get back to x², we need the 'Integral Lever'."
+      },
+      {
+        "id": "section_4",
+        "title": "Visualizing Accumulation: The Area Under the Curve",
+        "content": "Define the Integral graphically as the area between the function's curve and the x-axis. Explain that just as a derivative looks at a single 'point' of change, an integral looks at the 'sum' of all changes over an interval.",
+        "example": "Visual: A robot arm painting the area under a curve. As the arm moves from left to right, the colored area grows, representing the accumulated value."
+      },
+      {
+        "id": "section_5",
+        "title": "The Fundamental Theorem: The Bridge",
+        "content": "Present the Fundamental Theorem of Calculus (FTC). Explain that the area under a rate curve (f) can be found using its anti-derivative (F). This is the 'Aha!' moment where the slope and the area are mathematically linked.",
+        "example": "Mathematical Formula: ∫[a,b] f(x)dx = F(b) - F(a). Visual: Two screens side-by-side. Screen A shows the area filling up; Screen B shows a point moving up a position graph. They move in perfect synchronization."
+      },
+      {
+        "id": "section_6",
+        "title": "Example Walkthrough: The Leaky Tank",
+        "content": "Apply the concept to a physics problem. A tank is leaking water at a rate defined by a function. We use the integral to find exactly how much total water was lost over 10 minutes.",
+        "example": "Character: 'Rusty the Robot' is watching a water tank. The rate of flow is v(t) = 2t. By integrating, we find the volume V(t) = t², showing that after 10 minutes, 100 liters have leaked."
+      },
+      {
+        "id": "section_7",
+        "title": "Summary: The Calculus Loop",
+        "content": "Reinforce the 'Circular' nature of the relationship. Differentiation takes you from Accumulation to Rate; Integration takes you from Rate to Accumulation. End with a high-level visual summary.",
+        "example": "Visual: An infinity-symbol shaped track. One side is labeled 'Derivatives (Rates)' and the other 'Integrals (Totals)'. A spark travels around the loop, connecting the two concepts forever."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Hook: The Speeding Cheetah",
+      "lecture_lines": [
+        "A cheetah sprints across the savannah at high speed.",
+        "The speedometer measures its instantaneous rate of change.",
+        "This specific value is known as the derivative.",
+        "The total distance covered represents the accumulated change.",
+        "In calculus, this total accumulation is called the integral."
+      ],
+      "animations": [
+        "A cheetah [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cheetah.svg] appears on the left and starts running across the screen.",
+        "A velocity-time graph appears above the cheetah with axes labeled in #FFFFFF.",
+        "A point moves along the graph's curve as the cheetah's speed varies.",
+        "The y-axis value is highlighted in #00FF00 and labeled 'Derivative (Speed)' [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/speed.svg].",
+        "The area under the curve is shaded in #FFFF00 and labeled 'Integral (Distance)'."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite Recap: The Slope of Change",
+      "lecture_lines": [
+        "Differentiation helps us calculate the rate of change.",
+        "Graphically, the derivative is the slope of the tangent.",
+        "It transforms a position function into a velocity function."
+      ],
+      "animations": [
+        "A position-time curve for a hiker [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/hiker.svg] appears in #ADD8E6.",
+        "A zooming lens highlights a point on the curve, revealing a tangent line.",
+        "The tangent line's slope is colored #FFA500 and labeled 'Velocity (Derivative)'."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Inverse Concept: Working Backwards",
+      "lecture_lines": [
+        "Integration is the inverse process of finding the derivative.",
+        "If we have velocity, we can recover total distance.",
+        "We call this process anti-differentiation or finding the integral."
+      ],
+      "animations": [
+        "A 'Function Machine' illustration appears in the center in #C0C0C0.",
+        "The function x^2 enters, a lever labeled 'Derivative' is pulled, and 2x exits.",
+        "The function 2x enters, a lever labeled 'Integral' is pulled, and x^2 exits."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Visualizing Accumulation: The Area Under the Curve",
+      "lecture_lines": [
+        "Visually, the integral represents the area under a curve.",
+        "It sums up infinite tiny changes over an interval.",
+        "This total area equals the accumulated value of change."
+      ],
+      "animations": [
+        "A continuous function curve f(x) is drawn in #FF69B4.",
+        "A vertical line moves from x=a to x=b, shading the area below the curve.",
+        "The shaded area is labeled 'Integral' in #FFFF00 to represent accumulation."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Fundamental Theorem: The Bridge",
+      "lecture_lines": [
+        "The Fundamental Theorem of Calculus bridges slope and area.",
+        "It connects the derivative of a function to its integral.",
+        "The definite integral calculates net change over an interval.",
+        "Evaluation uses the anti-derivative at the boundary points.",
+        "This theorem unites the two main branches of calculus."
+      ],
+      "animations": [
+        "The FTC formula \\int_a^b f(x)dx = F(b) - F(a) appears in #FFFFFF.",
+        "The screen splits into two panels: Panel A (left) and Panel B (right).",
+        "Panel A shows area under f(x) filling up in #00FF00.",
+        "Panel B shows a point on the graph of F(x) rising in #00BFFF.",
+        "A bridge icon in #FFD700 connects the panels as they animate in sync."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Example Walkthrough: The Leaky Tank",
+      "lecture_lines": [
+        "Consider a tank leaking water at a changing rate.",
+        "Integrating the flow rate gives the total volume lost.",
+        "Calculus provides exact answers for these real-world problems."
+      ],
+      "animations": [
+        "A leaky water tank [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/tank.svg] appears with water [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/water.svg] level decreasing over time.",
+        "The rate function v(t) = 2t is plotted on a graph in #FF4500.",
+        "The integral calculation [t^2] from 0 to 10 appears, resulting in 100 liters."
+      ]
+    },
+    {
+      "id": "section_7",
+      "title": "Summary: The Calculus Loop",
+      "lecture_lines": [
+        "Derivatives and integrals form a beautiful, continuous cycle.",
+        "Differentiation breaks a whole down into its parts.",
+        "Integration builds those parts back into a whole.",
+        "They are two sides of the same mathematical coin.",
+        "Master this connection to unlock the power of calculus."
+      ],
+      "animations": [
+        "An infinity-symbol track appears in #FFFFFF in the center.",
+        "The left loop is labeled 'Derivatives (Rates)' in #00FF00.",
+        "The right loop is labeled 'Integrals (Totals)' in #FFFF00.",
+        "A glowing spark in #FFD700 travels around the track from left to right.",
+        "The spark completes the circuit, traveling from right back to left."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (max 10 words each) for Section 1, setting it as a key section."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_1 incorporating the Cheetah metaphor, velocity-time graph, synchronized derivative highlight, and integral area shading. Applied grid-based positioning and synchronized animations using ValueTracker."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (max 10 words each) for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_2 following the storyboard and grid requirements. Implemented axes, a position curve, a tangent line with a zoom lens effect, and appropriate labels. Added highlighting for lecture lines."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (max 10 words each) for Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated the Manim code for section_3 featuring a Function Machine that transforms x^2 into 2x via the 'Derivative' lever and back to x^2 via the 'Integral' lever, following the storyboard and grid constraints."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (max 10 words each) for Section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_4 following the storyboard and visual anchor system. Implemented the area under the curve visualization with a sweeping vertical line and matched lecture line colors to visual elements."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (max 10 words each) for Section 5, setting it as a key section."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Section5Scene with dual panels (Rate vs Accumulation) synced via ValueTracker to demonstrate the Fundamental Theorem of Calculus. Implemented the bridge icon and synchronized animations as per storyboard."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (max 10 words each) for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 6 with tank animation, flow rate graph, and integral calculation. Used grid system for positioning."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (max 10 words each) for Section 7, setting it as a key section."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 7: Summary: The Calculus Loop. Implemented the infinity-symbol track, labels for Derivatives and Integrals, and the glowing spark animation across the cycle. Used the 6x6 grid system and TeachingScene base class."
+    },
+    {
+      "id": 22,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_1 have been updated. Please design 5 animation stages that correspond to these lines. Preserve any asset references if they are added later.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Storyboard is already complete and reviewed."
+    },
+    {
+      "id": 23,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_2 have been updated. Please design 3 animation stages that correspond to these lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Storyboard is already complete and reviewed."
+    },
+    {
+      "id": 24,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_3 have been updated. Please design 3 animation stages that correspond to these lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Storyboard is already complete and reviewed."
+    },
+    {
+      "id": 25,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_4 have been updated. Please design 3 animation stages that correspond to these lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Storyboard is already complete and reviewed."
+    },
+    {
+      "id": 26,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_5 have been updated. Please design 5 animation stages that correspond to these lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Storyboard is already complete and reviewed."
+    },
+    {
+      "id": 27,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_6 have been updated. Please design 3 animation stages that correspond to these lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Storyboard is already complete and reviewed."
+    },
+    {
+      "id": 28,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines for section_7 have been updated. Please design 5 animation stages that correspond to these lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Storyboard is already complete and reviewed."
+    },
+    {
+      "id": 29,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['A cheetah [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cheetah.svg] appears on the left and starts running across the screen.', \"The y-axis value is highlighted in #00FF00 and labeled 'Derivative (Speed)' [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/speed.svg].\"]",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['A position-time curve for a hiker [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/hiker.svg] appears in #ADD8E6.']",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['A leaky water tank [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/tank.svg] appears with water [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/water.svg] level decreasing over time.']",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The graph_group is currently placed in rows A1-D6, which is too high and crowds the title area, leaving the bottom of the right-side grid underutilized. Fix: Line 104: self.place_in_area(graph_group, 'B1', 'E6', scale_factor=0.8) (line=104, object=graph_group)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The multi-word label 'Integral (Distance)' is placed at a single grid point (C4), which does not provide enough boundary control for long text and risks overlapping with the curve or axes. Fix: Line 165: self.place_in_area(integral_label, 'D4', 'E5', scale_factor=0.7) (line=165, object=integral_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The axes and its Y-axis label 'Position (s)' are positioned too close to the lecture notes on the left, which creates visual clutter and risks overlap with long text lines. Fix: Line 73: self.place_in_area(axes, 'B3', 'E6') (line=73, object=axes)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The machine_box is placed too far to the left, contributing to a crowded layout and potential overlap with lecture text. Fix: Line 67: self.place_in_area(machine_box, 'B3', 'E6') (line=67, object=machine_box)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The input_x2 formula overlaps with the lecture notes on the left side of the screen. Fix: Line 106: self.place_at_grid(input_x2, 'C2') (line=106, object=input_x2)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The input_2x formula overlaps with the lecture notes on the left side of the screen. Fix: Line 139: self.place_at_grid(input_2x, 'D2') (line=139, object=input_2x)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The axes (B1-E6) are positioned immediately adjacent to the lecture notes, which may lead to visual crowding with longer lines of text. Fix: Line 71: self.place_in_area(axes, 'B2', 'E6') (line=71, object=axes)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The function label 'f(x)' at B5 is centered on a grid point that the curve passes through, likely causing an overlap with the line asset. Fix: Line 77: self.place_at_grid(f_label, 'A5') (line=77, object=f_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The 'Integral' label at D3 is scaled too large (1.2) and is no longer centered within the graphing region once the axes are shifted. Fix: Line 125: self.place_at_grid(integral_label, 'D4', scale_factor=1.0) (line=125, object=integral_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The Rate plot (panel_a) starts at grid position A1, which is too close to the left side of the screen and risks obstructing the long lecture notes. Fix: Line 80: self.place_in_area(panel_a, 'A3', 'C4', scale_factor=0.7) (line=80, object=panel_a)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The Accumulation plot (panel_b) is positioned at A4-C6, which would overlap with the new panel_a position and feels crowded at the top. Fix: Line 88: self.place_in_area(panel_b, 'A5', 'C6', scale_factor=0.7) (line=88, object=panel_b)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 43,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The main integral formula is centered at E2-F5, placing it too far left where it competes for visual space with the highlighted lecture lines. Fix: Line 65: self.place_in_area(formula, 'E4', 'F6', scale_factor=0.8) (line=65, object=formula)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 44,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'result_tex' at grid B6 overlaps with the upper region of the 'axes' (which occupy B2-F6), creating visual clutter over the function line. Fix: Line 104: self.place_at_grid(result_tex, 'A6', scale_factor=0.7) (line=104, object=result_tex)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 45,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'area_label' at A6 is positioned at the top-right corner, making it appear disconnected and potentially clipping long formula strings. Fix: Line 79: self.place_at_grid(area_label, 'A5', scale_factor=0.7) (line=79, object=area_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 46,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'func_label' is currently set to default scale, which may appear inconsistent with the other mathematical formulas and takes up too much vertical space. Fix: Line 74: self.place_at_grid(func_label, 'A4', scale_factor=0.7) (line=74, object=func_label)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 47,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The 'derivatives_label' overlaps with the left loop of the infinity track and is positioned too close to the lecture notes. Fix: Line 82: self.place_at_grid('derivatives_label', 'B2', scale_factor=0.7) (line=82, object=derivatives_label)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 48,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The 'integrals_label' overlaps with the right loop of the infinity track and is positioned too close to the right screen edge. Fix: Line 93: self.place_at_grid('integrals_label', 'B5', scale_factor=0.7) (line=93, object=integrals_label)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 49,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The 'infinity_track' scale is too large (0.9), which causes clutter and leaves little room for clear label placement. Fix: Line 71: self.place_in_area('infinity_track', 'B1', 'E6', scale_factor=0.8) (line=71, object=infinity_track)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6",
+    "section_7": "Coder7"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5,
+    "section_7": 6
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_6/480p15/Section6Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_7/480p15/Section7Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 365080,
+        "video_mtime_ns": 1785726987000000000,
+        "code_sha1": "018895504ec9b90fdeef30813b9372d29afd6d58"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The graph_group is currently placed in rows A1-D6, which is too high and crowds the title area, leaving the bottom of the right-side grid underutilized.",
+              "solution": "Line 104: self.place_in_area(graph_group, 'B1', 'E6', scale_factor=0.8)",
+              "line_number": 104,
+              "object_affected": "graph_group"
+            },
+            {
+              "problem": "The multi-word label 'Integral (Distance)' is placed at a single grid point (C4), which does not provide enough boundary control for long text and risks overlapping with the curve or axes.",
+              "solution": "Line 165: self.place_in_area(integral_label, 'D4', 'E5', scale_factor=0.7)",
+              "line_number": 165,
+              "object_affected": "integral_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 94900,
+        "video_mtime_ns": 1785727034000000000,
+        "code_sha1": "f943094a97f3852fc6bf07aab9c748488cea12b6"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The axes and its Y-axis label 'Position (s)' are positioned too close to the lecture notes on the left, which creates visual clutter and risks overlap with long text lines.",
+              "solution": "Line 73: self.place_in_area(axes, 'B3', 'E6')",
+              "line_number": 73,
+              "object_affected": "axes"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 284675,
+        "video_mtime_ns": 1785726986000000000,
+        "code_sha1": "e4b11992b3d4092604779b98bb2dbdbde1ab5135"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The machine_box is placed too far to the left, contributing to a crowded layout and potential overlap with lecture text.",
+              "solution": "Line 67: self.place_in_area(machine_box, 'B3', 'E6')",
+              "line_number": 67,
+              "object_affected": "machine_box"
+            },
+            {
+              "problem": "The input_x2 formula overlaps with the lecture notes on the left side of the screen.",
+              "solution": "Line 106: self.place_at_grid(input_x2, 'C2')",
+              "line_number": 106,
+              "object_affected": "input_x2"
+            },
+            {
+              "problem": "The input_2x formula overlaps with the lecture notes on the left side of the screen.",
+              "solution": "Line 139: self.place_at_grid(input_2x, 'D2')",
+              "line_number": 139,
+              "object_affected": "input_2x"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35,
+        36,
+        37
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 261428,
+        "video_mtime_ns": 1785726988000000000,
+        "code_sha1": "0d44d9260890596db5c1a63daca1e0298d7465aa"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The axes (B1-E6) are positioned immediately adjacent to the lecture notes, which may lead to visual crowding with longer lines of text.",
+              "solution": "Line 71: self.place_in_area(axes, 'B2', 'E6')",
+              "line_number": 71,
+              "object_affected": "axes"
+            },
+            {
+              "problem": "The function label 'f(x)' at B5 is centered on a grid point that the curve passes through, likely causing an overlap with the line asset.",
+              "solution": "Line 77: self.place_at_grid(f_label, 'A5')",
+              "line_number": 77,
+              "object_affected": "f_label"
+            },
+            {
+              "problem": "The 'Integral' label at D3 is scaled too large (1.2) and is no longer centered within the graphing region once the axes are shifted.",
+              "solution": "Line 125: self.place_at_grid(integral_label, 'D4', scale_factor=1.0)",
+              "line_number": 125,
+              "object_affected": "integral_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        38,
+        39,
+        40
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 446545,
+        "video_mtime_ns": 1785727004000000000,
+        "code_sha1": "afb2bedf3c388ff765ae8c6bca8966ce0fafc822"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The Rate plot (panel_a) starts at grid position A1, which is too close to the left side of the screen and risks obstructing the long lecture notes.",
+              "solution": "Line 80: self.place_in_area(panel_a, 'A3', 'C4', scale_factor=0.7)",
+              "line_number": 80,
+              "object_affected": "panel_a"
+            },
+            {
+              "problem": "The Accumulation plot (panel_b) is positioned at A4-C6, which would overlap with the new panel_a position and feels crowded at the top.",
+              "solution": "Line 88: self.place_in_area(panel_b, 'A5', 'C6', scale_factor=0.7)",
+              "line_number": 88,
+              "object_affected": "panel_b"
+            },
+            {
+              "problem": "The main integral formula is centered at E2-F5, placing it too far left where it competes for visual space with the highlighted lecture lines.",
+              "solution": "Line 65: self.place_in_area(formula, 'E4', 'F6', scale_factor=0.8)",
+              "line_number": 65,
+              "object_affected": "formula"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        41,
+        42,
+        43
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 142754,
+        "video_mtime_ns": 1785727036000000000,
+        "code_sha1": "d7baa318f1df7d75ef940a1bdd77021d12eb1126"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'result_tex' at grid B6 overlaps with the upper region of the 'axes' (which occupy B2-F6), creating visual clutter over the function line.",
+              "solution": "Line 104: self.place_at_grid(result_tex, 'A6', scale_factor=0.7)",
+              "line_number": 104,
+              "object_affected": "result_tex"
+            },
+            {
+              "problem": "The 'area_label' at A6 is positioned at the top-right corner, making it appear disconnected and potentially clipping long formula strings.",
+              "solution": "Line 79: self.place_at_grid(area_label, 'A5', scale_factor=0.7)",
+              "line_number": 79,
+              "object_affected": "area_label"
+            },
+            {
+              "problem": "The 'func_label' is currently set to default scale, which may appear inconsistent with the other mathematical formulas and takes up too much vertical space.",
+              "solution": "Line 74: self.place_at_grid(func_label, 'A4', scale_factor=0.7)",
+              "line_number": 74,
+              "object_affected": "func_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        44,
+        45,
+        46
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_7",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_7/480p15/Section7Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals/media/videos/section_7/480p15/Section7Scene.mp4",
+        "video_size": 281584,
+        "video_mtime_ns": 1785726987000000000,
+        "code_sha1": "2b1609c7642a2a9177ac4d2ff4b24d946bbc580e"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'derivatives_label' overlaps with the left loop of the infinity track and is positioned too close to the lecture notes.",
+              "solution": "Line 82: self.place_at_grid('derivatives_label', 'B2', scale_factor=0.7)",
+              "line_number": 82,
+              "object_affected": "derivatives_label"
+            },
+            {
+              "problem": "The 'integrals_label' overlaps with the right loop of the infinity track and is positioned too close to the right screen edge.",
+              "solution": "Line 93: self.place_at_grid('integrals_label', 'B5', scale_factor=0.7)",
+              "line_number": 93,
+              "object_affected": "integrals_label"
+            },
+            {
+              "problem": "The 'infinity_track' scale is too large (0.9), which causes clutter and leaves little room for clear label placement.",
+              "solution": "Line 71: self.place_in_area('infinity_track', 'B1', 'E6', scale_factor=0.8)",
+              "line_number": 71,
+              "object_affected": "infinity_track"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        47,
+        48,
+        49
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_111153/0-The_Great_Cycle_of_Calculus_Bridging_Derivatives_and_Integrals",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 347380,
+      "completion_tokens": 39644,
+      "total_tokens": 488626,
+      "call_count": 37
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 276,
+        "completion_tokens": 993,
+        "total_tokens": 1964,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 19023,
+        "completion_tokens": 1198,
+        "total_tokens": 21280,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 22209,
+        "completion_tokens": 1642,
+        "total_tokens": 25696,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 82645,
+        "completion_tokens": 1508,
+        "total_tokens": 86965,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 15566,
+        "completion_tokens": 2214,
+        "total_tokens": 19346,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 21112,
+        "completion_tokens": 3286,
+        "total_tokens": 25341,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 26654,
+        "completion_tokens": 6352,
+        "total_tokens": 34030,
+        "call_count": 1
+      },
+      "agent:Coder7": {
+        "prompt_tokens": 22118,
+        "completion_tokens": 5417,
+        "total_tokens": 34039,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 35753,
+        "completion_tokens": 4506,
+        "total_tokens": 47885,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 24932,
+        "completion_tokens": 4530,
+        "total_tokens": 39995,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 41013,
+        "completion_tokens": 1942,
+        "total_tokens": 53709,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4824,
+        "completion_tokens": 819,
+        "total_tokens": 16437,
+        "call_count": 14
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 5995,
+        "completion_tokens": 1181,
+        "total_tokens": 15991,
+        "call_count": 1
+      },
+      "scope_refine:section_6": {
+        "prompt_tokens": 5217,
+        "completion_tokens": 2010,
+        "total_tokens": 14826,
+        "call_count": 3
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3197,
+        "completion_tokens": 264,
+        "total_tokens": 8538,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2165,
+        "completion_tokens": 134,
+        "total_tokens": 7986,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2807,
+        "completion_tokens": 295,
+        "total_tokens": 5418,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3069,
+        "completion_tokens": 325,
+        "total_tokens": 8841,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3226,
+        "completion_tokens": 352,
+        "total_tokens": 8149,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2492,
+        "completion_tokens": 343,
+        "total_tokens": 6152,
+        "call_count": 1
+      },
+      "video_review:section_7": {
+        "prompt_tokens": 3087,
+        "completion_tokens": 333,
+        "total_tokens": 6038,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 347380,
+        "completion_tokens": 39644,
+        "total_tokens": 488626,
+        "call_count": 37
+      }
+    }
+  }
+}
