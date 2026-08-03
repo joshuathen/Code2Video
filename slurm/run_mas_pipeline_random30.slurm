@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=code2video-mas-random30
-#SBATCH --time=24:00:00
+#SBATCH --time=05:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=32G

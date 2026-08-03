@@ -1,0 +1,1063 @@
+{
+  "topic": "The Brachistochrone Problem: The Path of Fastest Descent",
+  "target_audience": "High school physics students and early undergraduate STEM students",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"Which path is the fastest between two points?\",\n            \"Is it the straightest or the steepest path?\",\n            \"Let's compare a straight line and a curve.\",\n            \"Intuitively, the straightest path seems the fastest.\",\n            \"But physics often defies our simple intuition.\"\n        ]\n        self.setup_layout(\"The Great Race: Intuition vs. Reality\", lecture_lines)\n        \n        # Set initial colors (dimmed)\n        for line in self.lecture:\n            line.set_color(GRAY)\n\n        # Grid positions for points\n        pos_A = self.grid['B1']\n        pos_B = self.grid['E6']\n        \n        # Asset path\n        marble_asset = \"/scratch/pawsey1357/jthen/Code2Video/assets/icon/marbles.svg\"\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(WHITE), run_time=0.5)\n        \n        point_A = Dot(pos_A, color=WHITE)\n        label_A = Text(\"A\", font_size=20, color=WHITE).next_to(point_A, UP, buff=0.2)\n        point_B = Dot(pos_B, color=WHITE)\n        label_B = Text(\"B\", font_size=20, color=WHITE).next_to(point_B, DOWN, buff=0.2)\n        \n        self.play(\n            Create(point_A), \n            Write(label_A), \n            Create(point_B), \n            Write(label_B), \n            run_time=1\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(WHITE), run_time=0.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(WHITE), run_time=0.5)\n        \n        # Paths\n        # Straight (#FFFFFF)\n        path_straight = Line(pos_A, pos_B, color=WHITE)\n        # Circular Arc (#FFD700)\n        path_circular = ArcBetweenPoints(pos_A, pos_B, radius=6, color=\"#FFD700\")\n        # Steep Curve (#00BFFF)\n        path_steep = CubicBezier(\n            pos_A, \n            pos_A + 3 * DOWN, \n            pos_B + 1.5 * LEFT, \n            pos_B, \n            color=\"#00BFFF\"\n        )\n        \n        self.play(\n            Create(path_straight), \n            Create(path_circular), \n            Create(path_steep), \n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.play(self.lecture[3].animate.set_color(WHITE), run_time=0.5)\n        \n        # Marbles (using SVGMobject as per Issue 23)\n        marble_straight = SVGMobject(marble_asset).scale(0.2).set_color(WHITE).move_to(pos_A)\n        marble_circular = SVGMobject(marble_asset).scale(0.2).set_color(\"#FFD700\").move_to(pos_A)\n        marble_steep = SVGMobject(marble_asset).scale(0.2).set_color(\"#00BFFF\").move_to(pos_A)\n        \n        self.add(marble_straight, marble_circular, marble_steep)\n        \n        # Trackers for movement (Persistent mobjects + updaters)\n        track_straight = ValueTracker(0)\n        track_circular = ValueTracker(0)\n        track_steep = ValueTracker(0)\n        \n        marble_straight.add_updater(lambda m: m.move_to(path_straight.point_from_proportion(track_straight.get_value())))\n        marble_circular.add_updater(lambda m: m.move_to(path_circular.point_from_proportion(track_circular.get_value())))\n        marble_steep.add_updater(lambda m: m.move_to(path_steep.point_from_proportion(track_steep.get_value())))\n        \n        # Animate descent: Steep (2s), Circular (3s), Straight (4s)\n        self.play(\n            track_steep.animate.set_value(1),\n            track_circular.animate.set_value(1),\n            track_straight.animate.set_value(1),\n            run_time=4,\n            rate_func=linear\n        )\n        \n        # Remove updaters to finalize positions\n        marble_straight.clear_updaters()\n        marble_circular.clear_updaters()\n        marble_steep.clear_updaters()\n        \n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.play(self.lecture[4].animate.set_color(\"#00BFFF\"), run_time=0.5)\n        \n        # Highlight Blue path\n        label_fastest = Text(\"Fastest Path\", font_size=20, color=\"#00BFFF\")\n        # Issue 30: Place at D5 with scale_factor 0.8\n        self.place_at_grid(label_fastest, \"D5\", scale_factor=0.8)\n        \n        self.play(\n            path_steep.animate.set_stroke(width=6),\n            Write(label_fastest),\n            run_time=1\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Fetching data from storyboard\n        section_title = \"Prerequisite Knowledge: Speed and Energy\"\n        lecture_lines = [\n            \"Gravity converts potential energy into kinetic energy.\",\n            \"Vertical drop determines the final speed reached.\",\n            \"Total time depends on speed and distance traveled.\"\n        ]\n        \n        self.setup_layout(section_title, lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight first line\n        self.lecture[0].set_color(YELLOW)\n        \n        # Display the energy formula 'mgh = 1/2 mv^2' at the top center in white (#FFFFFF).\n        # Fix Issue 31: Move formula1 to 'A4' to 'B6' and scale 0.8\n        formula1 = MathTex(\"mgh = \\\\frac{1}{2} mv^2\", color=WHITE)\n        self.place_in_area(formula1, \"A4\", \"B6\", scale_factor=0.8)\n        \n        self.play(Write(formula1))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Update highlighting\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(GREEN)\n        \n        # Vertical drop setup\n        start_point = self.grid[\"B2\"]\n        end_point = self.grid[\"F2\"]\n        drop_line = DashedLine(start_point, end_point, color=GRAY)\n        h_label = MathTex(\"h\", color=GRAY).next_to(drop_line, LEFT, buff=0.2)\n        \n        # Issue 24: Use marble asset\n        marble = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/marble.svg\")\n        marble.set_color(WHITE)\n        marble.scale(0.2)\n        marble.move_to(start_point)\n        \n        # Speed meter at D4 area\n        meter_bg = Rectangle(height=2.5, width=0.5, color=WHITE, stroke_width=2)\n        self.place_at_grid(meter_bg, \"D4\")\n        meter_label = Text(\"Speed\", font_size=18, color=\"#00FF00\").next_to(meter_bg, UP, buff=0.2)\n        \n        # Meter fill\n        speed_bar = Rectangle(\n            width=0.45, \n            height=0.01, \n            fill_color=\"#00FF00\", \n            fill_opacity=0.8, \n            stroke_width=0\n        ).move_to(meter_bg.get_bottom(), aligned_edge=DOWN)\n        \n        fall_tracker = ValueTracker(0) # 0 to 1\n        \n        # Updaters\n        def marble_updater(m):\n            m.move_to(interpolate(start_point, end_point, fall_tracker.get_value()))\n            \n        def bar_updater(m):\n            # v = sqrt(2gh) => v is proportional to sqrt(fall_progress)\n            v_ratio = np.sqrt(fall_tracker.get_value())\n            # Map v_ratio to bar height (max height is roughly the meter_bg height)\n            new_height = max(0.01, v_ratio * 2.4)\n            m.stretch_to_fit_height(new_height)\n            m.move_to(meter_bg.get_bottom(), aligned_edge=DOWN)\n\n        marble.add_updater(marble_updater)\n        speed_bar.add_updater(bar_updater)\n        \n        self.add(drop_line, h_label, marble, meter_bg, meter_label, speed_bar)\n        \n        # Simulation\n        # Use ease_in_quad rate func to simulate gravity-like acceleration\n        self.play(fall_tracker.animate.set_value(1), run_time=3, rate_func=rate_functions.ease_in_quad)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Update highlighting\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Show the time integral 't = integral(ds/v)' and highlight 'v' in green (#00FF00) and 'ds' in yellow (#FFD700).\n        # Fix Issue 32: Position formula2 at E5-F6 with scale factor 1.0\n        formula2 = MathTex(\n            \"t\", \"=\", \"\\\\int\", \"{ds\", \"\\\\over\", \"v}\",\n            color=WHITE\n        )\n        # Apply colors to specific parts\n        formula2.set_color_by_tex(\"ds\", \"#FFD700\")\n        formula2.set_color_by_tex(\"v\", \"#00FF00\")\n        \n        self.place_in_area(formula2, \"E5\", \"F6\", scale_factor=1.0)\n        \n        self.play(FadeIn(formula2, shift=UP))\n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        title = \"The Paradox of the Straight Line\"\n        lecture_lines = [\n            \"A straight line is the shortest distance.\",\n            \"However, speed is low at the beginning.\",\n            \"A steep curve builds speed much faster.\",\n            \"Higher speed covers more distance in less time.\",\n            \"Speed beats distance in this race.\"\n        ]\n        self.setup_layout(title, lecture_lines)\n\n        # Colors\n        straight_color = \"#FFFFFF\"\n        curve_color = \"#00BFFF\"\n        bicycle_path = \"/scratch/pawsey1357/jthen/Code2Video/assets/icon/bicycle.svg\"\n\n        # Points\n        start_point_pos = self.grid[\"B1\"]\n        end_point_pos = self.grid[\"D5\"]\n\n        start_dot = Dot(start_point_pos, color=WHITE)\n        end_dot = Dot(end_point_pos, color=WHITE)\n        start_label = Text(\"Start\", font_size=18).next_to(start_dot, UP, buff=0.1)\n        end_label = Text(\"End\", font_size=18).next_to(end_dot, RIGHT, buff=0.1)\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        straight_line = Line(start_point_pos, end_point_pos, color=straight_color)\n        \n        # Load bicycle assets for each path\n        bike_straight = SVGMobject(bicycle_path).scale(0.15).move_to(start_point_pos).set_color(straight_color)\n        bike_curve = SVGMobject(bicycle_path).scale(0.15).move_to(start_point_pos).set_color(curve_color)\n\n        self.play(FadeIn(start_dot, end_dot, start_label, end_label))\n        self.play(Create(straight_line))\n        self.play(FadeIn(bike_straight))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Velocity vector on straight line (Low speed)\n        direction = (end_point_pos - start_point_pos) / np.linalg.norm(end_point_pos - start_point_pos)\n        v_low_pos = start_point_pos + direction * 0.5\n        v_low_arrow = Arrow(v_low_pos, v_low_pos + direction * 0.4, buff=0, color=straight_color)\n        v_low_label = Text(\"Slow\", font_size=16, color=straight_color).next_to(v_low_arrow, UP, buff=0.1)\n        \n        self.play(Create(v_low_arrow), Write(v_low_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Define a steep curve\n        steep_curve = CubicBezier(\n            start_point_pos, \n            self.grid[\"D1\"], \n            self.grid[\"D3\"], \n            end_point_pos, \n            color=curve_color\n        )\n        \n        # Velocity vector on curve (High speed)\n        v_high_pos = steep_curve.point_from_proportion(0.15)\n        # Numerical approximation of tangent for arrow direction\n        dt = 0.01\n        p1 = steep_curve.point_from_proportion(0.15)\n        p2 = steep_curve.point_from_proportion(0.15 + dt)\n        direction_high = (p2 - p1) / np.linalg.norm(p2 - p1)\n        \n        v_high_arrow = Arrow(v_high_pos, v_high_pos + direction_high * 1.2, buff=0, color=curve_color)\n        \n        # Create 'Fast' label and position it according to Critic fix (Issue 34)\n        v_high_label = Text(\"Fast\", font_size=16, color=curve_color)\n        self.place_at_grid(v_high_label, 'E1', scale_factor=0.7)\n        \n        self.play(Create(steep_curve), FadeIn(bike_curve))\n        self.play(Create(v_high_arrow), Write(v_high_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        # Move bicycles along their paths\n        # Curve is faster initially (linear rate for simplicity in comparison to delayed straight)\n        # Straight line starts slow and accelerates (t**2)\n        self.play(\n            MoveAlongPath(bike_curve, steep_curve, rate_func=linear, run_time=1.5),\n            MoveAlongPath(bike_straight, straight_line, rate_func=lambda t: t**2, run_time=2.5), \n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n\n        # Graph Velocity vs Time\n        axes = Axes(\n            x_range=[0, 5, 1],\n            y_range=[0, 5, 1],\n            x_length=4,\n            y_length=2,\n            axis_config={\"include_tip\": True, \"font_size\": 14},\n            tips=False\n        )\n        # Position axes according to Critic fix (Issue 33)\n        self.place_in_area(axes, 'E4', 'F6', scale_factor=0.6)\n        \n        labels = axes.get_axis_labels(\n            x_label=Text(\"Time\", font_size=14), \n            y_label=Text(\"Velocity\", font_size=14)\n        )\n        \n        graph_straight = axes.plot(lambda x: 0.8 * x, x_range=[0, 4], color=straight_color)\n        graph_curve = axes.plot(lambda x: 4 * (1 - np.exp(-1.2 * x)), x_range=[0, 4], color=curve_color)\n        \n        self.play(Create(axes), FadeIn(labels))\n        self.play(Create(graph_straight), Create(graph_curve))\n        self.wait(2)\n\n        # Clean up highlights\n        self.lecture[4].set_color(WHITE)\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"Light always follows the path of least time.\",\n            \"It refracts when passing through different media.\",\n            \"Gravity acts like a medium with changing speed.\"\n        ]\n        self.setup_layout(\"Fermat's Principle and the Light Analogy\", lecture_lines)\n        \n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        # Layers representing different media\n        layer_colors = [\"#1A237E\", \"#283593\", \"#303F9F\", \"#3949AB\"] \n        layers = VGroup()\n        for i in range(4):\n            # Each layer spans one row height (1.0) and 6 units width\n            rect = Rectangle(width=6, height=1, fill_color=layer_colors[i], fill_opacity=0.3, stroke_width=1, stroke_color=BLUE_A)\n            row_char = chr(ord('A') + i)\n            self.place_in_area(rect, f\"{row_char}1\", f\"{row_char}6\")\n            layers.add(rect)\n        \n        self.play(FadeIn(layers))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Points for discrete refraction path\n        # Start top-leftish in Layer A\n        pts = [\n            np.array([1.0, 2.7, 0]),   # Start\n            np.array([1.27, 1.7, 0]),  # A/B\n            np.array([1.85, 0.7, 0]),  # B/C\n            np.array([2.85, -0.3, 0]), # C/D\n            np.array([4.58, -1.3, 0])  # End\n        ]\n        \n        path_segments = VGroup(*[\n            Line(pts[i], pts[i+1], color=YELLOW) for i in range(len(pts)-1)\n        ])\n        \n        self.play(Create(path_segments, run_time=3))\n        self.wait(1)\n        \n        # Transition to many layers and smooth curve\n        r_val = 1.5\n        cycloid = ParametricFunction(\n            lambda t: np.array([\n                r_val * (t - np.sin(t)) + 1.0,\n                -r_val * (1 - np.cos(t)) + 2.7,\n                0\n            ]),\n            t_range=[0, np.pi],\n            color=GOLD\n        )\n        \n        many_layers = VGroup(*[\n            Line(start=[0.5, 2.7 - k*0.1, 0], end=[5.5, 2.7 - k*0.1, 0], \n                 stroke_width=0.5, stroke_opacity=0.15, color=BLUE_B)\n            for k in range(40)\n        ])\n        \n        self.play(\n            FadeOut(layers),\n            FadeOut(path_segments),\n            FadeIn(many_layers),\n            Create(cycloid)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Label curve 'Path of Least Time' in gold\n        label = Text(\"Path of Least Time\", font_size=20, color=\"#FFD700\")\n        # Fix for Issue 35: Use place_in_area for multi-word label\n        self.place_in_area(label, 'F4', 'F6', scale_factor=0.8)\n        \n        # Marble sliding (Asset Integration - Issue 26)\n        marble = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/marble.svg\").scale(0.3)\n        # Use persistent mobject + ValueTracker for movement\n        t_tracker = ValueTracker(0)\n        # Apply initial position before adding updater\n        marble.move_to(cycloid.point_from_proportion(0))\n        marble.add_updater(lambda m: m.move_to(cycloid.point_from_proportion(t_tracker.get_value())))\n        \n        self.add(marble)\n        self.play(Write(label))\n        self.play(t_tracker.animate.set_value(1), run_time=3, rate_func=slow_into)\n        self.wait(2)\n        \n        # Final color reset\n        self.play(self.lecture[2].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        title = \"The Solution: The Cycloid\"\n        lines = [\n            \"The fastest path is called the cycloid.\",\n            \"It is the path of a rolling wheel.\",\n            \"This curve balances acceleration and distance perfectly.\",\n            \"Johann Bernoulli challenged the world with this problem.\",\n            \"The solution revealed a new branch of calculus.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        ORANGE = \"#FFA500\"\n        RED = \"#FF0000\"\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight Line 1\n        self.lecture[0].set_color(ORANGE)\n        \n        # Define Points A and B for visual reference\n        # Start A at A3 as per Issue 38\n        point_a = Dot(self.grid[\"A3\"], color=WHITE)\n        label_a = Text(\"A\", font_size=18).next_to(point_a, UP, buff=0.1)\n        point_b = Dot(self.grid[\"E5\"], color=WHITE)\n        label_b = Text(\"B\", font_size=18).next_to(point_b, DOWN, buff=0.1)\n        \n        self.add(point_a, label_a, point_b, label_b)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight Line 2 (dim Line 1)\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(WHITE)\n        \n        # Wheel setup using Asset (Issue 27)\n        wheel = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/wheel.svg\")\n        # Position wheel at A3, scale 0.5 (Issue 38)\n        self.place_at_grid(wheel, \"A3\", scale_factor=0.5)\n        \n        # Adjust wheel position so its rim point is at A3 (ceiling rolling)\n        radius = wheel.height / 2\n        start_center = self.grid[\"A3\"] + DOWN * radius\n        wheel.move_to(start_center)\n        \n        # A point on the rim (initially at the contact point A3)\n        rim_point = Dot(self.grid[\"A3\"], color=RED)\n        \n        # Group for coordination\n        wheel_group = VGroup(wheel, rim_point)\n        \n        self.play(FadeIn(wheel), FadeIn(rim_point))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Highlight Line 3 (dim Line 2)\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(ORANGE)\n        \n        # Rolling animation using ValueTracker\n        roll_tracker = ValueTracker(0)\n        self.last_theta = 0\n        \n        # The path tracing\n        path = TracedPath(rim_point.get_center, stroke_color=ORANGE, stroke_width=4)\n        self.add(path)\n        \n        def update_wheel(m):\n            theta = roll_tracker.get_value()\n            d_theta = theta - self.last_theta\n            \n            # Center moves linearly\n            new_center = start_center + RIGHT * radius * theta\n            m[0].move_to(new_center)\n            # Wheel rotates\n            m[0].rotate(-d_theta)\n            \n            # Point on rim (starting at top relative to center: theta=0 -> [0, R, 0])\n            offset = np.array([\n                radius * np.sin(theta),\n                radius * np.cos(theta),\n                0\n            ])\n            m[1].move_to(new_center + offset)\n            self.last_theta = theta\n\n        wheel_group.add_updater(update_wheel)\n        \n        # Roll for one full rotation\n        self.play(roll_tracker.animate.set_value(TAU), run_time=4, rate_func=linear)\n        wheel_group.remove_updater(update_wheel)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Highlight Line 4 (dim Line 3)\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(WHITE)\n        \n        # Static cycloid curve from A to B\n        p1 = self.grid[\"A3\"]\n        p2 = self.grid[\"E5\"]\n        \n        def cycloid_parametric(t):\n            # t from 0 to PI\n            # Interpolates between A3 and E5 following cycloid shape\n            nx = (t - np.sin(t)) / PI\n            ny = (1 - np.cos(t)) / 2\n            return np.array([\n                p1[0] + (p2[0] - p1[0]) * nx,\n                p1[1] + (p2[1] - p1[1]) * ny,\n                0\n            ])\n\n        brach_curve = ParametricFunction(cycloid_parametric, t_range=[0, PI], color=ORANGE)\n        \n        # Label 'Cycloid' at D4, scale 0.8 (Issue 37)\n        label_cycloid = Text(\"Cycloid\", font_size=20, color=ORANGE)\n        self.place_at_grid(label_cycloid, \"D4\", scale_factor=0.8)\n        \n        self.play(\n            FadeOut(wheel_group),\n            FadeOut(path),\n            Create(brach_curve),\n            Write(label_cycloid)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Highlight Line 5 (dim Line 4)\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(ORANGE)\n        \n        # Flash the text 'Brachistochrone'\n        brach_text = Text(\"Brachistochrone\", font_size=36, color=ORANGE)\n        # Position at B4-B6, scale 0.7 (Issue 36)\n        self.place_in_area(brach_text, \"B4\", \"B6\", scale_factor=0.7)\n        \n        self.play(Flash(brach_text, color=ORANGE, flash_radius=1.5))\n        self.play(Write(brach_text))\n        self.wait(2)\n        \n        # Cleanup\n        self.play(FadeOut(brach_text), FadeOut(label_cycloid))\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"The Tautochrone Property (Bonus Insight)\", \n                         [\"This curve has another amazing secret property.\", \n                          \"Objects released from any point finish together.\", \n                          \"This is the \\\"equal time\\\" or tautochrone property.\"])\n        \n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        # Cycloid parameters: inverted cycloid\n        r = 0.6\n        # Parametric form: x = r(t + sin(t)), y = r(1 - cos(t))\n        # t in [-PI, PI]\n        cycloid_func = lambda t: np.array([r * (t + np.sin(t)), r * (1 - np.cos(t)), 0])\n        \n        # Create curve\n        pink_curve = ParametricFunction(cycloid_func, t_range=[-PI, PI], color=\"#FF69B4\")\n        # Center initially to avoid offset issues before placing\n        pink_curve.move_to(ORIGIN)\n        \n        # Place in area as per Issue 39: B1 to F6 with scale factor 1.2\n        self.place_in_area(pink_curve, \"B1\", \"F6\", scale_factor=1.2)\n        \n        # Store the offset for the marbles to follow the same path relative to curve position\n        # Since we scaled the curve by 1.2 in place_in_area, we need that scaling for points too.\n        curve_center_offset = pink_curve.get_center()\n\n        self.play(Create(pink_curve), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(BLUE)\n\n        # Asset path from Issue 28\n        marble_asset_path = \"/scratch/pawsey1357/jthen/Code2Video/assets/icon/marbles.svg\"\n        \n        # Initial theta values for three marbles (spread across the left half)\n        theta_starts = [-PI, -2*PI/3, -PI/3]\n        marbles = VGroup()\n        for theta in theta_starts:\n            # Create instance of the marble asset\n            marble = SVGMobject(marble_asset_path)\n            marble.scale(0.15)\n            # Position it at the starting point on the cycloid, applying the 1.2 scale factor\n            pos = cycloid_func(theta) * 1.2 + curve_center_offset \n            marble.move_to(pos)\n            marbles.add(marble)\n\n        # Tint the marbles differently to tell them apart\n        marbles[0].set_color(BLUE_B)\n        marbles[1].set_color(GREEN_B)\n        marbles[2].set_color(RED_B)\n\n        self.play(FadeIn(marbles))\n        self.wait(1)\n\n        # Physics: Simple Harmonic Motion in arc length s\n        # s(t) = s0 * cos(omega * t), where s = 4r * sin(theta/2)\n        # Relationship: theta(t) = 2 * arcsin(sin(theta0/2) * cos(omega * t))\n        \n        omega = 1.0 \n        time_tracker = ValueTracker(0)\n\n        # Persistent updaters for smooth animation\n        def get_update_fn(start_theta):\n            def update_fn(m):\n                t = time_tracker.get_value()\n                # Marbles converge at t = PI / (2 * omega)\n                t_constrained = min(t, PI / (2 * omega))\n                \n                # Desired theta at time t\n                val = np.sin(start_theta / 2) * np.cos(omega * t_constrained)\n                val = np.clip(val, -1, 1)\n                theta_t = 2 * np.arcsin(val)\n                \n                # Update position based on parametric curve and scaling\n                new_pos = cycloid_func(theta_t) * 1.2 + curve_center_offset\n                m.move_to(new_pos)\n            return update_fn\n\n        for i, m in enumerate(marbles):\n            m.add_updater(get_update_fn(theta_starts[i]))\n\n        # Release the marbles!\n        self.play(\n            time_tracker.animate.set_value(PI / (2 * omega)), \n            run_time=3, \n            rate_func=linear\n        )\n        self.wait(0.5)\n\n        # Clear updaters for stability\n        for m in marbles:\n            m.clear_updaters()\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(GOLD)\n        \n        # Convergence point is at theta = 0\n        flash_point = cycloid_func(0) * 1.2 + curve_center_offset\n        self.play(Flash(flash_point, color=WHITE, line_length=0.3, num_lines=12))\n        \n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section7Scene(TeachingScene):\n    def construct(self):\n        # Initialize Scene Layout\n        self.setup_layout(\"Summary and Real-World Application\", [\n            \"Optimization requires balancing speed and distance.\",\n            \"Cycloids appear in roller coasters and nature.\",\n            \"The fastest path isn't always the straightest one.\"\n        ])\n\n        # Colors defined in requirements\n        COASTER_COLOR = \"#00BFFF\"\n        FALCON_COLOR = \"#FFD700\"\n        SUMMARY_COLOR = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        # \"Optimization requires balancing speed and distance.\"\n        self.lecture[0].set_color(YELLOW)\n\n        # Split screen setup\n        coaster_label = Text(\"Roller Coaster\", font_size=20, color=COASTER_COLOR)\n        self.place_at_grid(coaster_label, \"A2\", scale_factor=0.8)\n        \n        falcon_label = Text(\"Falcon Dive\", font_size=20, color=FALCON_COLOR)\n        self.place_at_grid(falcon_label, \"A5\", scale_factor=0.8)\n\n        # Static representations for context\n        # [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/rollercoaster.svg]\n        coaster_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/rollercoaster.svg\")\n        coaster_icon.set_color(COASTER_COLOR)\n        self.place_in_area(coaster_icon, \"B1\", \"C3\", scale_factor=0.6)\n        \n        falcon_icon = Triangle(color=FALCON_COLOR).rotate(-PI/2)\n        # Fix for Issue 42: Adjust scale factor to 0.5\n        self.place_in_area(falcon_icon, \"B4\", \"C6\", scale_factor=0.5)\n\n        self.play(\n            FadeIn(coaster_label),\n            FadeIn(falcon_label),\n            FadeIn(coaster_icon),\n            FadeIn(falcon_icon)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"Cycloids appear in roller coasters and nature.\"\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n\n        # Cycloid Path Generation (Brachistochrone shape)\n        def create_cycloid():\n            return ParametricFunction(\n                lambda t: np.array([t - np.sin(t), -(1 - np.cos(t)), 0]),\n                t_range=[0, PI],\n                color=WHITE\n            )\n\n        cycloid_path_1 = create_cycloid()\n        # Fix for Issue 41: Adjust scale factor to 0.8\n        self.place_in_area(cycloid_path_1, \"B1\", \"C3\", scale_factor=0.8)\n        \n        cycloid_path_2 = create_cycloid()\n        # Fix for Issue 41: Adjust scale factor to 0.8\n        self.place_in_area(cycloid_path_2, \"B4\", \"C6\", scale_factor=0.8)\n\n        # Trace the curves\n        self.play(\n            Create(cycloid_path_1),\n            Create(cycloid_path_2),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"The fastest path isn't always the straightest one.\"\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n\n        summary_text = Text(\"Optimization = Balance of\\nDistance and Speed\", font_size=28, color=SUMMARY_COLOR)\n        # Fix for Issue 40: Adjust positioning and scale\n        self.place_in_area(summary_text, 'E1', 'F6', scale_factor=0.6)\n\n        # Display summary in the center area while dimming previous visuals\n        self.play(\n            coaster_label.animate.set_fill(opacity=0.2),\n            falcon_label.animate.set_fill(opacity=0.2),\n            coaster_icon.animate.set_opacity(0.2),\n            falcon_icon.animate.set_fill(opacity=0.2),\n            cycloid_path_1.animate.set_stroke(opacity=0.2),\n            cycloid_path_2.animate.set_stroke(opacity=0.2),\n            Write(summary_text)\n        )\n        self.wait(3)\n\n        # Cleanup\n        self.play(\n            *[FadeOut(m) for m in self.mobjects]\n        )\n"
+  ],
+  "outline": {
+    "topic": "The Brachistochrone Problem: The Path of Fastest Descent",
+    "target_audience": "High school physics students and early undergraduate STEM students",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Great Race: Intuition vs. Reality",
+        "content": "Introduce the central question: Given two points at different heights (not vertically aligned), what is the shape of the track that allows an object to slide from the start to the end in the shortest possible time? We compare three paths: a straight line, a circular arc, and a steep curve.",
+        "example": "An alpine skier (Character A) takes a straight slope, while a snowboarder (Character B) takes a slope that drops sharply at the beginning and levels out. Who reaches the lodge first?"
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite Knowledge: Speed and Energy",
+        "content": "Review the Conservation of Energy ($mgh = 1/2 mv^2$). Establish that the speed ($v$) at any point depends only on the vertical drop ($h$), not the path taken. However, time ($t$) depends on both the distance traveled and the speed at every moment ($t = \\int ds/v$).",
+        "example": "Visualizing a 'Speed Meter' over a marble sliding down a track; as height decreases, the meter fills up regardless of the track's horizontal position."
+      },
+      {
+        "id": "section_3",
+        "title": "The Paradox of the Straight Line",
+        "content": "Explain why the shortest distance (straight line) is not the fastest path. A steeper initial drop allows the object to gain high velocity earlier, covering the remaining distance much faster, even if the total path is longer.",
+        "example": "A vector diagram showing a 'Velocity vs. Time' graph for the straight line (constant acceleration) vs. a curved path (high initial acceleration)."
+      },
+      {
+        "id": "section_4",
+        "title": "Fermat’s Principle and the Light Analogy",
+        "content": "Introduce the concept of 'Optical Analogy.' Just as light bends (Snell's Law) to take the path of least time through different media, we can imagine the gravity field as a series of layers with increasing 'refractive indices' (speeds). The optimal path follows the logic of light refraction.",
+        "example": "An animation of a light beam passing through layers of air, water, and glass, bending continuously to minimize travel time."
+      },
+      {
+        "id": "section_5",
+        "title": "The Solution: The Cycloid",
+        "content": "Reveal the Brachistochrone curve: The Cycloid. Define it geometrically as the path traced by a point on the rim of a rolling wheel. This specific curve perfectly balances the need for initial acceleration with the need for a direct route.",
+        "example": "A bicycle wheel rolling along a flat ceiling; a glowing LED on the rim traces the exact 'Brachistochrone' path in the air."
+      },
+      {
+        "id": "section_6",
+        "title": "The Tautochrone Property (Bonus Insight)",
+        "content": "Demonstrate a unique property of the cycloid: the 'Equal Time' property. No matter where you release an object on a cycloidal track, it will reach the bottom in the exact same amount of time.",
+        "example": "Three penguins sliding down from different heights on a giant cycloid-shaped slide; they all 'clink' together at the bottom at the exact same millisecond."
+      },
+      {
+        "id": "section_7",
+        "title": "Summary and Real-World Application",
+        "content": "Recap the core lesson: Optimization often requires a trade-off between distance and speed. Mention applications in engineering, roller coaster design, and even the flight paths of birds of prey.",
+        "example": "A falcon diving at a curve rather than a straight line to strike its prey with maximum speed and minimum time."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Great Race: Intuition vs. Reality",
+      "lecture_lines": [
+        "Which path is the fastest between two points?",
+        "Is it the straightest or the steepest path?",
+        "Let's compare a straight line and a curve.",
+        "Intuitively, the straightest path seems the fastest.",
+        "But physics often defies our simple intuition."
+      ],
+      "animations": [
+        "Show point A (0, 3) and point B (5, 0) with white labels (#FFFFFF).",
+        "Draw three paths: Straight (#FFFFFF), Circular Arc (#FFD700), Steep Curve (#00BFFF).",
+        "Place three marbles [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/marbles.svg] (White, Gold, Blue) at point A.",
+        "Animate marbles [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/marbles.svg] sliding; the Blue marble on the steep curve reaches B first.",
+        "Highlight the Blue path and label it 'Fastest Path' in blue (#00BFFF)."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite Knowledge: Speed and Energy",
+      "lecture_lines": [
+        "Gravity converts potential energy into kinetic energy.",
+        "Vertical drop determines the final speed reached.",
+        "Total time depends on speed and distance traveled."
+      ],
+      "animations": [
+        "Display the energy formula 'mgh = 1/2 mv^2' at the top center in white (#FFFFFF).",
+        "Show a marble [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/marble.svg] falling; a green bar (#00FF00) labeled 'Speed' grows as height 'h' decreases.",
+        "Show the time integral 't = integral(ds/v)' and highlight 'v' in green (#00FF00) and 'ds' in yellow (#FFD700)."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Paradox of the Straight Line",
+      "lecture_lines": [
+        "A straight line is the shortest distance.",
+        "However, speed is low at the beginning.",
+        "A steep curve builds speed much faster.",
+        "Higher speed covers more distance in less time.",
+        "Speed beats distance in this race."
+      ],
+      "animations": [
+        "Draw a straight line (#FFFFFF) and a steep-drop curve (#00BFFF) between two points, with a bicycle [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bicycle.svg] starting at the beginning of each path.",
+        "Show velocity vectors along both; the curve gets larger vectors (faster speed) much earlier.",
+        "Draw a graph showing Velocity vs Time; the curve's line (#00BFFF) is higher than the straight line's (#FFFFFF)."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Fermat’s Principle and the Light Analogy",
+      "lecture_lines": [
+        "Light always follows the path of least time.",
+        "It refracts when passing through different media.",
+        "Gravity acts like a medium with changing speed."
+      ],
+      "animations": [
+        "Show horizontal color bands representing layers where speed increases downward.",
+        "Trace a light beam bending at each interface according to Snell's Law.",
+        "Increase the number of layers until the path becomes a smooth, continuous curve.",
+        "Label the resulting curve 'Path of Least Time' in gold (#FFD700).",
+        "Overlay a marble [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/marble.svg] sliding along this light-path curve to show the analogy."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Solution: The Cycloid",
+      "lecture_lines": [
+        "The fastest path is called the cycloid.",
+        "It is the path of a rolling wheel.",
+        "This curve balances acceleration and distance perfectly.",
+        "Johann Bernoulli challenged the world with this problem.",
+        "The solution revealed a new branch of calculus."
+      ],
+      "animations": [
+        "Show a wheel [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/wheel.svg] rolling along the top horizontal axis.",
+        "Mark a point on the wheel's [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/wheel.svg] rim with a bright red dot (#FF0000).",
+        "Animate the wheel [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/wheel.svg] rolling; the red dot traces an orange path (#FFA500).",
+        "Label the orange path 'Cycloid' and scale it to fit points A and B.",
+        "Flash the text 'Brachistochrone' in orange (#FFA500) over the curve."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "The Tautochrone Property (Bonus Insight)",
+      "lecture_lines": [
+        "This curve has another amazing secret property.",
+        "Objects released from any point finish together.",
+        "This is the \"equal time\" or tautochrone property."
+      ],
+      "animations": [
+        "Draw a large pink cycloid curve (#FF69B4).",
+        "Place three marbles [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/marbles.svg] at different heights on the left side of the curve.",
+        "Release the marbles [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/marbles.svg]; show them sliding and converging at the bottom at the same time."
+      ]
+    },
+    {
+      "id": "section_7",
+      "title": "Summary and Real-World Application",
+      "lecture_lines": [
+        "Optimization requires balancing speed and distance.",
+        "Cycloids appear in roller coasters and nature.",
+        "The fastest path isn't always the straightest one."
+      ],
+      "animations": [
+        "Show a split screen with a roller coaster [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/rollercoaster.svg] (#00BFFF) and a falcon (#FFD700).",
+        "Trace a cycloid curve over both the coaster drop and the falcon's dive path.",
+        "Display 'Optimization = Balance of Distance and Speed' in white (#FFFFFF) at the center."
+      ]
+    }
+  ],
+  "turns_run": 3,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animation steps for section_1 based on the outline and title. Ready for review."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_1 implementing the 'Great Race' animation with three paths and marbles. Used grid system for positioning and followed color-coding constraints for lecture lines."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animation steps for section_2 based on the outline and title. Ready for review."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section 2. Implemented energy conservation visualization with a falling marble and dynamic speed meter. Added the time integral with specific color highlights as requested. Used grid system for positioning."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animation steps for section_3 based on the outline and title. Ready for review."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_3. Implemented two paths (straight and curve) with velocity vector comparisons and a Velocity vs Time graph in the grid system."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animation steps for section_4 based on the outline and title. Ready for review."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 4, implementing Fermat's Principle light analogy with horizontal layers, discrete refraction paths, a smooth cycloid transition, and a sliding marble simulation using ValueTracker."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animation steps for section_5 based on the outline and title. Ready for review."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 5 using the TeachingScene base class. Implemented the rolling wheel animation with a TracedPath for the cycloid, and transitioned to a static curve fitting points A and B as requested. Added grid-based positioning and followed the lecture script coloring requirements."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animation steps for section_6 based on the outline and title. Ready for review."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for Section 6 with the tautochrone property animation. Used parametric equations and Simple Harmonic Motion logic to ensure marbles released from different heights reach the bottom simultaneously. Handled grid positioning and color constraints as per instructions."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 7."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animation steps for section_7 based on the outline and title. Ready for review."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_7 incorporating cycloid tracing and split-screen visuals."
+    },
+    {
+      "id": 22,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "Lecture lines have been generated for all sections. Please design animation steps that closely correspond to these lecture points. Ensure sections 1, 3, and 5 have 5 animation steps and others have 3.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animation steps are already drafted and reviewed."
+    },
+    {
+      "id": 23,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Place three marbles [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/marbles.svg] (White, Gold, Blue) at point A.', 'Animate marbles [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/marbles.svg] sliding; the Blue marble on the steep curve reaches B first.']",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated the marble SVG asset (/scratch/pawsey1357/jthen/Code2Video/assets/icon/marbles.svg) for all three paths and used ValueTracker with updaters for smooth animation as requested."
+    },
+    {
+      "id": 24,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Show a marble [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/marble.svg] falling; a green bar (#00FF00) labeled 'Speed' grows as height 'h' decreases.\"]",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Replaced Dot with marble.svg asset as requested."
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Draw a straight line (#FFFFFF) and a steep-drop curve (#00BFFF) between two points, with a bicycle [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bicycle.svg] starting at the beginning of each path.']",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated bicycle.svg asset into the animation for both the straight and curved paths."
+    },
+    {
+      "id": 26,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Overlay a marble [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/marble.svg] sliding along this light-path curve to show the analogy.']",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated marble SVG asset into the sliding animation as requested."
+    },
+    {
+      "id": 27,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a wheel [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/wheel.svg] rolling along the top horizontal axis.', \"Mark a point on the wheel's [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/wheel.svg] rim with a bright red dot (#FF0000).\", 'Animate the wheel [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/wheel.svg] rolling; the red dot traces an orange path (#FFA500).']",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated wheel SVG asset and updated rolling animation to use it."
+    },
+    {
+      "id": 28,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Place three marbles [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/marbles.svg] at different heights on the left side of the curve.', 'Release the marbles [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/marbles.svg]; show them sliding and converging at the bottom at the same time.']",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated marble asset SVGMobject and replaced the dot representation."
+    },
+    {
+      "id": 29,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_7] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a split screen with a roller coaster [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/rollercoaster.svg] (#00BFFF) and a falcon (#FFD700).']",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated SVGMobject asset for the roller coaster icon as requested."
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'Fastest Path' label is placed at D4, which causes it to overlap with the straight white path and the yellow curved path, making the text harder to read. Fix: Line 138: self.place_at_grid(label_fastest, 'D5', scale_factor=0.8) (line=138, object=label_fastest)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved 'Fastest Path' label to D5 and set scale factor to 0.8 to prevent overlap with other paths."
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: formula1 positioned at A2-A5 is too wide and its left-side positioning (starting at A2) overlaps with the vertical path of the gravity animation. Fix: Line 64: self.place_in_area(formula1, 'A4', 'B6', scale_factor=0.8) (line=64, object=formula1)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved formula1 to A4-B6 with scale 0.8 to avoid overlap with falling marble path."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: formula2 at D5-F6 with a scale factor of 1.3 is excessively large, making the lower-right quadrant look cluttered and unbalanced compared to the rest of the visual. Fix: Line 135: self.place_in_area(formula2, 'E5', 'F6', scale_factor=1.0) (line=135, object=formula2)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved formula2 to E5-F6 and reduced scale to 1.0 for better balance."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The velocity axes (currently E1-F5) overlap with the 'Fast' label and the lower arc of the curved trajectory. Fix: Line 145: self.place_in_area(axes, 'E4', 'F6', scale_factor=0.6) (line=145, object=axes)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved velocity axes to E4-F6 with scale 0.6 to avoid overlap with labels and trajectory."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The 'Fast' label is positioned too close to the velocity graph's initial placement, creating visual clutter. Fix: Line 110: self.place_at_grid(fast_label, 'E1', scale_factor=0.7) (line=110, object=fast_label)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved 'Fast' label to grid position E1 with scale 0.7 to reduce visual clutter."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The label 'Path of Least Time' consists of four words but is positioned using 'place_at_grid' at E5. This violates the formatting rule for multi-word labels and results in poor scaling and potential overlap with the light pulse's animation path. Fix: Line 124: self.place_in_area(label, 'F4', 'F6', scale_factor=0.8) (object=label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated 'Path of Least Time' label positioning to use place_in_area('F4', 'F6') for better layout and scaling."
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The text 'Brachistochrone' is positioned in a large central area (B2-D5), significantly obscuring the cycloid curve and other labels. Fix: Line 157: self.place_in_area(brach_text, 'B4', 'B6', scale_factor=0.7) (line=157, object=brach_text)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned 'Brachistochrone' text to B4-B6 area with scale factor 0.7 to avoid obscuring the curve."
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'Cycloid' label at C4 is placed directly on top of the curve's expected path, causing visual clutter. Fix: Line 140: self.place_at_grid(label_cycloid, 'D4', scale_factor=0.8) (line=140, object=label_cycloid)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Moved 'Cycloid' label to grid position D4 with scale 0.8 for better visibility."
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The wheel asset at B1 is misaligned with the starting point 'A' of the trajectory, which is located near A3. Fix: Line 80: self.place_at_grid(wheel, 'A3', scale_factor=0.5) (line=80, object=wheel)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Aligned wheel starting position and point A to grid position A3."
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The pink_curve and its associated dots are relatively small, leaving the bottom row (Row F) and outer columns (1 and 6) of the designated grid area unused, which reduces the visual impact of the tautochrone demonstration. Fix: Line 67: self.place_in_area(pink_curve, 'B1', 'F6', scale_factor=1.2) (line=67, object=pink_curve)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted curve area to B1:F6 and increased scale factor to 1.2 for better visual impact."
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The summary_text is oversized and vertically cramped, spanning three full rows (D, E, F) and lacking separation from the graphics above. Fix: Line 124: self.place_in_area(summary_text, 'E1', 'F6', scale_factor=0.6) (line=124, object=summary_text)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted summary_text positioning to 'E1'-'F6' and reduced scale_factor to 0.6."
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: The cycloid paths at scale 1.0 are too large for their 3x3 grid areas, leaving no vertical padding below the labels. Fix: Lines 104 & 108: self.place_in_area(cycloid_path_1, 'B1', 'C3', scale_factor=0.8) and self.place_in_area(cycloid_path_2, 'B4', 'C6', scale_factor=0.8) (line=104, object=cycloid_path_1 and cycloid_path_2)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted cycloid path scale factors to 0.8 to prevent overcrowding."
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder7",
+      "description": "[VideoCritic][section_7] Problem: Visual imbalance between icons; the falcon_icon (0.3) appears significantly smaller and less prominent than the coaster_icon (0.6). Fix: Line 79: self.place_in_area(falcon_icon, 'B4', 'C6', scale_factor=0.5) (line=79, object=falcon_icon)",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted falcon_icon scale factor to 0.5 for better visual balance."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6",
+    "section_7": "Coder7"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5,
+    "section_7": 6
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_6/480p15/Section6Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_7/480p15/Section7Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 306008,
+        "video_mtime_ns": 1785719540000000000,
+        "code_sha1": "0233da5ede653c7242c3882a845328b2ea0b4975"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'Fastest Path' label is placed at D4, which causes it to overlap with the straight white path and the yellow curved path, making the text harder to read.",
+              "solution": "Line 138: self.place_at_grid(label_fastest, 'D5', scale_factor=0.8)",
+              "line_number": 138,
+              "object_affected": "label_fastest"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        30
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 134045,
+        "video_mtime_ns": 1785719533000000000,
+        "code_sha1": "8ab58b93d6670504e7ab613511d5dc1afa6cafdd"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "formula1 positioned at A2-A5 is too wide and its left-side positioning (starting at A2) overlaps with the vertical path of the gravity animation.",
+              "solution": "Line 64: self.place_in_area(formula1, 'A4', 'B6', scale_factor=0.8)",
+              "line_number": 64,
+              "object_affected": "formula1"
+            },
+            {
+              "problem": "formula2 at D5-F6 with a scale factor of 1.3 is excessively large, making the lower-right quadrant look cluttered and unbalanced compared to the rest of the visual.",
+              "solution": "Line 135: self.place_in_area(formula2, 'E5', 'F6', scale_factor=1.0)",
+              "line_number": 135,
+              "object_affected": "formula2"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        31,
+        32
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 297128,
+        "video_mtime_ns": 1785719533000000000,
+        "code_sha1": "d9e2cd6df11c7c473765aaac48482b635351d6ce"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The velocity axes (currently E1-F5) overlap with the 'Fast' label and the lower arc of the curved trajectory.",
+              "solution": "Line 145: self.place_in_area(axes, 'E4', 'F6', scale_factor=0.6)",
+              "line_number": 145,
+              "object_affected": "axes"
+            },
+            {
+              "problem": "The 'Fast' label is positioned too close to the velocity graph's initial placement, creating visual clutter.",
+              "solution": "Line 110: self.place_at_grid(fast_label, 'E1', scale_factor=0.7)",
+              "line_number": 110,
+              "object_affected": "fast_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 228729,
+        "video_mtime_ns": 1785719532000000000,
+        "code_sha1": "6739500a667daff8aa5cf288a478516f730a7b57"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The label 'Path of Least Time' consists of four words but is positioned using 'place_at_grid' at E5. This violates the formatting rule for multi-word labels and results in poor scaling and potential overlap with the light pulse's animation path.",
+              "solution": "Line 124: self.place_in_area(label, 'F4', 'F6', scale_factor=0.8)",
+              "object_affected": "label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        35
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 267343,
+        "video_mtime_ns": 1785719532000000000,
+        "code_sha1": "114a43245e89a22a2f1e924b746e4bc87710db95"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The text 'Brachistochrone' is positioned in a large central area (B2-D5), significantly obscuring the cycloid curve and other labels.",
+              "solution": "Line 157: self.place_in_area(brach_text, 'B4', 'B6', scale_factor=0.7)",
+              "line_number": 157,
+              "object_affected": "brach_text"
+            },
+            {
+              "problem": "The 'Cycloid' label at C4 is placed directly on top of the curve's expected path, causing visual clutter.",
+              "solution": "Line 140: self.place_at_grid(label_cycloid, 'D4', scale_factor=0.8)",
+              "line_number": 140,
+              "object_affected": "label_cycloid"
+            },
+            {
+              "problem": "The wheel asset at B1 is misaligned with the starting point 'A' of the trajectory, which is located near A3.",
+              "solution": "Line 80: self.place_at_grid(wheel, 'A3', scale_factor=0.5)",
+              "line_number": 80,
+              "object_affected": "wheel"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        36,
+        37,
+        38
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 151550,
+        "video_mtime_ns": 1785719526000000000,
+        "code_sha1": "72f150285c884a3a2250f83851750f8d5dae853d"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The pink_curve and its associated dots are relatively small, leaving the bottom row (Row F) and outer columns (1 and 6) of the designated grid area unused, which reduces the visual impact of the tautochrone demonstration.",
+              "solution": "Line 67: self.place_in_area(pink_curve, 'B1', 'F6', scale_factor=1.2)",
+              "line_number": 67,
+              "object_affected": "pink_curve"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        39
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_7",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_7/480p15/Section7Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent/media/videos/section_7/480p15/Section7Scene.mp4",
+        "video_size": 163500,
+        "video_mtime_ns": 1785719529000000000,
+        "code_sha1": "be09130902912270f54b69e2840c13e6e6f1dfae"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The summary_text is oversized and vertically cramped, spanning three full rows (D, E, F) and lacking separation from the graphics above.",
+              "solution": "Line 124: self.place_in_area(summary_text, 'E1', 'F6', scale_factor=0.6)",
+              "line_number": 124,
+              "object_affected": "summary_text"
+            },
+            {
+              "problem": "The cycloid paths at scale 1.0 are too large for their 3x3 grid areas, leaving no vertical padding below the labels.",
+              "solution": "Lines 104 & 108: self.place_in_area(cycloid_path_1, 'B1', 'C3', scale_factor=0.8) and self.place_in_area(cycloid_path_2, 'B4', 'C6', scale_factor=0.8)",
+              "line_number": 104,
+              "object_affected": "cycloid_path_1 and cycloid_path_2"
+            },
+            {
+              "problem": "Visual imbalance between icons; the falcon_icon (0.3) appears significantly smaller and less prominent than the coaster_icon (0.6).",
+              "solution": "Line 79: self.place_in_area(falcon_icon, 'B4', 'C6', scale_factor=0.5)",
+              "line_number": 79,
+              "object_affected": "falcon_icon"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        40,
+        41,
+        42
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/9-The_Brachistochrone_Problem_The_Path_of_Fastest_Descent",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 519021,
+      "completion_tokens": 65296,
+      "total_tokens": 683605,
+      "call_count": 40
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 278,
+        "completion_tokens": 925,
+        "total_tokens": 1928,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 20459,
+        "completion_tokens": 1094,
+        "total_tokens": 23571,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 27989,
+        "completion_tokens": 1508,
+        "total_tokens": 30781,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 81042,
+        "completion_tokens": 1371,
+        "total_tokens": 84273,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 39320,
+        "completion_tokens": 9254,
+        "total_tokens": 53985,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 77389,
+        "completion_tokens": 9179,
+        "total_tokens": 95326,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 39911,
+        "completion_tokens": 11035,
+        "total_tokens": 55330,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 46449,
+        "completion_tokens": 6291,
+        "total_tokens": 59060,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 63995,
+        "completion_tokens": 6296,
+        "total_tokens": 76767,
+        "call_count": 2
+      },
+      "agent:Coder7": {
+        "prompt_tokens": 45488,
+        "completion_tokens": 9396,
+        "total_tokens": 66543,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 51941,
+        "completion_tokens": 6023,
+        "total_tokens": 70698,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 4905,
+        "completion_tokens": 1250,
+        "total_tokens": 13244,
+        "call_count": 14
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2979,
+        "completion_tokens": 145,
+        "total_tokens": 7524,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2536,
+        "completion_tokens": 254,
+        "total_tokens": 4945,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3034,
+        "completion_tokens": 228,
+        "total_tokens": 5250,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 2952,
+        "completion_tokens": 149,
+        "total_tokens": 9662,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3012,
+        "completion_tokens": 340,
+        "total_tokens": 5669,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2629,
+        "completion_tokens": 157,
+        "total_tokens": 10462,
+        "call_count": 1
+      },
+      "video_review:section_7": {
+        "prompt_tokens": 2713,
+        "completion_tokens": 401,
+        "total_tokens": 8587,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 519021,
+        "completion_tokens": 65296,
+        "total_tokens": 683605,
+        "call_count": 40
+      }
+    }
+  }
+}

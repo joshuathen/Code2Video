@@ -1098,7 +1098,7 @@ def build_and_parse_args() -> argparse.Namespace:
         dest="belief_library_path",
         type=str,
         default=None,
-        help="Optional path to belief_library.json or a pipeline directory containing it. Defaults to the latest pipeline library under mas_logs when belief injection is enabled.",
+        help="Optional path to belief_library.json or a pipeline directory containing it. If omitted, the MAS pipeline runs without beliefs.",
     )
     parser.add_argument(
         "--top_general_beliefs",

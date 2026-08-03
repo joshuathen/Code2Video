@@ -285,7 +285,10 @@ def _resolve_latest_belief_library_path(logs_root: Path) -> Optional[Path]:
 
 def _resolve_belief_library_path(path_value: Optional[str]) -> Optional[Path]:
     if not path_value:
-        return _resolve_latest_belief_library_path(Path(__file__).resolve().parent.parent / "mas_logs")
+        # Belief injection is opt-in.  In particular, do not silently discover
+        # a library from a previous run when the caller omitted
+        # --belief_library_path: baseline pipelines must remain belief-free.
+        return None
 
     candidate = Path(path_value).expanduser()
     if not candidate.is_absolute():

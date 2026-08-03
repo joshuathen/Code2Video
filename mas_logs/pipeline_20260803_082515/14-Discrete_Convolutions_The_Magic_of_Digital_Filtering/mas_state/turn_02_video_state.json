@@ -1,0 +1,597 @@
+{
+  "topic": "Discrete Convolutions: The Magic of Digital Filtering",
+  "target_audience": "University students in Computer Science or Engineering",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        title = \"Introduction: The Blurry Vision Problem\"\n        lines = [\n            \"Convolution is the math behind digital photo filters.\",\n            \"It combines two data sets to create a third.\",\n            \"We'll use it to clear a robot's blurry vision.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        GRAY_COLOR = \"#808080\"\n        BRUSH_COLOR = \"#FFFF00\"\n        HIGHLIGHT_COLOR = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        # Create a 6x6 grid of gray squares\n        grid_squares = VGroup()\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]\n        \n        for r in rows:\n            for c in cols:\n                # Add some \"noise\" via varying initial opacities\n                op = np.random.uniform(0.2, 0.5)\n                sq = Square(side_length=0.7, fill_color=GRAY_COLOR, fill_opacity=op, stroke_width=1, stroke_color=GRAY_COLOR)\n                self.place_at_grid(sq, f\"{r}{c}\")\n                grid_squares.add(sq)\n        \n        self.play(FadeIn(grid_squares))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Introduce a 'Mathematical Brush' (a 2x2 yellow square)\n        # It covers A1, A2, B1, B2\n        brush = Rectangle(width=1.5, height=1.5, color=BRUSH_COLOR, fill_opacity=0.2, stroke_width=4)\n        self.place_in_area(brush, 'A1', 'B2')\n        \n        brush_label = Text(\"Brush\", font_size=18, color=BRUSH_COLOR)\n        brush_label.next_to(brush, UP, buff=0.1)\n        \n        self.play(Create(brush), Write(brush_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # The brush sweeps over the grid, turning it into a clear 'L' shape.\n        # Define 'L' indices (0-35)\n        # B2, C2, D2, E2, E3, E4, E5\n        l_indices = [7, 13, 19, 25, 26, 27, 28]\n        \n        # Animation sequence: Sweep brush from top-left to bottom-right\n        # While sweeping, squares in l_indices become white/clearer.\n        \n        # We can simulate the sweep by moving the brush to a few key areas\n        path_points = [\n            ('A1', 'B2'), # Start\n            ('A5', 'B6'), # Row 1-2 sweep\n            ('C1', 'D2'), # Row 3-4 sweep\n            ('C5', 'D6'),\n            ('E1', 'F2'), # Row 5-6 sweep\n            ('E5', 'F6')  # End\n        ]\n        \n        # Tracker for the brush movement to trigger color changes\n        def update_grid(mobject):\n            brush_center = brush.get_center()\n            for i, sq in enumerate(grid_squares):\n                # If brush is close to square, reveal if it's part of L, else clear noise\n                dist = np.linalg.norm(sq.get_center() - brush_center)\n                if dist < 1.2:\n                    if i in l_indices:\n                        sq.set_fill(HIGHLIGHT_COLOR, opacity=0.9)\n                        sq.set_stroke(HIGHLIGHT_COLOR, width=2)\n                    else:\n                        sq.set_fill(GRAY_COLOR, opacity=0.1)\n                        sq.set_stroke(GRAY_COLOR, width=1)\n\n        grid_squares.add_updater(update_grid)\n        \n        # Move the brush and label\n        for pos_start, pos_end in [('A1', 'B2'), ('A5', 'B6'), ('C1', 'D2'), ('C5', 'D6'), ('E1', 'F2'), ('E5', 'F6')]:\n            target_brush = Rectangle(width=1.5, height=1.5)\n            self.place_in_area(target_brush, pos_start, pos_end)\n            \n            # Simple linear move for the demo\n            self.play(\n                brush.animate.move_to(target_brush.get_center()),\n                brush_label.animate.next_to(target_brush, UP, buff=0.1),\n                run_time=0.8,\n                rate_func=linear\n            )\n\n        grid_squares.remove_updater(update_grid)\n        self.play(FadeOut(brush), FadeOut(brush_label))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\n            \"Prerequisite: Discrete Signals and Arrays\",\n            [\n                \"A discrete signal is an ordered sequence of numbers.\",\n                \"1D signals represent sound levels or sensor data.\",\n                \"2D signals represent pixel grids in digital images.\"\n            ]\n        )\n\n        # Define Colors\n        color_1d_bars = \"#ADD8E6\"  # Light Blue\n        color_1d_grid = \"#F0E68C\"  # Khaki\n        color_2d_grid = \"#FFFFFF\"  # White\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(color_1d_bars)\n        \n        # Create a bar chart with heights [0, 1, 2, 1, 0] in light blue #ADD8E6.\n        # heights for visualization (0.05 for '0' to show the location)\n        heights = [0.05, 1.0, 2.0, 1.0, 0.05]\n        bars = VGroup(*[\n            Rectangle(\n                height=h, \n                width=0.6, \n                fill_opacity=0.8, \n                fill_color=color_1d_bars, \n                stroke_color=color_1d_bars\n            )\n            for h in heights\n        ]).arrange(RIGHT, buff=0.2, aligned_edge=DOWN)\n        \n        # Baseline for the bar chart\n        baseline = Line(\n            start=bars.get_left() + LEFT*0.2, \n            end=bars.get_right() + RIGHT*0.2, \n            color=WHITE, \n            stroke_width=2\n        ).next_to(bars, DOWN, buff=0)\n        \n        bar_chart_group = VGroup(bars, baseline)\n        self.place_in_area(bar_chart_group, 'B2', 'D5', scale_factor=1.0)\n        \n        self.play(Create(bar_chart_group), run_time=1.5)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(color_1d_grid)\n        \n        # Fade out bars and fade in a 1x5 grid of numbers.\n        values = [0, 1, 2, 1, 0]\n        grid_1d = VGroup()\n        for val in values:\n            sq = Square(side_length=0.8, stroke_color=WHITE)\n            num = Text(str(val), font_size=24, color=color_1d_grid)\n            grid_1d.add(VGroup(sq, num))\n        grid_1d.arrange(RIGHT, buff=0.1)\n        \n        self.place_in_area(grid_1d, 'C1', 'C6', scale_factor=0.9)\n        \n        self.play(\n            FadeOut(bar_chart_group),\n            FadeIn(grid_1d)\n        )\n        self.wait(1.5)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(color_2d_grid)\n        \n        # Show a 4x4 grid #FFFFFF representing a 2D image array.\n        grid_2d = VGroup()\n        for i in range(4):\n            row = VGroup(*[\n                Square(side_length=0.7, stroke_color=color_2d_grid, fill_opacity=0.1, fill_color=color_2d_grid) \n                for _ in range(4)\n            ]).arrange(RIGHT, buff=0.05)\n            grid_2d.add(row)\n        grid_2d.arrange(DOWN, buff=0.05)\n        \n        self.place_in_area(grid_2d, 'B2', 'E5', scale_factor=1.0)\n        \n        self.play(\n            FadeOut(grid_1d),\n            FadeIn(grid_2d)\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"The Tool: What is a Kernel?\", [\n            \"- A kernel is a small array of weighting values.\",\n            \"- It determines a neighbor's influence on a center point.\",\n            \"- An averaging kernel smooths out noisy, jittery data.\"\n        ])\n        \n        # Colors\n        KERNEL_COLOR = \"#98FB98\"  # Light Green\n        LABEL_COLOR = \"#FFFFFF\"\n        INFLUENCE_COLOR = \"#87CEEB\"  # Sky Blue\n        SMOOTH_COLOR = \"#FFD700\"  # Gold\n        \n        # Kernel Mobjects\n        boxes = VGroup(*[Square(side_length=0.8, stroke_color=KERNEL_COLOR) for _ in range(3)]).arrange(RIGHT, buff=0.1)\n        values = VGroup(*[MathTex(r\"1/3\", color=KERNEL_COLOR, font_size=24) for _ in range(3)])\n        for i in range(3):\n            values[i].move_to(boxes[i].get_center())\n        \n        kernel_group = VGroup(boxes, values)\n        self.place_in_area(kernel_group, \"B2\", \"B4\", scale_factor=1.2)\n        \n        kernel_label = Text(\"Averaging Kernel\", font_size=20, color=LABEL_COLOR)\n        self.place_at_grid(kernel_label, \"A3\")\n\n        # === Animation for Lecture Line 1 ===\n        # \"A kernel is a small array of weighting values.\"\n        self.play(self.lecture[0].animate.set_color(KERNEL_COLOR))\n        self.play(\n            Create(boxes),\n            FadeIn(values),\n            Write(kernel_label),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"It determines a neighbor's influence on a center point.\"\n        self.play(self.lecture[1].animate.set_color(INFLUENCE_COLOR))\n        \n        # Pulse neighbors, then center to show \"influence\" flow\n        self.play(\n            boxes[0].animate.set_color(INFLUENCE_COLOR).scale(1.1),\n            boxes[2].animate.set_color(INFLUENCE_COLOR).scale(1.1),\n            rate_func=there_and_back,\n            run_time=1\n        )\n        self.play(\n            boxes[1].animate.set_color(WHITE).scale(1.2),\n            rate_func=there_and_back,\n            run_time=1\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"An averaging kernel smooths out noisy, jittery data.\"\n        self.play(self.lecture[2].animate.set_color(SMOOTH_COLOR))\n        \n        # Conceptual smoothing: highlight the whole kernel as a single unit\n        highlight_rect = SurroundingRectangle(kernel_group, color=SMOOTH_COLOR, buff=0.2)\n        self.play(Create(highlight_rect))\n        self.play(Indicate(kernel_group, color=SMOOTH_COLOR))\n        self.play(FadeOut(highlight_rect))\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        title = \"The Mechanism: Flip, Shift, Multiply, Sum\"\n        lines = [\n            \"First, we flip the kernel for mathematical convention.\",\n            \"Next, slide the kernel step-by-step across the signal.\",\n            \"Multiply the overlapping elements of signal and kernel.\",\n            \"Sum these products to find the output value.\",\n            \"Repeat this process for every position in the signal.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Helper to create array mobjects\n        def create_array(values, color=WHITE, cell_size=0.8):\n            cells = VGroup()\n            for val in values:\n                square = Square(side_length=cell_size, color=color)\n                label = Text(str(val), font_size=24, color=color)\n                cell = VGroup(square, label)\n                cells.add(cell)\n            cells.arrange(RIGHT, buff=0.1)\n            return cells\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        signal_vals = [0, 1, 2, 1, 0]\n        kernel_vals = [1, 0, -1]\n        flipped_vals = [-1, 0, 1]\n        \n        signal_array = create_array(signal_vals, color=BLUE)\n        self.place_in_area(signal_array, \"A1\", \"A5\", scale_factor=0.8)\n        signal_label = Text(\"Signal\", font_size=20, color=BLUE).next_to(signal_array, UP, buff=0.2)\n        \n        kernel_array = create_array(kernel_vals, color=ORANGE)\n        self.place_in_area(kernel_array, \"C1\", \"C3\", scale_factor=0.8)\n        kernel_label = Text(\"Kernel\", font_size=20, color=ORANGE).next_to(kernel_array, UP, buff=0.2)\n        \n        self.play(FadeIn(signal_array), FadeIn(signal_label))\n        self.play(FadeIn(kernel_array), FadeIn(kernel_label))\n        self.wait(1)\n        \n        # Flip Animation\n        flipped_kernel = create_array(flipped_vals, color=\"#FF69B4\")\n        self.place_in_area(flipped_kernel, \"C1\", \"C3\", scale_factor=0.8)\n        flipped_label = Text(\"Flipped Kernel\", font_size=20, color=\"#FF69B4\").next_to(flipped_kernel, UP, buff=0.2)\n        \n        self.play(\n            ReplacementTransform(kernel_array, flipped_kernel),\n            ReplacementTransform(kernel_label, flipped_label),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Position 1: Kernel center under signal[1]\n        pos1 = signal_array[1].get_center() + DOWN * 1.2\n        self.play(flipped_kernel.animate.move_to(pos1))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Show multiplications for pos 1\n        m_labels = VGroup()\n        for i in range(3):\n            m_label = Text(f\"{signal_vals[i]}×{flipped_vals[i]}\", font_size=18, color=WHITE)\n            m_label.move_to(flipped_kernel[i].get_center() + DOWN * 0.7)\n            m_labels.add(m_label)\n        \n        self.play(FadeIn(m_labels))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        sum_val_1 = sum([signal_vals[i]*flipped_vals[i] for i in range(3)]) \n        sum_text = Text(f\"Sum = {sum_val_1}\", font_size=24, color=YELLOW)\n        self.place_at_grid(sum_text, \"E2\")\n        \n        output_array = create_array([\"?\", \"?\", \"?\"], color=GREEN)\n        self.place_in_area(output_array, \"F1\", \"F3\", scale_factor=0.8)\n        output_label = Text(\"Output\", font_size=20, color=GREEN).next_to(output_array, UP, buff=0.2)\n        \n        self.play(Write(sum_text), FadeIn(output_array), FadeIn(output_label))\n        \n        out_val_1 = Text(str(sum_val_1), font_size=24, color=GREEN).move_to(output_array[0][1].get_center())\n        self.play(\n            ReplacementTransform(sum_text, out_val_1),\n            FadeOut(output_array[0][1])\n        )\n        output_array[0].add(out_val_1)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        # Second Position\n        pos2 = signal_array[2].get_center() + DOWN * 1.2\n        sum_val_2 = sum([signal_vals[i+1]*flipped_vals[i] for i in range(3)])\n        \n        self.play(\n            flipped_kernel.animate.move_to(pos2),\n            FadeOut(m_labels)\n        )\n        \n        m_labels2 = VGroup()\n        for i in range(3):\n            m_label = Text(f\"{signal_vals[i+1]}×{flipped_vals[i]}\", font_size=18, color=WHITE)\n            m_label.move_to(flipped_kernel[i].get_center() + DOWN * 0.7)\n            m_labels2.add(m_label)\n            \n        self.play(FadeIn(m_labels2))\n        sum_text2 = Text(f\"Sum = {sum_val_2}\", font_size=24, color=YELLOW)\n        self.place_at_grid(sum_text2, \"E2\")\n        self.play(Write(sum_text2))\n        \n        out_val_2 = Text(str(sum_val_2), font_size=24, color=GREEN).move_to(output_array[1][1].get_center())\n        self.play(\n            ReplacementTransform(sum_text2, out_val_2),\n            FadeOut(output_array[1][1])\n        )\n        output_array[1].add(out_val_2)\n        \n        # Third Position\n        pos3 = signal_array[3].get_center() + DOWN * 1.2\n        sum_val_3 = sum([signal_vals[i+2]*flipped_vals[i] for i in range(3)])\n        \n        self.play(\n            flipped_kernel.animate.move_to(pos3),\n            FadeOut(m_labels2)\n        )\n        \n        m_labels3 = VGroup()\n        for i in range(3):\n            m_label = Text(f\"{signal_vals[i+2]}×{flipped_vals[i]}\", font_size=18, color=WHITE)\n            m_label.move_to(flipped_kernel[i].get_center() + DOWN * 0.7)\n            m_labels3.add(m_label)\n            \n        self.play(FadeIn(m_labels3))\n        sum_text3 = Text(f\"Sum = {sum_val_3}\", font_size=24, color=YELLOW)\n        self.place_at_grid(sum_text3, \"E2\")\n        self.play(Write(sum_text3))\n        \n        out_val_3 = Text(str(sum_val_3), font_size=24, color=GREEN).move_to(output_array[2][1].get_center())\n        self.play(\n            ReplacementTransform(sum_text3, out_val_3),\n            FadeOut(output_array[2][1])\n        )\n        output_array[2].add(out_val_3)\n        \n        self.play(FadeOut(m_labels3))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Setup content\n        title_text = \"2D Convolution: How Images 'See'\"\n        lecture_lines = [\n            \"In 2D, the kernel slides over a pixel grid.\",\n            \"Each output pixel is a weighted sum of neighbors.\",\n            \"A blur kernel spreads colors to nearby pixels.\",\n            \"This process is the foundation of modern computer vision.\",\n            \"CNNs use many kernels to extract complex image features.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors\n        COLOR_INPUT = \"#E0E0E0\"\n        COLOR_KERNEL = \"#FF0000\"\n        COLOR_OUTPUT = \"#90EE90\"\n        COLOR_CV = \"#ADD8E6\"\n        COLOR_CNN = \"#FFFFE0\"\n\n        # Helper for pixel positions in a 5x5 grid with 0.4 sized cells\n        def get_pixel_pos(grid, r, c):\n            # r, c from 0 to 4. Grid is 5x5.\n            return grid.get_center() + (c - 2) * 0.4 * RIGHT + (2 - r) * 0.4 * UP\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(COLOR_INPUT)\n        \n        # Show a 5x5 grid of pixels #E0E0E0.\n        input_grid = VGroup(*[\n            Square(side_length=0.4, fill_opacity=0.3, fill_color=COLOR_INPUT, stroke_color=WHITE, stroke_width=1)\n            for _ in range(25)\n        ]).arrange_in_grid(5, 5, buff=0)\n        self.place_in_area(input_grid, 'B1', 'D3')\n        \n        input_label = Text(\"Input Image\", font_size=20, color=WHITE)\n        self.place_at_grid(input_label, 'A2')\n        \n        self.play(Create(input_grid), Write(input_label))\n        \n        # A 3x3 red frame #FF0000 slides over the 5x5 grid.\n        red_frame = Square(side_length=1.2, stroke_color=COLOR_KERNEL, stroke_width=4)\n        red_frame.move_to(get_pixel_pos(input_grid, 2, 2)) # Start at center\n        \n        self.play(Create(red_frame))\n        self.play(red_frame.animate.move_to(get_pixel_pos(input_grid, 0, 0)), run_time=1.5)\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(COLOR_KERNEL)\n        \n        # Highlight the center pixel and its 8 neighbors in each step.\n        # Each step populates a pixel in a new 5x5 output grid #90EE90.\n        output_grid = VGroup(*[\n            Square(side_length=0.4, fill_opacity=0.0, fill_color=COLOR_OUTPUT, stroke_color=WHITE, stroke_width=1)\n            for _ in range(25)\n        ]).arrange_in_grid(5, 5, buff=0)\n        self.place_in_area(output_grid, 'B4', 'D6')\n        \n        output_label = Text(\"Output Grid\", font_size=20, color=WHITE)\n        self.place_at_grid(output_label, 'A5')\n        \n        self.play(Create(output_grid), Write(output_label))\n\n        # Highlight box for neighbors\n        neighbor_highlight = Square(side_length=1.2, fill_color=COLOR_KERNEL, fill_opacity=0.2, stroke_width=0)\n        neighbor_highlight.move_to(red_frame.get_center())\n        \n        def perform_conv(r, c, run_time=0.4):\n            pos = get_pixel_pos(input_grid, r, c)\n            self.play(\n                red_frame.animate.move_to(pos),\n                neighbor_highlight.animate.move_to(pos),\n                run_time=run_time\n            )\n            target_pixel = output_grid[r*5 + c]\n            self.play(\n                target_pixel.animate.set_fill(opacity=0.8).set_stroke(opacity=1),\n                run_time=run_time/2\n            )\n\n        self.add(neighbor_highlight)\n        perform_conv(0, 0)\n        perform_conv(0, 1)\n        perform_conv(0, 2)\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(COLOR_OUTPUT)\n        # A blur kernel spreads colors to nearby pixels.\n        perform_conv(1, 0)\n        perform_conv(1, 1)\n        perform_conv(1, 2)\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(COLOR_CV)\n        # This process is the foundation of modern computer vision.\n        \n        # Fill the rest quickly (skip steps for speed and time budget)\n        rest_of_pixels = []\n        for r in range(5):\n            for c in range(5):\n                idx = r*5 + c\n                if output_grid[idx].get_fill_opacity() == 0:\n                    rest_of_pixels.append(output_grid[idx].animate.set_fill(opacity=0.8).set_stroke(opacity=1))\n        \n        self.play(\n            red_frame.animate.move_to(get_pixel_pos(input_grid, 4, 4)),\n            neighbor_highlight.animate.move_to(get_pixel_pos(input_grid, 4, 4)),\n            *rest_of_pixels,\n            run_time=2\n        )\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(COLOR_CNN)\n        # CNNs use many kernels to extract complex image features.\n        # Show the mathematical formula: Output = Sum of (Kernel * Neighbors).\n        formula = MathTex(\n            r\"\\text{Output} = \\sum (\\text{Kernel} \\times \\text{Neighbors})\", \n            color=COLOR_CNN,\n            font_size=32\n        )\n        self.place_in_area(formula, 'E1', 'F6', scale_factor=0.9)\n        \n        self.play(Write(formula))\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Data setup\n        lecture_lines = [\n            \"Edge detection kernels highlight areas of high contrast.\",\n            \"The Sobel operator detects sharp changes in brightness.\",\n            \"Positive and negative weights reveal boundaries between objects.\",\n            \"Our robot can now see the doorway's sharp outline.\",\n            \"This transforms raw pixels into useful geometric information.\"\n        ]\n        self.setup_layout(\"Real-World Application: Edge Detection\", lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Show a 6x6 grid with a vertical edge (left dark, right light).\n        self.lecture[0].set_color(YELLOW)\n        \n        input_grid = VGroup()\n        for r in range(6):\n            for c in range(6):\n                # Create a vertical split: dark grey on left, light grey on right\n                color = \"#333333\" if c < 3 else \"#CCCCCC\"\n                square = Square(side_length=0.4, fill_opacity=1, fill_color=color, stroke_width=1, stroke_color=WHITE)\n                input_grid.add(square)\n        input_grid.arrange_in_grid(6, 6, buff=0.05)\n        self.place_in_area(input_grid, \"B1\", \"E4\", scale_factor=1.0)\n        \n        self.play(FadeIn(input_grid))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Display the Sobel kernel [[-1,0,1],[-2,0,2],[-1,0,1]] in orange #FFA500.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        sobel_values = [\n            [-1, 0, 1],\n            [-2, 0, 2],\n            [-1, 0, 1]\n        ]\n        \n        sobel_kernel = VGroup()\n        for r in range(3):\n            for c in range(3):\n                val_text = Text(str(sobel_values[r][c]), font_size=20, color=WHITE)\n                cell_bg = Square(side_length=0.5, fill_opacity=0.9, fill_color=\"#FFA500\", stroke_width=2, stroke_color=WHITE)\n                cell = VGroup(cell_bg, val_text)\n                sobel_kernel.add(cell)\n        \n        sobel_kernel.arrange_in_grid(3, 3, buff=0.05)\n        self.place_at_grid(sobel_kernel, \"C6\", scale_factor=0.9)\n        \n        sobel_label = Text(\"Sobel Kernel\", font_size=20, color=\"#FFA500\")\n        sobel_label.next_to(sobel_kernel, UP, buff=0.2)\n        \n        self.play(FadeIn(sobel_kernel), Write(sobel_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Slide the kernel across the vertical edge.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Visual indicator of kernel sliding over the input pixels\n        sliding_frame = Square(side_length=1.35, color=\"#FFA500\", stroke_width=4, fill_opacity=0.2)\n        # Start the frame on the left side (centered on col 1)\n        sliding_frame.move_to(input_grid[7].get_center()) # row 1, col 1\n        \n        self.play(FadeIn(sliding_frame))\n        \n        # Slide across the boundary: Col 1 -> Col 2 -> Col 3\n        # Boundary is between Col 2 and Col 3\n        self.play(sliding_frame.animate.move_to(input_grid[8].get_center()), run_time=1.5)\n        self.wait(0.5)\n        self.play(sliding_frame.animate.move_to(input_grid[9].get_center()), run_time=1.5)\n        \n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Show the calculation resulting in a high value at the edge.\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        # High-level formula representation\n        calc_box = VGroup(\n            MathTex(r\"(-1 \\times \\text{Dark}) + (1 \\times \\text{Light})\", font_size=24, color=WHITE),\n            MathTex(r\"= \\text{High Positive Value}\", font_size=24, color=YELLOW)\n        ).arrange(DOWN, buff=0.2)\n        self.place_at_grid(calc_box, \"A3\", scale_factor=1.0)\n        \n        # Create output grid where edge is highlighted\n        output_grid = VGroup()\n        for r in range(6):\n            for c in range(6):\n                # The convolution highlights the boundary (cols 2 and 3)\n                is_edge = (c == 2 or c == 3)\n                out_color = WHITE if is_edge else BLACK\n                square = Square(side_length=0.4, fill_opacity=1, fill_color=out_color, stroke_width=1, stroke_color=\"#444444\")\n                output_grid.add(square)\n        output_grid.arrange_in_grid(6, 6, buff=0.05)\n        self.place_in_area(output_grid, \"B1\", \"E4\", scale_factor=1.0)\n        \n        self.play(Write(calc_box))\n        self.play(\n            ReplacementTransform(input_grid, output_grid),\n            FadeOut(sliding_frame),\n            FadeOut(sobel_kernel),\n            FadeOut(sobel_label)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # This transforms raw pixels into useful geometric information.\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        # Highlight the detected geometric structure\n        highlight_rect = SurroundingRectangle(output_grid, color=WHITE, buff=0.1)\n        self.play(Create(highlight_rect))\n        self.play(Indicate(output_grid, color=YELLOW))\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section7Scene(TeachingScene):\n    def construct(self):\n        # Fetching title and lecture lines from storyboard\n        title = \"Summary and Conclusion\"\n        lecture_lines = [\n            \"- Convolution uses a sliding window to transform data.\",\n            \"- It extracts meaningful information from local neighborhoods.\",\n            \"- From blurring to edge detection, the logic remains identical.\"\n        ]\n        \n        self.setup_layout(title, lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # Display a kernel sliding across a generic 2D signal grid.\n        self.lecture[0].set_color(YELLOW)\n        \n        # Create a 5x5 grid. Each cell is 0.6 units.\n        grid_cells = VGroup(*[Square(side_length=0.6, stroke_width=1, color=GRAY) for _ in range(25)])\n        grid_cells.arrange_in_grid(rows=5, cols=5, buff=0)\n        # Place in area A1 to E5 (Right side)\n        self.place_in_area(grid_cells, \"A1\", \"E5\", scale_factor=1.0)\n        \n        # 3x3 kernel highlighter\n        kernel_rect = Square(side_length=1.8, stroke_width=4, color=YELLOW, fill_opacity=0.2, fill_color=YELLOW)\n        \n        # Center of top-left 3x3 area is grid_cells[6] (row 1, col 1 in 0-indexed 5x5)\n        kernel_rect.move_to(grid_cells[6].get_center())\n        \n        self.play(FadeIn(grid_cells))\n        self.play(Create(kernel_rect))\n        \n        # Slide sequence: (1,1) -> (1,2) -> (1,3) -> (2,3) -> (2,2) -> (2,1) -> (3,1) -> (3,2) -> (3,3)\n        slide_indices = [7, 8, 13, 12, 11, 16, 17, 18]\n        for idx in slide_indices:\n            self.play(kernel_rect.animate.move_to(grid_cells[idx].get_center()), run_time=0.4, rate_func=linear)\n            \n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Show three small windows: Original, Blurred, and Edge-detected results.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(BLUE)\n        \n        # Clear grid and kernel\n        self.play(FadeOut(grid_cells), FadeOut(kernel_rect))\n        \n        # Mini visuals for results\n        def create_result_box(label, color, pattern_type):\n            box = Square(side_length=1.2, stroke_width=2, color=color)\n            if pattern_type == \"orig\":\n                # Grid of varying white dots\n                content = VGroup(*[Dot(radius=0.04, color=WHITE, fill_opacity=np.random.random()) for _ in range(16)])\n                content.arrange_in_grid(rows=4, cols=4, buff=0.15)\n            elif pattern_type == \"blur\":\n                # Large soft blue box\n                content = Square(side_length=1.0, fill_opacity=0.4, fill_color=BLUE, stroke_width=0)\n            else: # edge\n                # Red outline\n                content = Square(side_length=0.8, stroke_width=4, color=RED)\n            \n            lbl = Text(label, font_size=16, color=WHITE)\n            res = VGroup(box, content, lbl).arrange(DOWN, buff=0.2)\n            return res\n\n        orig_box = create_result_box(\"Original\", WHITE, \"orig\")\n        blur_box = create_result_box(\"Blurred\", BLUE, \"blur\")\n        edge_box = create_result_box(\"Edges\", RED, \"edge\")\n        \n        # Position using 6x6 grid\n        self.place_at_grid(orig_box, \"C1\", scale_factor=0.9)\n        self.place_at_grid(blur_box, \"C3\", scale_factor=0.9)\n        self.place_at_grid(edge_box, \"C5\", scale_factor=0.9)\n        \n        self.play(FadeIn(orig_box), FadeIn(blur_box), FadeIn(edge_box))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Display final text 'Transforming Data through Local Neighborhoods' in #FFFFFF.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(WHITE) # As requested for the final text\n        \n        final_text = Text(\"Transforming Data through\\nLocal Neighborhoods\", font_size=26, color=\"#FFFFFF\")\n        # Center in the lower part of the right side grid\n        self.place_in_area(final_text, \"E1\", \"F6\", scale_factor=1.0)\n        \n        self.play(Write(final_text))\n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "Discrete Convolutions: The Magic of Digital Filtering",
+    "target_audience": "University students in Computer Science or Engineering",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "Introduction: The Blurry Vision Problem",
+        "content": "Introduce the concept of convolution through a relatable scenario. Explain that convolution is a mathematical way of combining two sets of information to produce a third set. In the digital world, it’s the secret sauce behind photo filters and signal processing.",
+        "example": "A robot named 'Sensor-Bot' has a dusty camera lens. We need a mathematical 'brush' (a kernel) to sweep over its pixelated vision to clear the noise and find the edges of objects."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: Discrete Signals and Arrays",
+        "content": "Before diving into the math, define what a discrete signal is. Represent it as an ordered sequence of numbers (a 1D array) or a grid of numbers (a 2D image). Visualize these as heights on a bar chart or brightness values in a grid.",
+        "example": "Imagine a 1D sequence of sound levels: [0, 1, 2, 1, 0]. This is our input signal, representing a small 'bump' in volume."
+      },
+      {
+        "id": "section_3",
+        "title": "The Tool: What is a Kernel?",
+        "content": "Introduce the 'Kernel' (or filter). Explain that it is a smaller array of numbers that acts as a 'weighting window'. It determines how much influence neighboring points have on a specific center point.",
+        "example": "A 1D 'Averaging Kernel' looks like [1/3, 1/3, 1/3]. When it sits over a signal, it calculates the average of three adjacent points to smooth out jittery data."
+      },
+      {
+        "id": "section_4",
+        "title": "The Mechanism: Flip, Shift, Multiply, Sum",
+        "content": "Break down the mathematical operation (f * g)[n]. 1. Flip the kernel (mathematical convention). 2. Shift the kernel across the signal. 3. Multiply overlapping elements. 4. Sum the results to get a single output value for that position. Use an animation showing the kernel sliding step-by-step.",
+        "example": "Signal: [0, 1, 2, 1, 0] * Kernel: [1, 0, -1]. As the kernel slides, it calculates the difference between the left and right neighbors, effectively detecting changes (slopes) in the signal."
+      },
+      {
+        "id": "section_5",
+        "title": "2D Convolution: How Images 'See'",
+        "content": "Extend the concept to 2D grids (images). Show a 3x3 kernel sliding over a larger grid of pixel values. Emphasize that each output pixel is a 'weighted sum' of its neighbors. This is the foundation of Convolutional Neural Networks (CNNs).",
+        "example": "To blur an image of a cat, use a 3x3 kernel filled with 1/9. This spreads the color of each pixel to its neighbors, making the fur look soft and out of focus."
+      },
+      {
+        "id": "section_6",
+        "title": "Real-World Application: Edge Detection",
+        "content": "Demonstrate a powerful application: Edge Detection. By using specific kernels (like the Sobel operator), we can make the math highlight areas of high contrast, which corresponds to the outlines of objects.",
+        "example": "By applying a kernel with negative values on one side and positive on the other, 'Sensor-Bot' can now see the sharp outline of a doorway, ignoring the flat colors of the wall."
+      },
+      {
+        "id": "section_7",
+        "title": "Summary and Conclusion",
+        "content": "Recap the 'Sliding Window' intuition. Convolution isn't just math; it's a way to transform data into useful information by looking at local neighborhoods.",
+        "example": "A final side-by-side animation: Raw pixel data vs. Convolved data (Blurred, Sharpened, and Edge-detected) to show the versatility of the operation."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "Introduction: The Blurry Vision Problem",
+      "lecture_lines": [
+        "Convolution is the math behind digital photo filters.",
+        "It combines two data sets to create a third.",
+        "We'll use it to clear a robot's blurry vision."
+      ],
+      "animations": [
+        "Create a 6x6 grid of gray squares #808080 with random noise.",
+        "Introduce a 'Mathematical Brush' [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brush.svg] (a 2x2 yellow square #FFFF00).",
+        "The brush sweeps over the grid, turning it into a clear 'L' shape."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: Discrete Signals and Arrays",
+      "lecture_lines": [
+        "A discrete signal is an ordered sequence of numbers.",
+        "1D signals represent sound levels or sensor data.",
+        "2D signals represent pixel grids in digital images."
+      ],
+      "animations": [
+        "Create a bar chart with heights [0, 1, 2, 1, 0] in light blue #ADD8E6 representing audio input from a microphone [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/microphone.svg].",
+        "Fade out bars and fade in a 1x5 grid of numbers.",
+        "Show a 4x4 grid #FFFFFF representing a 2D image array captured by a camera [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/camera.svg]."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Tool: What is a Kernel?",
+      "lecture_lines": [
+        "A kernel is a small array of weighting values.",
+        "It determines a neighbor's influence on a center point.",
+        "An averaging kernel smooths out noisy, jittery data."
+      ],
+      "animations": [
+        "Display a 1x3 row of boxes: [1/3, 1/3, 1/3] in light green #98FB98.",
+        "Label the row 'Averaging Kernel' in #FFFFFF.",
+        "Pulse the center box and its neighbors to show influence."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Mechanism: Flip, Shift, Multiply, Sum",
+      "lecture_lines": [
+        "First, we flip the kernel for mathematical convention.",
+        "Next, slide the kernel step-by-step across the signal.",
+        "Multiply the overlapping elements of signal and kernel.",
+        "Sum these products to find the output value.",
+        "Repeat this process for every position in the signal."
+      ],
+      "animations": [
+        "Show a 1D array [0, 1, 2, 1, 0] and a kernel [1, 0, -1].",
+        "Kernel [1, 0, -1] flips horizontally to [-1, 0, 1] in #FF69B4.",
+        "Slide the flipped kernel step-by-step under the array.",
+        "Multiply overlapping pairs and display the products.",
+        "Sum the products to generate values for the output array."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "2D Convolution: How Images 'See'",
+      "lecture_lines": [
+        "In 2D, the kernel slides over a pixel grid.",
+        "Each output pixel is a weighted sum of neighbors.",
+        "A blur kernel spreads colors to nearby pixels.",
+        "This process is the foundation of modern computer vision.",
+        "CNNs use many kernels to extract complex image features."
+      ],
+      "animations": [
+        "Show a 5x5 grid of pixels #E0E0E0, representing an input image from a [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/camera.svg].",
+        "A 3x3 red frame #FF0000 slides over the 5x5 grid.",
+        "Highlight the center pixel and its 8 neighbors in each step.",
+        "Each step populates a pixel in a new 5x5 output grid #90EE90.",
+        "Show the mathematical formula: Output = Sum of (Kernel * Neighbors) as processed by a [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/computer.svg]."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Real-World Application: Edge Detection",
+      "lecture_lines": [
+        "Edge detection kernels highlight areas of high contrast.",
+        "The Sobel operator detects sharp changes in brightness.",
+        "Positive and negative weights reveal boundaries between objects.",
+        "Our robot can now see the doorway's sharp outline.",
+        "This transforms raw pixels into useful geometric information."
+      ],
+      "animations": [
+        "Show a 6x6 grid with a vertical edge (left dark, right light) next to a robot [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg].",
+        "Display the Sobel kernel [[-1,0,1],[-2,0,2],[-1,0,1]] in orange #FFA500.",
+        "Slide the kernel across the vertical edge.",
+        "Show the calculation resulting in a high value at the edge.",
+        "Highlight the final 6x6 output showing only the edge line, presented by the robot [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg]."
+      ]
+    },
+    {
+      "id": "section_7",
+      "title": "Summary and Conclusion",
+      "lecture_lines": [
+        "Convolution uses a sliding window to transform data.",
+        "It extracts meaningful information from local neighborhoods.",
+        "From blurring to edge detection, the logic remains identical."
+      ],
+      "animations": [
+        "Display a kernel sliding across a generic 2D signal grid.",
+        "Show three small windows: Original, Blurred, and Edge-detected results.",
+        "Display final text 'Transforming Data through Local Neighborhoods' in #FFFFFF."
+      ]
+    }
+  ],
+  "turns_run": 1,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animations based on section outline. Ready for script alignment."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_1 following the storyboard: created a 6x6 grid with noise, a 2x2 yellow brush, and animated the brush sweeping to reveal an 'L' shape. Used TeachingScene base class and grid positioning."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animations based on section outline. Ready for script alignment."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_2 following the storyboard and grid system. Animated 1D bar chart, 1D number grid, and 2D pixel grid. Colors aligned with lecture lines."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animations based on section outline. Ready for script alignment."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented Section3Scene with a 1x3 Averaging Kernel, grid-based positioning, and animations for each lecture line including pulsing influence and highlighting."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section_4 (key section)."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animations based on section outline. Ready for script alignment."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for Section 4 covering the mechanism of discrete convolution (flip, shift, multiply, sum) with animations."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section_5 (key section)."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animations based on section outline. Ready for script alignment."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section 5 including 2D convolution visualization with input/output grids, sliding kernel, and formula. Used 6x6 grid system for placement."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for section_6 (key section)."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animations based on section outline. Ready for script alignment."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_6 following the storyboard and constraints. Highlights a vertical edge using a Sobel kernel logic."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for section_7."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animations based on section outline. Ready for script alignment."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for Section 7 following the storyboard and grid constraints. Implemented sliding window animation, comparison boxes (Original, Blurred, Edges), and final summary text. Color-coded lecture lines according to animation stages."
+    },
+    {
+      "id": 22,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Introduce a 'Mathematical Brush' [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brush.svg] (a 2x2 yellow square #FFFF00).\"]",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Create a bar chart with heights [0, 1, 2, 1, 0] in light blue #ADD8E6 representing audio input from a microphone [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/microphone.svg].', 'Show a 4x4 grid #FFFFFF representing a 2D image array captured by a camera [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/camera.svg].']",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a 5x5 grid of pixels #E0E0E0, representing an input image from a [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/camera.svg].', 'Show the mathematical formula: Output = Sum of (Kernel * Neighbors) as processed by a [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/computer.svg].']",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a 6x6 grid with a vertical edge (left dark, right light) next to a robot [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg].', 'Highlight the final 6x6 output showing only the edge line, presented by the robot [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg].']",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6",
+    "section_7": "Coder7"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5,
+    "section_7": 6
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/14-Discrete_Convolutions_The_Magic_of_Digital_Filtering/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/14-Discrete_Convolutions_The_Magic_of_Digital_Filtering/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/14-Discrete_Convolutions_The_Magic_of_Digital_Filtering/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/14-Discrete_Convolutions_The_Magic_of_Digital_Filtering/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/14-Discrete_Convolutions_The_Magic_of_Digital_Filtering/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/14-Discrete_Convolutions_The_Magic_of_Digital_Filtering/media/videos/section_6/480p15/Section6Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/14-Discrete_Convolutions_The_Magic_of_Digital_Filtering/media/videos/section_7/480p15/Section7Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260803_082515/14-Discrete_Convolutions_The_Magic_of_Digital_Filtering",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 232018,
+      "completion_tokens": 34811,
+      "total_tokens": 328596,
+      "call_count": 25
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 276,
+        "completion_tokens": 994,
+        "total_tokens": 1801,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 16557,
+        "completion_tokens": 1162,
+        "total_tokens": 19589,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 20657,
+        "completion_tokens": 1235,
+        "total_tokens": 24542,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 19777,
+        "completion_tokens": 521,
+        "total_tokens": 21121,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 17152,
+        "completion_tokens": 3198,
+        "total_tokens": 23918,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 24908,
+        "completion_tokens": 4097,
+        "total_tokens": 30671,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 19213,
+        "completion_tokens": 3566,
+        "total_tokens": 28315,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 23280,
+        "completion_tokens": 3289,
+        "total_tokens": 33947,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 23537,
+        "completion_tokens": 6952,
+        "total_tokens": 37554,
+        "call_count": 1
+      },
+      "agent:Coder7": {
+        "prompt_tokens": 36768,
+        "completion_tokens": 3909,
+        "total_tokens": 48856,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 24967,
+        "completion_tokens": 4887,
+        "total_tokens": 40346,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4926,
+        "completion_tokens": 1001,
+        "total_tokens": 17936,
+        "call_count": 14
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 232018,
+        "completion_tokens": 34811,
+        "total_tokens": 328596,
+        "call_count": 25
+      }
+    }
+  }
+}
