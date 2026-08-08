@@ -15,7 +15,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from eval_AES import VideoEvaluator
 from eval_TQ import format_evaluation_report, load_questions_from_json, run_one_concept
-from gpt_request import request_gemini_with_video
+from gpt_request import cfg, request_gemini_with_video
 
 
 DEFAULT_QUESTIONS_JSON = Path(__file__).resolve().parent.parent / "json_files" / "questions_by_topic_10.json"
@@ -96,6 +96,9 @@ def evaluate_video(
     use_interactions: bool = False,
 ) -> Dict[str, Any]:
     eval_model = os.getenv("EVAL_MODEL", "gemini-2.5-pro")
+    eval_api_key = os.getenv("EVAL_GEMINI_API_KEY") or cfg(
+        "gemini", "eval_api_key"
+    )
     concept_questions = load_questions_from_json(str(questions_json))
     resolved_tq_concept = tq_concept or resolve_tq_concept(topic, concept_questions.keys())
 
@@ -108,11 +111,17 @@ def evaluate_video(
         "tq": {"ok": False, "result": None, "report": None, "error": None},
     }
 
-    video_request = request_gemini_with_video
+    video_request = functools.partial(
+        request_gemini_with_video,
+        api_key=eval_api_key,
+    )
     if use_interactions:
         from mas_interactions import request_interaction_video
 
-        video_request = request_interaction_video
+        video_request = functools.partial(
+            request_interaction_video,
+            use_eval_credentials=True,
+        )
     evaluator = VideoEvaluator(functools.partial(video_request, model_name=eval_model))
     try:
         aes_result = evaluator.evaluate_video(video_path=str(video_path), knowledge_point=topic)
@@ -130,6 +139,7 @@ def evaluate_video(
             per_question_workers=per_question_workers,
             teachquiz_model=eval_model,
             use_interactions=use_interactions,
+            eval_api_key=eval_api_key,
         )
         result["tq"]["ok"] = True
         result["tq"]["result"] = _to_jsonable(tq_result)

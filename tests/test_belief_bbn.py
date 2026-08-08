@@ -106,12 +106,47 @@ class BeliefBBNTests(unittest.TestCase):
             self.assertEqual(candidate["role_match"], 1.0)
             self.assertEqual(candidate["stage_match"], 1.0)
             self.assertEqual(candidate["context_match"], 1.0)
-            mismatched = next(
-                item for item in row["candidates"] if item["belief_id"] == "B002"
+            self.assertNotIn(
+                "B002", {item["belief_id"] for item in row["candidates"]}
             )
-            self.assertEqual(mismatched["role_match"], 0.0)
-            self.assertEqual(mismatched["stage_match"], 0.0)
-            self.assertFalse(mismatched["selected"])
+
+    def test_selector_hard_filters_explicit_role_scope(self):
+        beliefs = [
+            {
+                "belief_id": "B001",
+                "instruction": "Coder-only guidance.",
+                "scope": {
+                    "roles": ["Coder"],
+                    "problem_description": "same highly relevant problem",
+                },
+                "alpha": 99,
+                "beta": 1,
+                "status": "active",
+            },
+            {
+                "belief_id": "B002",
+                "instruction": "Legacy unscoped guidance.",
+                "scope": {"problem_description": "same highly relevant problem"},
+                "alpha": 2,
+                "beta": 2,
+                "status": "active",
+            },
+        ]
+        selector = BeliefSelector(
+            beliefs,
+            similarity_fn=lambda first, second: 1.0,
+        )
+        selected = selector.select(
+            BeliefSituation(
+                topic="T",
+                agent_role="ScriptWriter",
+                pipeline_stage="planning",
+                problem_text="same highly relevant problem",
+            ),
+            threshold=0.0,
+            top_k=5,
+        )
+        self.assertEqual([item["belief_id"] for item in selected], ["B002"])
 
     def test_runtime_stage_aliases_match_frozen_stage_vocabulary(self):
         self.assertEqual(normalize_stage("debugging"), "coding")

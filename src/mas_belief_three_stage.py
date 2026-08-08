@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import time
 from collections import Counter
 from dataclasses import asdict
@@ -49,6 +50,55 @@ from mas_belief_reflection import (
 )
 
 
+EXISTING_PIPELINE_CONSTRAINTS = [
+    "Lecture lines contain no more than ten words.",
+    "Use the established left-text/right-animation layout and supplied TeachingScene base class.",
+    "Use hexadecimal colours and the existing 6x6 placement grid.",
+    "Render each section within the configured 180-second timeout.",
+    "Preserve and use storyboard asset references supplied by the asset-enhancement stage.",
+]
+
+CONTRASTIVE_BELIEF_EXAMPLES = r"""
+CONTRASTIVE EXAMPLES (learn the reasoning rule, not the domain wording):
+
+1. BUNDLED CLAIM -> SPLIT/REJECT
+BAD: "Prevent timeouts and LaTeX failures by simplifying formulas, changing
+configuration, and removing updaters."
+WHY BAD: Two failure mechanisms and several independently falsifiable interventions.
+BETTER A: "Avoid rebuilding large mobject collections inside frame updaters; update
+persistent geometry instead." Use only when before/after evidence isolates that mechanism.
+BETTER B: "After a confirmed LaTeX compilation failure, simplify the failing MathTex
+expression while preserving complete command boundaries."
+
+2. CO-OCCURRENCE -> HYPOTHESIS, NOT CONFIRMED
+OBSERVATION: A timed-out scene contained an updater.
+BAD: "Updaters cause render timeouts."
+BETTER: Classify as hypothesis unless a comparable successful transition removes or
+simplifies per-frame reconstruction without material confounding changes.
+
+3. EXISTING PROMPT RULE -> REJECT
+BAD: "Keep lecture lines under ten words."
+WHY BAD: It merely repeats an existing constraint and is not a learned finding.
+ACCEPTABLE ONLY IF EVIDENCE ADDS A BOUNDARY: "The ten-word limit did not prevent
+overflow when five lines were displayed; also constrain the rendered lecture block height."
+
+4. TOPIC-SPECIFIC FACT -> REUSABLE MECHANISM
+BAD: "In the Moser section, move the purple point away from C4."
+BETTER: "When a geometric construction assumes general position, avoid coincident
+intersections by selecting non-degenerate parameters and verify the resulting count."
+
+5. IMPACT/TIMING CALIBRATION
+BAD: Mark "use NumPy for matrices" as critical and reactive.
+BETTER: A recoverable incorrect displayed value is medium impact. Programmatic
+calculation is preventative unless evidence establishes a reactive correction workflow.
+
+6. STRONG BEFORE/AFTER EVIDENCE -> SUPPORTED/CONFIRMED
+Attempt A rebuilds hundreds of objects per frame and times out. Attempt B changes only
+that construction to persistent geometry and renders successfully. Direct matching code
+hashes and no material confounders can support a confirmed, narrowly worded belief.
+""".strip()
+
+
 class EvidenceClassification(BaseModel):
     compliance: Literal["followed", "violated", "mixed", "unclear", "observed_pattern"]
     outcome: Literal["positive", "negative", "mixed", "unclear"]
@@ -69,7 +119,7 @@ class EvidenceClassification(BaseModel):
 
 
 class CandidateDecision(EvidenceClassification):
-    action: Literal["ADD", "MATCH", "PROPOSE_REVISION"]
+    action: Literal["ADD", "MATCH", "PROPOSE_REVISION", "REJECT"]
     candidate_id: Optional[str] = None
     instruction: Optional[str] = Field(default=None, max_length=500)
     scope: Optional[ReflectionScopePayload] = None
@@ -82,9 +132,11 @@ class CandidateDecision(EvidenceClassification):
         if self.action == "ADD":
             if self.candidate_id is not None or self.instruction is None or self.scope is None:
                 raise ValueError("ADD requires instruction and scope and candidate_id=null")
-        else:
+        elif self.action in {"MATCH", "PROPOSE_REVISION"}:
             if not self.candidate_id:
                 raise ValueError(f"{self.action} requires candidate_id")
+        elif self.candidate_id is not None:
+            raise ValueError("REJECT records a rejected observation and requires candidate_id=null")
         if self.action == "PROPOSE_REVISION" and (
             self.instruction is None or self.scope is None
         ):
@@ -230,14 +282,17 @@ def _discovery_prompt(
     return f"""
 You are performing Stage 1: candidate belief discovery for a completed MAS topic.
 
-Discover every distinct, reusable, evidence-grounded learning that could improve a
-future MAS run. The candidate bank exists only to reduce duplicates.
+Inspect every material event, but retain only distinct, reusable, evidence-grounded
+learnings that could improve a future MAS run. It is valid for a topic to yield no ADD
+decisions. The candidate bank exists only to reduce duplicates.
 
 For each discovered mechanism choose exactly one action:
 - ADD: no candidate covers the same mechanism. Provide a complete instruction and scope.
 - MATCH: an existing candidate already covers it. Do not rewrite that candidate.
 - PROPOSE_REVISION: evidence suggests an existing candidate should be narrowed,
   broadened, or corrected. Provide the complete proposed replacement and scope.
+- REJECT: the observation does not justify a reusable belief. Set candidate_id,
+  instruction, and scope to null and explain the rejection in reason.
 
 Revision proposals are recorded but are NOT applied during discovery. Do not perform
 Bayesian updating, assign posterior confidence, or evaluate unrelated candidates.
@@ -247,8 +302,32 @@ Classify evidence using the permitted categorical options; never invent probabil
 Use critical only for unrecoverable termination, corruption, data loss, or uncontrolled
 external effects; ordinary render timeouts are high.
 
+EVIDENCE AND FORMULATION RULES:
+- One ADD or PROPOSE_REVISION must contain one target mechanism, one coherent
+  intervention, and one primary outcome. If clauses could be independently supported
+  or contradicted, return separate decisions.
+- Presence of a construct near a failure is co-occurrence, not causation. Use hypothesis
+  unless an observed intervention and improved outcome support stronger wording.
+- A later successful render does not establish which of several simultaneous changes
+  caused success. Reflect confounding in attribution_strength and belief_type.
+- Reject generic good practice, administrative advice, topic facts, and restatements of
+  existing pipeline constraints unless evidence supports a measurable refinement,
+  contradiction, or boundary condition.
+- problem_description states WHAT reusable problem the belief addresses.
+  context_conditions state WHEN it activates and must use concise observable
+  snake_case conditions derivable from logs, code, role, or stage.
+- confirmed requires direct/corroborated evidence of strategy application followed by
+  resolved/improved outcome with strong/moderate attribution. Otherwise use hypothesis,
+  precaution, or quality as appropriate.
+
+Existing pipeline constraints (not new learnings):
+{json.dumps(EXISTING_PIPELINE_CONSTRAINTS, ensure_ascii=False)}
+
+{CONTRASTIVE_BELIEF_EXAMPLES}
+
 Return JSON conforming to the supplied schema. For MATCH, instruction and scope may be
-null. For ADD set candidate_id=null. Evidence must identify the concrete observation.
+null. For ADD and REJECT set candidate_id=null. Evidence must identify the concrete
+observation; REJECT reason must state why it cannot support a belief.
 
 Input:
 {json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}
@@ -261,9 +340,10 @@ def _apply_discovery_decisions(
     *,
     run_id: str,
     topic: str,
+    rejections: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, int]:
     by_id = {item["candidate_id"]: item for item in candidates}
-    counts = {"added": 0, "matched": 0, "revision_proposed": 0}
+    counts = {"added": 0, "matched": 0, "revision_proposed": 0, "rejected": 0}
     for decision in decisions:
         evidence = {
             "run_id": run_id,
@@ -272,6 +352,11 @@ def _apply_discovery_decisions(
                 exclude={"action", "candidate_id", "instruction", "scope"}
             ),
         }
+        if decision.action == "REJECT":
+            if rejections is not None:
+                rejections.append(evidence)
+            counts["rejected"] += 1
+            continue
         if decision.action == "ADD":
             candidate_id = f"C{len(candidates) + 1:03d}"
             candidate = {
@@ -323,7 +408,8 @@ Produce stable, reusable, ATOMIC beliefs:
   only when the combined evidence demonstrates that principle;
 - preserve distinct causes, roles, timing, or mitigations as separate beliefs;
 - exclude candidates that are demonstrably incorrect, redundant without contributing
-  distinct evidence, lack any concrete origin evidence, or are not reusable, and explain why;
+  distinct evidence, lack any concrete origin evidence, merely restate an existing
+  constraint, make an unsupported causal/API claim, or are not reusable, and explain why;
 - use critical only for unrecoverable termination, corruption, data loss, or uncontrolled
   external effects; render timeouts are high.
 
@@ -345,11 +431,11 @@ ATOMICITY REQUIREMENTS:
 - Prefer retaining two narrowly testable beliefs over producing one broad instruction.
 - Each final belief may contain at most four source candidate IDs. This is an upper
   bound, not a target; most beliefs should contain one or two.
-- Do not use exclusions to avoid producing appropriately separate beliefs.
-- "Niche", "low frequency", "single occurrence", "low impact", "tool-specific",
-  "basic library knowledge", or "only one topic" are NOT valid exclusion reasons.
-  Preserve such candidates as standalone probationary beliefs when they express a reusable,
-  evidence-grounded mechanism.
+- Do not use exclusions merely to avoid producing appropriately separate beliefs, but
+  treat REJECT as a valid and desirable outcome when acceptance criteria are not met.
+- "Niche", "low frequency", "single occurrence", or "low impact" alone are not valid
+  exclusion reasons. A single occurrence may remain a hypothesis/precaution when it is
+  reusable and evidence-grounded; reject it when it is only generic advice or a topic fact.
 - If a candidate is a narrower example of the exact same mechanism and strategy, include
   its ID in that belief's source_candidate_ids rather than excluding it as redundant.
 - Exclusion is reserved for a demonstrably incorrect claim, absence of concrete origin
@@ -363,9 +449,30 @@ Before returning each belief, perform these tests:
 4. Do these candidates have one interpretable effectiveness variable?
 Only merge when all four answers are YES. Otherwise return separate beliefs.
 
+FINAL ACCEPTANCE GATE FOR EACH BELIEF:
+1. One independently falsifiable mechanism and one coherent intervention.
+2. Traceable concrete origin evidence; causal wording no stronger than attribution.
+3. Reusable problem description, not a topic/section-specific instruction.
+4. Observable snake_case context conditions, not subjective states such as "complex".
+5. Not merely an existing prompt constraint.
+6. Exact Manim API claims are supported by direct evidence; otherwise use cautious
+   precaution/hypothesis wording rather than asserting compatibility.
+7. confirmed is permitted only with direct/corroborated full/partial strategy evidence,
+   resolved/improved outcome, and strong/moderate attribution.
+8. critical is permitted only for termination, corruption, data loss, or uncontrolled
+   external effect documented in evidence.
+
+Existing pipeline constraints (reject mere restatements):
+{json.dumps(EXISTING_PIPELINE_CONSTRAINTS, ensure_ascii=False)}
+
+{CONTRASTIVE_BELIEF_EXAMPLES}
+
 Use these questions as internal merge guidance. Do not add merge-check fields to the
 output object. Explain the shared mechanism concisely in consolidation_reason.
-Splitting candidates is always acceptable and preferred when equivalence is uncertain.
+When separate atomic candidate IDs exist, preserve them as separate beliefs whenever
+equivalence is uncertain. If one source candidate is itself irreducibly bundled and its
+clauses cannot be traced to separate origin evidence, exclude it as non-atomic rather
+than inventing unsupported split claims.
 
 Examples of merges that are NOT allowed:
 - combining invalid Manim class names, colour constants, vector normalization, and SVG
@@ -389,6 +496,7 @@ Candidate bank:
 def _validate_consolidation(
     response: ConsolidationResponse,
     candidate_ids: List[str],
+    candidates: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     assigned = [
         candidate_id
@@ -405,14 +513,102 @@ def _validate_consolidation(
             f"Invalid consolidation coverage: missing={missing}, "
             f"duplicated={duplicated}, unknown={unknown}"
         )
-    maximum_exclusions = max(3, len(candidate_ids) // 4)
-    if len(response.excluded_candidates) > maximum_exclusions:
-        raise ValueError(
-            f"Consolidation excluded {len(response.excluded_candidates)} of "
-            f"{len(candidate_ids)} candidates; maximum permitted is "
-            f"{maximum_exclusions}. Preserve uncertain reusable candidates as "
-            "separate probationary beliefs instead of mass-excluding them."
-        )
+    for belief in response.beliefs:
+        # Context tags are identifiers, so punctuation differences are
+        # cosmetic rather than a reason to discard an otherwise valid global
+        # consolidation. Normalize deterministically (for example, 1.0 ->
+        # 1_0) instead of spending API retries asking the model to reformat the
+        # same semantic output.
+        conditions = []
+        for raw_condition in belief.scope.context_conditions:
+            normalized_condition = re.sub(
+                r"[^a-z0-9]+",
+                "_",
+                str(raw_condition).strip().lower(),
+            ).strip("_")
+            if normalized_condition and normalized_condition not in conditions:
+                conditions.append(normalized_condition)
+        belief.scope.context_conditions = conditions
+
+
+def _consolidation_quality_concerns(
+    response: ConsolidationResponse,
+    candidates: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Report academic-quality concerns without blocking the pipeline."""
+    candidate_by_id = {
+        str(item.get("candidate_id")): item for item in candidates
+    }
+    existing_constraint_patterns = [
+        re.compile(r"lecture lines?.*(?:ten|10) words?", re.I),
+        re.compile(r"two[- ]column.*(?:left|lecture)", re.I),
+        re.compile(r"(?:hexadecimal|hex).*(?:colou?r)", re.I),
+        re.compile(r"TeachingScene", re.I),
+        re.compile(r"6x6.*grid", re.I),
+    ]
+    refinement_markers = re.compile(
+        r"refin|boundary|contradict|insufficient|did not|measured|evidence shows",
+        re.I,
+    )
+    concerns: List[Dict[str, Any]] = []
+
+    for belief_index, belief in enumerate(response.beliefs, start=1):
+        belief_ref = f"provisional_B{belief_index:03d}"
+        if any(pattern.search(belief.instruction) for pattern in existing_constraint_patterns):
+            if not refinement_markers.search(belief.consolidation_reason):
+                concerns.append(
+                    {
+                        "belief_ref": belief_ref,
+                        "category": "existing_constraint_restatement",
+                        "instruction": belief.instruction,
+                    }
+                )
+
+        source_candidates = [
+            candidate_by_id[candidate_id]
+            for candidate_id in belief.source_candidate_ids
+            if candidate_id in candidate_by_id
+        ]
+        origins = [
+            origin
+            for candidate in source_candidates
+            for origin in candidate.get("origins", [])
+        ]
+        if belief.belief_type == "confirmed":
+            has_confirming_transition = any(
+                origin.get("strategy_application") in {"full", "partial"}
+                and origin.get("attribution_strength") in {"strong", "moderate"}
+                and origin.get("evidence_reliability") in {"direct", "corroborated"}
+                and origin.get("outcome_improvement") in {"resolved", "improved"}
+                for origin in origins
+            )
+            if not has_confirming_transition:
+                concerns.append(
+                    {
+                        "belief_ref": belief_ref,
+                        "category": "unsupported_confirmed_classification",
+                        "instruction": belief.instruction,
+                    }
+                )
+
+        if belief.impact == "critical":
+            critical_evidence = " ".join(
+                str(origin.get("evidence") or "") + " " + str(origin.get("reason") or "")
+                for origin in origins
+            )
+            if not re.search(
+                r"unrecoverable|terminat|corrupt|data loss|lost data|uncontrolled external",
+                critical_evidence,
+                re.I,
+            ):
+                concerns.append(
+                    {
+                        "belief_ref": belief_ref,
+                        "category": "unsupported_critical_impact",
+                        "instruction": belief.instruction,
+                    }
+                )
+    return concerns
 
 
 def _frozen_beliefs(response: ConsolidationResponse) -> List[Dict[str, Any]]:
@@ -917,6 +1113,7 @@ def main() -> int:
     paths = {
         "candidates": output_dir / "belief_candidates.json",
         "consolidation": output_dir / "belief_consolidation.json",
+        "quality_concerns": output_dir / "belief_quality_concerns.json",
         "frozen": output_dir / "frozen_beliefs.json",
         "matrix": output_dir / "belief_evidence_matrix.jsonl",
         "library": output_dir / "belief_library.json",
@@ -954,6 +1151,7 @@ def main() -> int:
 
     # Stage 1, or resume from its completed checkpoint.
     candidates: List[Dict[str, Any]]
+    discovery_rejections: List[Dict[str, Any]] = []
     if args.start_stage == "consolidation":
         if not paths["candidates"].exists():
             raise FileNotFoundError(
@@ -967,6 +1165,7 @@ def main() -> int:
                 "not marked complete"
             )
         candidates = list(candidate_payload.get("candidates") or [])
+        discovery_rejections = list(candidate_payload.get("rejected_observations") or [])
         if not candidates:
             raise ValueError("Candidate checkpoint contains no candidates")
         print(
@@ -982,6 +1181,9 @@ def main() -> int:
                 paths["candidates"].read_text(encoding="utf-8")
             )
             candidates = list(candidate_payload.get("candidates") or [])
+            discovery_rejections = list(
+                candidate_payload.get("rejected_observations") or []
+            )
         else:
             candidates = []
     else:
@@ -1003,6 +1205,7 @@ def main() -> int:
                 parsed.decisions,
                 run_id=run.run_id,
                 topic=run.topic,
+                rejections=discovery_rejections,
             )
             for key in usage_total:
                 usage_total[key] += usage[key]
@@ -1020,6 +1223,7 @@ def main() -> int:
                     "stage": "discovery",
                     "complete": index == len(runs),
                     "candidates": candidates,
+                    "rejected_observations": discovery_rejections,
                 },
             )
             _write_json(
@@ -1078,7 +1282,7 @@ def main() -> int:
             client,
             prompt=_consolidation_prompt(candidates),
             schema=ConsolidationResponse,
-            label="consolidation_atomic_v4_prompt_guidance",
+            label="consolidation_atomic_v5_prompt_guidance",
             raw_output_dir=output_dir,
             # Consolidation must account for every candidate and may need to emit
             # many complete frozen belief definitions. Do not impose an additional
@@ -1087,6 +1291,7 @@ def main() -> int:
             semantic_validator=lambda response: _validate_consolidation(
                 response,
                 candidate_ids,
+                candidates,
             ),
             max_attempts=3,
         )
@@ -1095,6 +1300,25 @@ def main() -> int:
         call_log.append(
             {"stage": "consolidation", "usage": usage, "attempts": attempts}
         )
+        quality_concerns = _consolidation_quality_concerns(
+            consolidated,
+            candidates,
+        )
+        _write_json(
+            paths["quality_concerns"],
+            {
+                "blocking": False,
+                "concern_count": len(quality_concerns),
+                "concerns": quality_concerns,
+            },
+        )
+        if quality_concerns:
+            print(
+                f"[belief-3stage][consolidation] Non-blocking academic quality "
+                f"concerns={len(quality_concerns)}; see "
+                f"{paths['quality_concerns']}",
+                flush=True,
+            )
         frozen = _frozen_beliefs(consolidated)
         _write_json(paths["consolidation"], consolidated.model_dump())
         _write_json(

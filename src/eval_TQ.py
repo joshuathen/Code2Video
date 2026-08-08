@@ -106,14 +106,28 @@ def load_questions_from_json(json_path: str) -> Dict[str, List[Question]]:
 
 
 @retry(max_retries=3, base_delay=0.6, jitter=0.3)
-def _call_text_api(prompt: str, model_name: str = DEFAULT_TEACHQUIZ_MODEL) -> str:
-    response = request_gemini(prompt=prompt, model_name=model_name)
+def _call_text_api(
+    prompt: str,
+    model_name: str = DEFAULT_TEACHQUIZ_MODEL,
+    api_key: Optional[str] = None,
+) -> str:
+    response = request_gemini(prompt=prompt, model_name=model_name, api_key=api_key)
     return extract_answer_from_response(response)
 
 
 @retry(max_retries=3, base_delay=0.6, jitter=0.3)
-def _call_video_api(prompt: str, video_path: str, model_name: str = DEFAULT_TEACHQUIZ_MODEL) -> str:
-    response = request_gemini_with_video(prompt=prompt, video_path=video_path, model_name=model_name)
+def _call_video_api(
+    prompt: str,
+    video_path: str,
+    model_name: str = DEFAULT_TEACHQUIZ_MODEL,
+    api_key: Optional[str] = None,
+) -> str:
+    response = request_gemini_with_video(
+        prompt=prompt,
+        video_path=video_path,
+        model_name=model_name,
+        api_key=api_key,
+    )
     return extract_answer_from_response(response)
 
 
@@ -121,6 +135,7 @@ def make_mllm_api(
     video_path: Optional[str],
     model_name: str = DEFAULT_TEACHQUIZ_MODEL,
     use_interactions: bool = False,
+    eval_api_key: Optional[str] = None,
 ) -> Callable[[str], str]:
     if use_interactions:
         from mas_interactions import request_interaction_text, request_interaction_video
@@ -131,15 +146,29 @@ def make_mllm_api(
                     prompt=prompt,
                     video_path=video_path,
                     model_name=model_name,
+                    use_eval_credentials=True,
                 )
             )
         return lambda prompt: extract_answer_from_response(
-            request_interaction_text(prompt=prompt, model_name=model_name)
+            request_interaction_text(
+                prompt=prompt,
+                model_name=model_name,
+                use_eval_credentials=True,
+            )
         )
     if video_path:
-        return lambda prompt: _call_video_api(prompt, video_path, model_name=model_name)
+        return lambda prompt: _call_video_api(
+            prompt,
+            video_path,
+            model_name=model_name,
+            api_key=eval_api_key,
+        )
     else:
-        return lambda prompt: _call_text_api(prompt, model_name=model_name)
+        return lambda prompt: _call_text_api(
+            prompt,
+            model_name=model_name,
+            api_key=eval_api_key,
+        )
 
 
 class SelectiveKnowledgeUnlearning:
@@ -318,16 +347,19 @@ def run_one_concept(
     per_question_workers: int,
     teachquiz_model: str = DEFAULT_TEACHQUIZ_MODEL,
     use_interactions: bool = False,
+    eval_api_key: Optional[str] = None,
 ) -> EvaluationResult:
     text_api = make_mllm_api(
         video_path=None,
         model_name=teachquiz_model,
         use_interactions=use_interactions,
+        eval_api_key=eval_api_key,
     )
     video_api = make_mllm_api(
         video_path=video_path,
         model_name=teachquiz_model,
         use_interactions=use_interactions,
+        eval_api_key=eval_api_key,
     )
     sku = SelectiveKnowledgeUnlearning(mllm_api_function=text_api, per_question_workers=per_question_workers)
     return sku.evaluate_educational_video(concept=concept, questions=questions, video_api_fn=video_api)

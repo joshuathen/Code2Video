@@ -1,0 +1,786 @@
+{
+  "topic": "The Hidden Mirror: Planar Graph Duality and Euler's Formula",
+  "target_audience": "Undergraduate students in Computer Science or Discrete Mathematics",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Data from storyboard\n        title_text = \"Prerequisite: Defining the Planar World\"\n        lecture_lines = [\n            \"A planar graph is drawn without crossing edges.\",\n            \"It consists of vertices, edges, and faces.\",\n            \"Every graph has one infinite outer face.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n        \n        # Colors\n        ORANGE = \"#FF8C00\"\n        YELLOW = \"#FFFF00\"\n        WHITE_CLR = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight lecture line 1\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n\n        # Define initial graph coordinates with crossing edges\n        # V1: B2, V2: D4, V3: B4, V4: D2\n        v1_pos = self.grid[\"B2\"]\n        v2_pos = self.grid[\"D4\"]\n        v3_pos = self.grid[\"B4\"]\n        v4_pos = self.grid[\"D2\"]\n\n        v1 = Dot(v1_pos, color=ORANGE)\n        v2 = Dot(v2_pos, color=ORANGE)\n        v3 = Dot(v3_pos, color=ORANGE)\n        v4 = Dot(v4_pos, color=ORANGE)\n        \n        e1 = Line(v1_pos, v2_pos, color=ORANGE)\n        e2 = Line(v2_pos, v3_pos, color=ORANGE)\n        e3 = Line(v3_pos, v4_pos, color=ORANGE)\n        e4 = Line(v4_pos, v1_pos, color=ORANGE)\n\n        # Updaters for edges to follow vertices during animation\n        e1.add_updater(lambda m: m.set_points_as_corners([v1.get_center(), v2.get_center()]))\n        e2.add_updater(lambda m: m.set_points_as_corners([v2.get_center(), v3.get_center()]))\n        e3.add_updater(lambda m: m.set_points_as_corners([v3.get_center(), v4.get_center()]))\n        e4.add_updater(lambda m: m.set_points_as_corners([v4.get_center(), v1.get_center()]))\n\n        graph = VGroup(e1, e2, e3, e4, v1, v2, v3, v4)\n        self.play(Create(graph))\n        self.wait(1)\n\n        # Move vertex V2 to position A3 to eliminate crossing\n        new_v2_pos = self.grid[\"A3\"]\n        self.play(v2.animate.move_to(new_v2_pos), run_time=2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Transition highlight from line 1 to line 2\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(YELLOW)\n        )\n\n        # Flash vertices sequentially\n        for v in [v1, v2, v3, v4]:\n            self.play(Indicate(v, color=WHITE_CLR, scale_factor=1.5), run_time=0.5)\n        \n        # Flash edges sequentially\n        for e in [e1, e2, e3, e4]:\n            self.play(Indicate(e, color=WHITE_CLR), run_time=0.5)\n\n        # Represent the internal face as a polygon and flash it\n        face = Polygon(\n            v1.get_center(), v2.get_center(), v3.get_center(), v4.get_center(),\n            fill_color=ORANGE, fill_opacity=0.4, stroke_width=0\n        )\n        self.play(FadeIn(face))\n        self.play(Indicate(face, color=ORANGE), run_time=1)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Transition highlight from line 2 to line 3\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(YELLOW)\n        )\n\n        # Infinite outer face pulse: Use a background rectangle spanning the grid area from A1 to F6\n        outer_face_bg = Rectangle(\n            width=6.0, height=6.0, fill_color=ORANGE, fill_opacity=0.1, stroke_width=0\n        )\n        self.place_in_area(outer_face_bg, \"A1\", \"F6\")\n        outer_face_bg.set_z_index(-2)  # Place behind the graph and internal face\n        \n        self.play(FadeIn(outer_face_bg))\n        # Pulse animation\n        self.play(outer_face_bg.animate.set_fill(opacity=0.3), run_time=1)\n        self.play(outer_face_bg.animate.set_fill(opacity=0.1), run_time=1)\n        self.wait(2)\n        \n        # Finalize by returning highlight to normal\n        self.play(self.lecture[2].animate.set_color(WHITE))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        title = \"The Golden Rule: Euler's Characteristic Formula\"\n        lines = [\n            \"Euler's formula states V minus E plus F equals 2.\",\n            \"This balance holds for all connected planar graphs.\",\n            \"Adding a tail vertex keeps the sum constant.\",\n            \"Adding an edge creates exactly one new face.\",\n            \"The formula remains invariant during these transformations.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Helper to create vertices and edges\n        GRAPH_COLOR = \"#FF8C00\"\n        HIGHLIGHT_COLOR = \"#FFFF00\"\n\n        # Define specific grid points for the graph\n        v1_pos = self.grid[\"B3\"]\n        v2_pos = self.grid[\"D2\"]\n        v3_pos = self.grid[\"D4\"]\n        v4_pos = self.grid[\"E4\"]\n        v5_pos = self.grid[\"F4\"]\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight lecture line\n        self.play(self.lecture[0].animate.set_color(HIGHLIGHT_COLOR))\n        \n        formula = MathTex(\"V\", \"-\", \"E\", \"+\", \"F\", \"=\", \"2\", font_size=48)\n        self.place_in_area(formula, \"A1\", \"A6\")\n        self.play(Write(formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight lecture line\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(HIGHLIGHT_COLOR)\n        )\n\n        # Create triangle graph with a tail\n        # Vertices\n        dots = VGroup(\n            Dot(v1_pos, color=GRAPH_COLOR),\n            Dot(v2_pos, color=GRAPH_COLOR),\n            Dot(v3_pos, color=GRAPH_COLOR),\n            Dot(v4_pos, color=GRAPH_COLOR)\n        )\n        # Edges\n        edges = VGroup(\n            Line(v1_pos, v2_pos, color=GRAPH_COLOR),\n            Line(v2_pos, v3_pos, color=GRAPH_COLOR),\n            Line(v3_pos, v1_pos, color=GRAPH_COLOR),\n            Line(v3_pos, v4_pos, color=GRAPH_COLOR)\n        )\n        \n        self.play(Create(dots), Create(edges))\n\n        # Labels for V, E, F\n        # Initial V=4, E=4, F=2\n        counts_label = MathTex(\"V=4, E=4, F=2\", font_size=36, color=WHITE)\n        self.place_at_grid(counts_label, \"F2\")\n        \n        check_formula = MathTex(\"4 - 4 + 2 = 2\", font_size=36, color=WHITE)\n        self.place_at_grid(check_formula, \"F5\")\n\n        self.play(Write(counts_label), Write(check_formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Highlight lecture line\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(HIGHLIGHT_COLOR)\n        )\n\n        # Add a new vertex and edge to the tail (v5 connected to v4)\n        new_dot = Dot(v5_pos, color=GRAPH_COLOR)\n        new_edge = Line(v4_pos, v5_pos, color=GRAPH_COLOR)\n        \n        self.play(FadeIn(new_dot), Create(new_edge))\n        \n        # Update counts: V=5, E=5, F=2\n        new_counts = MathTex(\"V=5, E=5, F=2\", font_size=36, color=WHITE)\n        self.place_at_grid(new_counts, \"F2\")\n        \n        new_check = MathTex(\"5 - 5 + 2 = 2\", font_size=36, color=WHITE)\n        self.place_at_grid(new_check, \"F5\")\n\n        self.play(\n            Transform(counts_label, new_counts),\n            Transform(check_formula, new_check)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # Highlight lecture line\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(HIGHLIGHT_COLOR)\n        )\n\n        # Add an edge between v2 and v4 to form a new cycle\n        cycle_edge = Line(v2_pos, v4_pos, color=GRAPH_COLOR)\n        \n        # Indicator for a new face\n        face_indicator = Polygon(v2_pos, v3_pos, v4_pos, fill_opacity=0.3, color=GRAPH_COLOR, stroke_width=0)\n        \n        self.play(Create(cycle_edge))\n        self.play(FadeIn(face_indicator))\n        self.play(FadeOut(face_indicator))\n\n        # Update counts: V=5, E=6, F=3\n        new_counts_4 = MathTex(\"V=5, E=6, F=3\", font_size=36, color=WHITE)\n        self.place_at_grid(new_counts_4, \"F2\")\n        \n        new_check_4 = MathTex(\"5 - 6 + 3 = 2\", font_size=36, color=WHITE)\n        self.place_at_grid(new_check_4, \"F5\")\n\n        self.play(\n            Transform(counts_label, new_counts_4),\n            Transform(check_formula, new_check_4)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Highlight lecture line\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(HIGHLIGHT_COLOR)\n        )\n\n        # Flash the \"= 2\" part and pulse the graph\n        all_graph_elements = VGroup(dots, edges, new_dot, new_edge, cycle_edge)\n        \n        self.play(\n            formula[5:].animate.set_color(HIGHLIGHT_COLOR),\n            check_formula[6:].animate.set_color(HIGHLIGHT_COLOR),\n            all_graph_elements.animate.scale(1.1),\n            run_time=0.5\n        )\n        self.play(\n            formula[5:].animate.set_color(WHITE),\n            check_formula[6:].animate.set_color(WHITE),\n            all_graph_elements.animate.scale(1/1.1),\n            run_time=0.5\n        )\n        \n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Setup layout\n        self.setup_layout(\"The Transformation: Constructing the Dual Graph\", \n                          [\"Every face in G becomes a dual vertex.\", \n                           \"Dual vertices connect across shared edge boundaries.\", \n                           \"This process builds the dual graph G-star.\"])\n        \n        # Colors\n        COLOR_G = \"#FF8C00\"\n        COLOR_G_STAR = \"#00FFFF\"\n        COLOR_HIGHLIGHT = \"#FFFF00\"\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight the first lecture line in #FFFF00. \n        # Take a planar graph in #FF8C00 and place a #00FFFF dot (dual vertex) in every face, including the exterior.\n        \n        self.play(self.lecture[0].animate.set_color(COLOR_HIGHLIGHT))\n\n        # Original Graph G (Triangle for clarity)\n        v1_pos = self.grid[\"B2\"]\n        v2_pos = self.grid[\"B5\"]\n        v3_pos = self.grid[\"F3\"]\n        \n        v1 = Dot(v1_pos, color=COLOR_G)\n        v2 = Dot(v2_pos, color=COLOR_G)\n        v3 = Dot(v3_pos, color=COLOR_G)\n        g_vertices = VGroup(v1, v2, v3)\n        \n        e1 = Line(v1_pos, v2_pos, color=COLOR_G)\n        e2 = Line(v2_pos, v3_pos, color=COLOR_G)\n        e3 = Line(v3_pos, v1_pos, color=COLOR_G)\n        g_edges = VGroup(e1, e2, e3)\n        \n        g_graph = VGroup(g_edges, g_vertices)\n        g_label = MathTex(\"G\", color=COLOR_G)\n        self.place_at_grid(g_label, \"F6\", scale_factor=1.0)\n\n        self.play(Create(g_graph), Write(g_label))\n        self.wait(1)\n\n        # Dual Vertices\n        # Inner face vertex\n        dv_inner = Dot(self.grid[\"C3\"], color=COLOR_G_STAR)\n        # Outer face vertex\n        dv_outer = Dot(self.grid[\"A6\"], color=COLOR_G_STAR)\n        dual_vertices = VGroup(dv_inner, dv_outer)\n\n        self.play(FadeIn(dual_vertices))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight the second lecture line in #FFFF00. \n        # Draw #00FFFF dashed lines (dual edges) crossing each edge of the #FF8C00 graph to connect the dots.\n        \n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(COLOR_HIGHLIGHT)\n        )\n\n        # Dual Edges (Solid paths for transformation)\n        # 1. Crossing e1 (Top edge)\n        de1_path = ArcBetweenPoints(dv_inner.get_center(), dv_outer.get_center(), angle=-0.5, color=COLOR_G_STAR)\n        # 2. Crossing e2 (Right edge)\n        de2_path = ArcBetweenPoints(dv_inner.get_center(), dv_outer.get_center(), angle=0.8, color=COLOR_G_STAR)\n        # 3. Crossing e3 (Left edge)\n        de3_path = ArcBetweenPoints(dv_inner.get_center(), dv_outer.get_center(), angle=-2.5, color=COLOR_G_STAR)\n        \n        dual_edges_solid = VGroup(de1_path, de2_path, de3_path)\n        \n        # Dashed versions for the step-by-step construction\n        dual_edges_dashed = VGroup(*[DashedVMobject(edge, num_dashes=15) for edge in dual_edges_solid])\n\n        self.play(Create(dual_edges_dashed, run_time=3))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Highlight the third lecture line in #FFFF00. \n        # Fade out the #FF8C00 graph, leaving only the #00FFFF dots and dashed lines, \n        # then solidify the dashed lines.\n        \n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(COLOR_HIGHLIGHT)\n        )\n\n        g_star_label = MathTex(\"G^*\", color=COLOR_G_STAR)\n        self.place_at_grid(g_star_label, \"A4\", scale_factor=1.0)\n\n        self.play(\n            FadeOut(g_graph), \n            FadeOut(g_label),\n            Write(g_star_label)\n        )\n        self.wait(1)\n\n        # Solidify the dual edges to complete G*\n        self.play(ReplacementTransform(dual_edges_dashed, dual_edges_solid))\n        self.wait(2)\n\n        # Final cleanup - return highlights to normal\n        self.play(self.lecture[2].animate.set_color(WHITE))\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"G and G-star share a deep mathematical symmetry.\",\n            \"Vertices in G-star equal the faces in G.\",\n            \"Faces in G-star equal the vertices in G.\",\n            \"The number of edges remains exactly the same.\",\n            \"Euler's formula holds perfectly for both reflections.\"\n        ]\n        self.setup_layout(\"The Symmetry of Elements\", lecture_lines)\n\n        # Colors\n        COLOR_G = \"#FF8C00\"\n        COLOR_GSTAR = \"#00FFFF\"\n        COLOR_HIGHLIGHT = \"#FFFF00\"\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight lecture line\n        self.play(self.lecture[0].animate.set_color(COLOR_HIGHLIGHT))\n\n        # Graph G: Square (Planar Projection)\n        v_g = VGroup(\n            Dot(color=COLOR_G), Dot(color=COLOR_G),\n            Dot(color=COLOR_G), Dot(color=COLOR_G)\n        ).arrange_in_grid(2, 2, buff=1.0)\n        \n        e_g = VGroup(\n            Line(v_g[0].get_center(), v_g[1].get_center(), color=COLOR_G),\n            Line(v_g[1].get_center(), v_g[3].get_center(), color=COLOR_G),\n            Line(v_g[3].get_center(), v_g[2].get_center(), color=COLOR_G),\n            Line(v_g[2].get_center(), v_g[0].get_center(), color=COLOR_G),\n        )\n        graph_g = VGroup(v_g, e_g)\n        self.place_in_area(graph_g, \"A1\", \"C3\", scale_factor=0.6)\n        \n        label_g = Text(\"Graph G\", color=COLOR_G, font_size=24)\n        self.place_at_grid(label_g, \"A2\", scale_factor=0.8)\n\n        # Graph G*: Dual of Square (2 vertices, 4 edges between them)\n        v_gstar = VGroup(\n            Dot(color=COLOR_GSTAR),\n            Dot(color=COLOR_GSTAR)\n        ).arrange(RIGHT, buff=1.5)\n        \n        # 4 multi-edges between the two dual vertices\n        e_gstar = VGroup(\n            ArcBetweenPoints(v_gstar[0].get_center(), v_gstar[1].get_center(), angle=PI/2, color=COLOR_GSTAR),\n            ArcBetweenPoints(v_gstar[0].get_center(), v_gstar[1].get_center(), angle=-PI/2, color=COLOR_GSTAR),\n            ArcBetweenPoints(v_gstar[0].get_center(), v_gstar[1].get_center(), angle=PI, color=COLOR_GSTAR),\n            ArcBetweenPoints(v_gstar[0].get_center(), v_gstar[1].get_center(), angle=-PI, color=COLOR_GSTAR),\n        )\n        graph_gstar = VGroup(v_gstar, e_gstar)\n        # Place side-by-side with G (B002)\n        self.place_in_area(graph_gstar, \"A4\", \"C6\", scale_factor=0.6)\n        \n        label_gstar = Text(\"Dual G*\", color=COLOR_GSTAR, font_size=24)\n        self.place_at_grid(label_gstar, \"A5\", scale_factor=0.8)\n\n        self.play(Create(graph_g), Write(label_g))\n        self.play(Create(graph_gstar), Write(label_gstar))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(COLOR_HIGHLIGHT)\n        )\n        \n        # Faces of G: 2 (Internal square area, External background area)\n        face_g1 = Square(side_length=0.7, fill_opacity=0.4, color=COLOR_G, stroke_width=0).move_to(graph_g.get_center())\n        face_g2 = Annulus(inner_radius=0.6, outer_radius=1.0, fill_opacity=0.2, color=COLOR_G, stroke_width=0).move_to(graph_g.get_center())\n        \n        self.play(FadeIn(face_g1), FadeIn(face_g2))\n        self.play(Indicate(v_gstar, color=COLOR_HIGHLIGHT, scale_factor=1.5))\n        self.play(FadeOut(face_g1), FadeOut(face_g2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(COLOR_HIGHLIGHT)\n        )\n        \n        # Vertices of G -> Faces of G*\n        self.play(Indicate(v_g, color=COLOR_HIGHLIGHT, scale_factor=1.5))\n        \n        # Representing faces of G* (regions between arcs)\n        f_gstar_highs = VGroup(*[\n            Dot(graph_gstar.get_center() + UP*0.5, radius=0.3, color=COLOR_GSTAR, fill_opacity=0.5),\n            Dot(graph_gstar.get_center() + DOWN*0.5, radius=0.3, color=COLOR_GSTAR, fill_opacity=0.5),\n            Dot(graph_gstar.get_center() + UP*0.2, radius=0.1, color=COLOR_GSTAR, fill_opacity=0.5),\n            Dot(graph_gstar.get_center() + DOWN*0.2, radius=0.1, color=COLOR_GSTAR, fill_opacity=0.5),\n        ])\n        \n        self.play(FadeIn(f_gstar_highs))\n        self.wait(1)\n        self.play(FadeOut(f_gstar_highs))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.play(\n            self.lecture[2].animate.set_color(WHITE),\n            self.lecture[3].animate.set_color(COLOR_HIGHLIGHT)\n        )\n        \n        # Edges comparison: Highlight 1-to-1 correspondence\n        for i in range(4):\n            self.play(\n                Indicate(e_g[i], color=COLOR_HIGHLIGHT),\n                Indicate(e_gstar[i], color=COLOR_HIGHLIGHT),\n                run_time=0.4\n            )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.play(\n            self.lecture[3].animate.set_color(WHITE),\n            self.lecture[4].animate.set_color(COLOR_HIGHLIGHT)\n        )\n        \n        # Show Euler's Formula for both (B019, B038)\n        f_g_text = MathTex(\"V - E + F = 2\", color=WHITE)\n        f_g_vals = MathTex(\"4 - 4 + 2 = 2\", color=COLOR_G)\n        self.place_in_area(f_g_text, \"D1\", \"E3\", scale_factor=0.8)\n        self.place_in_area(f_g_vals, \"F1\", \"F3\", scale_factor=0.8)\n\n        f_gs_text = MathTex(\"V^* - E^* + F^* = 2\", color=WHITE)\n        f_gs_vals = MathTex(\"2 - 4 + 4 = 2\", color=COLOR_GSTAR)\n        self.place_in_area(f_gs_text, \"D4\", \"E6\", scale_factor=0.8)\n        self.place_in_area(f_gs_vals, \"F4\", \"F6\", scale_factor=0.8)\n\n        self.play(Write(f_g_text), Write(f_gs_text))\n        self.play(Write(f_g_vals), Write(f_gs_vals))\n        \n        # Final highlight showing the swapping of V and F\n        rect_v_g = SurroundingRectangle(f_g_vals[0][0], color=COLOR_HIGHLIGHT) # V=4\n        rect_f_gs = SurroundingRectangle(f_gs_vals[0][4], color=COLOR_HIGHLIGHT) # F*=4\n        \n        rect_f_g = SurroundingRectangle(f_g_vals[0][4], color=COLOR_HIGHLIGHT) # F=2\n        rect_v_gs = SurroundingRectangle(f_gs_vals[0][0], color=COLOR_HIGHLIGHT) # V*=2\n        \n        self.play(Create(rect_v_g), Create(rect_f_gs))\n        self.wait(0.5)\n        self.play(\n            ReplacementTransform(rect_v_g, rect_f_g), \n            ReplacementTransform(rect_f_gs, rect_v_gs)\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # Setup the scene with the specific title and lecture lines\n        self.setup_layout(\n            \"Advanced Insight: The Self-Dual Mystery and Application\",\n            [\n                \"Self-dual graphs transform back into themselves.\",\n                \"The tetrahedron is a classic self-dual example.\",\n                \"Duality aids in circuit design and navigation.\"\n            ]\n        )\n\n        # === Animation for Lecture Line 1 ===\n        # Highlight the first lecture line\n        self.play(self.lecture[0].animate.set_color(\"#FFFF00\"), run_time=0.5)\n\n        # Create Graph G (K4 / Tetrahedron Planar Projection) in #FF8C00\n        # Nodes defined relative to center then moved via grid area\n        v1 = Dot(radius=0.12, color=\"#FF8C00\")\n        v2 = Dot(radius=0.12, color=\"#FF8C00\")\n        v3 = Dot(radius=0.12, color=\"#FF8C00\")\n        v4 = Dot(radius=0.12, color=\"#FF8C00\")\n        \n        # Geometry for K4\n        v1.move_to(UP * 1.6)\n        v2.move_to(LEFT * 2.0 + DOWN * 1.2)\n        v3.move_to(RIGHT * 2.0 + DOWN * 1.2)\n        v4.move_to(ORIGIN)\n        \n        e12 = Line(v1, v2, color=\"#FF8C00\", stroke_width=4)\n        e23 = Line(v2, v3, color=\"#FF8C00\", stroke_width=4)\n        e31 = Line(v3, v1, color=\"#FF8C00\", stroke_width=4)\n        e14 = Line(v1, v4, color=\"#FF8C00\", stroke_width=4)\n        e24 = Line(v2, v4, color=\"#FF8C00\", stroke_width=4)\n        e34 = Line(v3, v4, color=\"#FF8C00\", stroke_width=4)\n        \n        graph_g = VGroup(e12, e23, e31, e14, e24, e34, v1, v2, v3, v4)\n        # Place graph in central right area (B2 to E5)\n        self.place_in_area(graph_g, \"B2\", \"E5\", scale_factor=0.6)\n        \n        # Label G at A3 to maintain visual corridor (B009)\n        label_g = MathTex(\"G\", color=\"#FF8C00\")\n        self.place_at_grid(label_g, \"A3\", scale_factor=0.8)\n        \n        self.play(FadeIn(graph_g), Write(label_g))\n        self.wait(1)\n\n        # Morph G into G* (Duality Transform)\n        # For a self-dual graph like K4, G* is isomorphic to G.\n        # We transition color and label to show the \"Hidden Mirror\" property.\n        graph_g_star = graph_g.copy().set_color(\"#00FFFF\")\n        label_g_star = MathTex(\"G^* \\\\cong G\", color=\"#00FFFF\")\n        self.place_at_grid(label_g_star, \"A3\", scale_factor=0.8)\n\n        self.play(\n            ReplacementTransform(graph_g, graph_g_star),\n            ReplacementTransform(label_g, label_g_star),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight the second lecture line\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(\"#FFFF00\"),\n            run_time=0.5\n        )\n\n        # Construct the dual explicitly to demonstrate isomorphism\n        # Dual nodes (White) are placed in faces of the Cyan graph G*\n        cv1 = graph_g_star[6].get_center()\n        cv2 = graph_g_star[7].get_center()\n        cv3 = graph_g_star[8].get_center()\n        cv4 = graph_g_star[9].get_center()\n\n        d1 = Dot(radius=0.1, color=WHITE).move_to((cv1 + cv2 + cv4) / 3) # Face 1\n        d2 = Dot(radius=0.1, color=WHITE).move_to((cv2 + cv3 + cv4) / 3) # Face 2\n        d3 = Dot(radius=0.1, color=WHITE).move_to((cv3 + cv1 + cv4) / 3) # Face 3\n        d4 = Dot(radius=0.1, color=WHITE).move_to(cv1 + UP * 0.9)        # Outer Face\n\n        self.play(FadeIn(d1, d2, d3, d4))\n\n        # Connect dual nodes through the edges of G*\n        de12 = Line(d1, d2, color=WHITE, stroke_width=2)\n        de23 = Line(d2, d3, color=WHITE, stroke_width=2)\n        de31 = Line(d3, d1, color=WHITE, stroke_width=2)\n        de41 = Line(d4, d1, color=WHITE, stroke_width=2)\n        de42 = Line(d4, d2, color=WHITE, stroke_width=2)\n        de43 = Line(d4, d3, color=WHITE, stroke_width=2)\n\n        dual_lines = VGroup(de12, de23, de31, de41, de42, de43)\n        self.play(Create(dual_lines))\n        self.wait(2)\n\n        # === Animation for Lecture Line 3 ===\n        # Highlight the third lecture line\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(\"#FFFF00\"),\n            run_time=0.5\n        )\n\n        # Transition to circuit schematic\n        # Clear construction lines and transform graph to White schematic\n        self.play(FadeOut(dual_lines, d1, d2, d3, d4, label_g_star))\n        self.play(graph_g_star.animate.set_color(WHITE))\n        \n        # Add a \"Circuit\" label at A3\n        label_circuit = Text(\"Circuit Schematic\", font_size=24, color=WHITE)\n        self.place_at_grid(label_circuit, \"A3\", scale_factor=0.8)\n        self.play(FadeIn(label_circuit))\n\n        # Pulse edges to represent electrical current/mesh duality\n        # Using a sequence of animations for performance and visual effect\n        pulses = [\n            edge.animate(rate_func=there_and_back).set_stroke(width=10)\n            for edge in graph_g_star[:6]\n        ]\n        self.play(AnimationGroup(*pulses, lag_ratio=0.15), run_time=2.5)\n        \n        self.wait(2)\n\n        # Final cleanup\n        self.play(\n            FadeOut(graph_g_star, label_circuit),\n            self.lecture[2].animate.set_color(WHITE)\n        )\n        self.wait(1)\n"
+  ],
+  "outline": {
+    "topic": "The Hidden Mirror: Planar Graph Duality and Euler's Formula",
+    "target_audience": "Undergraduate students in Computer Science or Discrete Mathematics",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "Prerequisite: Defining the Planar World",
+        "content": "Establish the foundation by defining a Planar Graph: a graph that can be drawn in a 2D plane such that no edges cross. Introduce the three fundamental elements: Vertices (V), Edges (E), and Faces (F). Crucially, explain that the 'outer' region surrounding the graph counts as one face.",
+        "example": "Visualizing a 'Spider's Web' anchored to three trees. The trees are Vertices, the silk threads are Edges, and the gaps between threads (including the vast forest outside) are Faces."
+      },
+      {
+        "id": "section_2",
+        "title": "The Golden Rule: Euler's Characteristic Formula",
+        "content": "Introduce the formula V - E + F = 2. Explain that this is a topological invariant for any connected planar graph. This formula acts as the 'balance' that dictates how many faces must exist given a set of vertices and edges. Show a quick animation of adding an edge and seeing how it simultaneously creates a new face, keeping the sum constant.",
+        "example": "A simple triangle graph: V=3, E=3, F=2 (inner triangle + outer space). Calculation: 3 - 3 + 2 = 2. If we add a tail (a new vertex and edge), V=4, E=4, F=2. Calculation: 4 - 4 + 2 = 2."
+      },
+      {
+        "id": "section_3",
+        "title": "The Transformation: Constructing the Dual Graph",
+        "content": "Step-by-step guide to 'Dualization'. 1. Place a new vertex (Dual Vertex) in the center of every face of the original graph G. 2. For every edge in G that separates two faces, draw a new edge (Dual Edge) connecting the corresponding Dual Vertices. This creates a new graph, G*.",
+        "example": "Imagine a 'Map of Island Kingdoms'. Each kingdom is a Face. We place a 'Capital City' (Dual Vertex) in each kingdom. If two kingdoms share a border (Edge), we build a 'Bridge' (Dual Edge) between their capitals."
+      },
+      {
+        "id": "section_4",
+        "title": "The Symmetry of Elements",
+        "content": "Analyze the relationship between the original graph G and its dual G*. Highlight the mathematical 'Mirroring': The number of Vertices in G* equals the number of Faces in G (V* = F). The number of Faces in G* equals the number of Vertices in G (F* = V). The number of Edges remains the same (E* = E). Note that Euler's formula holds perfectly for both.",
+        "example": "A Cube graph projected on a plane. It has V=8, E=12, F=6. Its dual is an Octahedron, which has V=6, E=12, F=8. They are perfect geometric reflections of one another's properties."
+      },
+      {
+        "id": "section_5",
+        "title": "Advanced Insight: The Self-Dual Mystery and Application",
+        "content": "Conclude with the concept of self-duality (graphs that look the same after transformation) and why this matters. Mention applications in electrical circuit design (converting mesh currents to node voltages) and navigation algorithms.",
+        "example": "The 'Pyramid' (Tetrahedron) example. A pyramid graph has 4 vertices and 4 faces. Its dual also has 4 vertices and 4 faces. Like a shape-shifting robot, it transforms into itself!"
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "Prerequisite: Defining the Planar World",
+      "lecture_lines": [
+        "A planar graph is drawn without crossing edges.",
+        "It consists of vertices, edges, and faces.",
+        "Every graph has one infinite outer face."
+      ],
+      "animations": [
+        "Highlight the first lecture line in #FFFF00. Show a graph with crossing edges in #FF8C00, then smoothly move a vertex so edges no longer cross.",
+        "Highlight the second lecture line in #FFFF00. Individually flash vertices in #FFFFFF, edges in #FFFFFF, and internal regions (faces) in #FF8C00.",
+        "Highlight the third lecture line in #FFFF00. Pulse the entire area outside the graph with a faint #FF8C00 glow to identify the infinite outer face."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "The Golden Rule: Euler's Characteristic Formula",
+      "lecture_lines": [
+        "Euler's formula states V minus E plus F equals 2.",
+        "This balance holds for all connected planar graphs.",
+        "Adding a tail vertex keeps the sum constant.",
+        "Adding an edge creates exactly one new face.",
+        "The formula remains invariant during these transformations."
+      ],
+      "animations": [
+        "Highlight the first lecture line in #FFFF00. Display 'V - E + F = 2' in large #FFFFFF text at the top center.",
+        "Highlight the second lecture line in #FFFF00. Create a triangle graph with one attached 'tail' edge in #FF8C00. Label V=4, E=4, F=2 near the graph.",
+        "Highlight the third lecture line in #FFFF00. Add a new vertex and edge to the tail. Update count to V=5, E=5, F=2 and show '5 - 5 + 2 = 2'.",
+        "Highlight the fourth lecture line in #FFFF00. Add an edge between two existing vertices to form a new cycle. Update count to V=5, E=6, F=3 and show '5 - 6 + 3 = 2'.",
+        "Highlight the fifth lecture line in #FFFF00. Flash the '= 2' part of the formula in #FFFF00 while the graph components pulse in #FF8C00."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Transformation: Constructing the Dual Graph",
+      "lecture_lines": [
+        "Every face in G becomes a dual vertex.",
+        "Dual vertices connect across shared edge boundaries.",
+        "This process builds the dual graph G-star."
+      ],
+      "animations": [
+        "Highlight the first lecture line in #FFFF00. Take a planar graph in #FF8C00 and place a #00FFFF dot (dual vertex) in every face, including the exterior.",
+        "Highlight the second lecture line in #FFFF00. Draw #00FFFF dashed lines (dual edges) crossing each edge of the #FF8C00 graph to connect the dots.",
+        "Highlight the third lecture line in #FFFF00. Fade out the #FF8C00 graph, leaving only the #00FFFF dots and dashed lines, then solidify the dashed lines."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Symmetry of Elements",
+      "lecture_lines": [
+        "G and G-star share a deep mathematical symmetry.",
+        "Vertices in G-star equal the faces in G.",
+        "Faces in G-star equal the vertices in G.",
+        "The number of edges remains exactly the same.",
+        "Euler's formula holds perfectly for both reflections."
+      ],
+      "animations": [
+        "Highlight the first lecture line in #FFFF00. Display a graph G in #FF8C00 and its dual G* in #00FFFF side-by-side.",
+        "Highlight the second lecture line in #FFFF00. Flash faces of G in #FF8C00 and then flash corresponding vertices of G* in #00FFFF.",
+        "Highlight the third lecture line in #FFFF00. Flash vertices of G in #FF8C00 and then flash corresponding faces of G* in #00FFFF.",
+        "Highlight the fourth lecture line in #FFFF00. Simultaneously highlight one edge in G and its crossing edge in G* for all edges to show 1-to-1 correspondence.",
+        "Highlight the fifth lecture line in #FFFF00. Show V-E+F=2 for G and V*-E*+F*=2 for G* in #FFFFFF, highlighting how the numbers swap but the sum is invariant."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Advanced Insight: The Self-Dual Mystery and Application",
+      "lecture_lines": [
+        "Self-dual graphs transform back into themselves.",
+        "The tetrahedron is a classic self-dual example.",
+        "Duality aids in circuit design and navigation."
+      ],
+      "animations": [
+        "Highlight the first lecture line in #FFFF00. Morph a graph G into G* where G* has the exact same structure/layout as G.",
+        "Highlight the second lecture line in #FFFF00. Draw a 2D planar projection of a tetrahedron in #FF8C00 and construct its dual in #00FFFF to show they are isomorphic.",
+        "Highlight the third lecture line in #FFFF00. Transform the graph into a simplified circuit schematic with vertices as nodes and edges as components, pulsing in #FFFFFF."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 1 defining planar graphs."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Created 3 animation steps corresponding to the lecture lines for section_1."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 1 with the required planar graph transition, element flashing, and outer face pulse."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 2 explaining Euler's formula."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Created 5 animation steps corresponding to the lecture lines for section_2."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated initial Manim code for section 2, implementing Euler's formula animation with dynamic graph updates."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 3 explaining dual graph construction."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Created 3 animation steps corresponding to the lecture lines for section_3."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented the dual graph construction animation using a triangle planar graph. Included dual vertices for inner and exterior faces and dashed/curved dual edges crossing the original boundaries."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 4 explaining the symmetry between G and G*."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Created 5 animation steps corresponding to the lecture lines for section_4."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section 4 following the storyboard and grid constraints. Implemented side-by-side comparison of G and G* with 1-to-1 correspondence highlights and Euler's formula verification."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 5 covering self-duality and applications."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Created 3 animation steps corresponding to the lecture lines for section_5."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 5 code with self-duality morphing, tetrahedron projection construction, and circuit schematic pulse effect. Followed grid system and color constraints."
+    },
+    {
+      "id": 16,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[section_1] Implement Manim code for 'Prerequisite: Defining the Planar World'. \n1. Use the finalized storyboard: highlights for crossing edges, vertices, edges, and faces (internal and external). \n2. Follow the lecture lines for timing. \n3. Visuals: Use #FF8C00 for graph elements and #00FFFF for dual-related elements if applicable, but here follow the flash colors (#FFFFFF, #FF8C00) in the storyboard. \n4. Grid: Ensure mobjects and labels do not overlap (B001) and keep the lecture text area clear.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented 'Prerequisite: Defining the Planar World' with proper grid positioning and storyboard-accurate animations."
+    },
+    {
+      "id": 17,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[section_2] Implement Manim code for 'The Golden Rule: Euler\\'s Characteristic Formula'.\n1. Show 'V - E + F = 2' at top center.\n2. Animate a triangle graph with a tail, then add a vertex/edge, then an edge to form a cycle.\n3. Update counts (V, E, F) and formula check dynamically.\n4. Layout: Avoid stacking complex mobjects vertically (B019) and keep formulas away from axis tips/congested areas (B038).",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented section 2 code. Added triangle graph with tail, added vertex/edge, then added edge for cycle. Dynamic counts and formula checks included. Layout respects grid."
+    },
+    {
+      "id": 18,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[section_3] Implement Manim code for 'The Transformation: Constructing the Dual Graph'.\n1. Construct the dual graph G* step-by-step: dots in faces (including exterior), dashed lines crossing edges.\n2. Finalize by fading G and solidifying G*.\n3. Colors: G in #FF8C00, G* in #00FFFF.\n4. Clearances: Ensure dual vertices and labels do not collide with original graph edges (B001, B009).",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Code implemented with orange graph G and cyan dual graph G*. Used DashedVMobject for the construction phase and transitioned to solid lines. Used a 6x6 grid to avoid collisions."
+    },
+    {
+      "id": 19,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[section_4] Implement Manim code for 'The Symmetry of Elements'.\n1. Side-by-side comparison of G (#FF8C00) and G* (#00FFFF).\n2. Highlight 1-to-1 correspondences: G faces to G* vertices, G vertices to G* faces, G edges to G* edges.\n3. Display Euler's formula for both.\n4. Constraint: Limit trajectories or extensions to prevent overlapping with lecture text (B060).",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section 4 following the storyboard and grid constraints. Implemented side-by-side comparison of G and G* with 1-to-1 correspondence highlights and Euler's formula verification."
+    },
+    {
+      "id": 20,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[section_5] Implement Manim code for 'Advanced Insight: The Self-Dual Mystery and Application'.\n1. Morph G into G* for a self-dual graph.\n2. Show the tetrahedron example (2D planar projection).\n3. Transform to circuit schematic.\n4. Maintain visual corridor during high-motion morphing (B009).",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 5 code. 1. Morphed K4 graph to its dual. 2. Showed tetrahedron 2D projection duality construction. 3. Transformed to pulsing circuit schematic. 4. Placed labels at A3 to preserve visual corridor."
+    },
+    {
+      "id": 21,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The outer_face_bg highlight covers the entire screen, obstructing the lecture notes on the left side. Fix: Line 132: self.place_in_area(outer_face_bg, 'A4', 'F6', scale_factor=1.0) (line=132, object=outer_face_bg)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The main formula 'V - E + F = 2' spans the entire width of the top row (A1-A6), which is unnecessarily wide and creates too much white space between characters. Fix: Line 74: self.place_in_area(formula, 'A2', 'A5', scale_factor=1.0) (line=74, object=formula)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The counts labels (e.g., 'V=4, E=4, F=2') and their subsequent updates are placed at F2, far to the left of the calculation formula. Fix: Lines 106, 129, 159: self.place_at_grid(obj, 'F3', scale_factor=0.9) (line=106, object=counts_label, new_counts, new_counts_4)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The check formulas (e.g., '4-4+2=2') are placed at F5, creating a large horizontal gap from the counts and making the logic harder to follow at a glance. Fix: Lines 109, 132, 162: self.place_at_grid(obj, 'F4', scale_factor=0.9) (line=109, object=check_formula, new_check, new_check_4)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The label 'G' is placed at the absolute bottom-right corner of the grid (F6), making it appear disconnected from the orange triangle graph G centered around rows B to E. Fix: Line 81: self.place_at_grid(g_label, 'E5', scale_factor=1.0) (line=81, object=g_label)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The label 'G*' at A4 is positioned at the top edge of the grid, creating a large vertical gap between the label and the dual graph's vertices. Fix: Line 132: self.place_at_grid(g_star_label, 'B4', scale_factor=1.0) (line=132, object=g_star_label)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The label 'G' is placed at grid point A3, which is horizontally offset from the center of the graph area (B2 to E5, centered between columns 3 and 4). Fix: Line 88: self.place_in_area(label_g, 'A3', 'A4', scale_factor=0.8) (line=88, object=label_g)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The formula 'G* ≅ G' is using point positioning at A3, but according to guidelines, formulas and symbol groups should use area positioning for optimal centering. Fix: Line 98: self.place_in_area(label_g_star, 'A3', 'A4', scale_factor=0.8) (line=98, object=label_g_star)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The multi-word label 'Circuit Schematic' is placed at a single point (A3), which restricts its horizontal balance and violates the area positioning rule for multi-word labels. Fix: Line 156: self.place_in_area(label_circuit, 'A2', 'A5', scale_factor=0.8) (line=156, object=label_circuit)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The labels 'Graph G' and 'Dual G*' at A2 and A5 overlap with the graphs 'graph_g' and 'graph_gstar' because both occupy the same grid rows (A-C). Fix: Shift the graphs down by one row to start from row B. Line 78: self.place_in_area(graph_g, 'B1', 'D3', scale_factor=0.6); Line 98: self.place_in_area(graph_gstar, 'B4', 'D6', scale_factor=0.6)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The formulas 'f_g_text' and 'f_gs_text' occupy rows D and E, which will overlap with the graphs once they are shifted down to row B-D. Fix: Shift the formula text elements down to occupy only row E. Line 168: self.place_in_area(f_g_text, 'E1', 'E3', scale_factor=0.8); Line 172: self.place_in_area(f_gs_text, 'E4', 'E6', scale_factor=0.8)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_5/480p15/Section5Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 424325,
+        "video_mtime_ns": 1786082741000000000,
+        "code_sha1": "3e23dbd4b72d986cadc05cf8d3945652ee69c5d3"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The outer_face_bg highlight covers the entire screen, obstructing the lecture notes on the left side.",
+              "solution": "Line 132: self.place_in_area(outer_face_bg, 'A4', 'F6', scale_factor=1.0)",
+              "line_number": 132,
+              "object_affected": "outer_face_bg"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        21
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 532140,
+        "video_mtime_ns": 1786082765000000000,
+        "code_sha1": "8b9ae0aacbbf398181cb5dad6c7c910eaeb730d8"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The main formula 'V - E + F = 2' spans the entire width of the top row (A1-A6), which is unnecessarily wide and creates too much white space between characters.",
+              "solution": "Line 74: self.place_in_area(formula, 'A2', 'A5', scale_factor=1.0)",
+              "line_number": 74,
+              "object_affected": "formula"
+            },
+            {
+              "problem": "The counts labels (e.g., 'V=4, E=4, F=2') and their subsequent updates are placed at F2, far to the left of the calculation formula.",
+              "solution": "Lines 106, 129, 159: self.place_at_grid(obj, 'F3', scale_factor=0.9)",
+              "line_number": 106,
+              "object_affected": "counts_label, new_counts, new_counts_4"
+            },
+            {
+              "problem": "The check formulas (e.g., '4-4+2=2') are placed at F5, creating a large horizontal gap from the counts and making the logic harder to follow at a glance.",
+              "solution": "Lines 109, 132, 162: self.place_at_grid(obj, 'F4', scale_factor=0.9)",
+              "line_number": 109,
+              "object_affected": "check_formula, new_check, new_check_4"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        22,
+        23,
+        24
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 343585,
+        "video_mtime_ns": 1786082735000000000,
+        "code_sha1": "d1e019e591036596613bf6822b3ead34ad2a455e"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The label 'G' is placed at the absolute bottom-right corner of the grid (F6), making it appear disconnected from the orange triangle graph G centered around rows B to E.",
+              "solution": "Line 81: self.place_at_grid(g_label, 'E5', scale_factor=1.0)",
+              "line_number": 81,
+              "object_affected": "g_label"
+            },
+            {
+              "problem": "The label 'G*' at A4 is positioned at the top edge of the grid, creating a large vertical gap between the label and the dual graph's vertices.",
+              "solution": "Line 132: self.place_at_grid(g_star_label, 'B4', scale_factor=1.0)",
+              "line_number": 132,
+              "object_affected": "g_star_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        25,
+        26
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 626221,
+        "video_mtime_ns": 1786082759000000000,
+        "code_sha1": "db98444357c6b0c6320ad23e1960877a4b944d5f"
+      },
+      "analysis": {
+        "raw_response": "```json\n{\n    \"layout\": {\n        \"has_issues\": true,\n        \"improvements\": [\n            {\n                \"problem\": \"The labels 'Graph G' and 'Dual G*' at A2 and A5 overlap with the graphs 'graph_g' and 'graph_gstar' because both the labels and the top portions of the graphs occupy the same grid rows (A-C).\",\n                \"solution\": \"Shift the graphs down by one row to start from row B. Line 78: self.place_in_area(graph_g, 'B1', 'D3', scale_factor=0.6); Line 98: self.place_in_area(graph_gstar, 'B4', 'D6', scale_factor=0.6)\",\n                \"line_number\": 78,\n                \"object_affected\": \"graph_g\"\n            },\n            {\n                \"problem\": \"The formulas 'f_g_text' and 'f_gs_text' occupy rows D and E, which will overlap with the graphs once they are shifted down to row B-D to resolve the label obstruction.\",\n                \"solution\": \"Shift the formula text elements down to occupy only row E, allowing them to sit between the graphs and the formula values. Line 168: self.place_in_area(f_g_text, 'E1', 'E3', scale_factor="
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 366050,
+        "video_mtime_ns": 1786082738000000000,
+        "code_sha1": "31293b7ca240d431d1b64338e1489741fd5de41c"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The label 'G' is placed at grid point A3, which is horizontally offset from the center of the graph area (B2 to E5, centered between columns 3 and 4).",
+              "solution": "Line 88: self.place_in_area(label_g, 'A3', 'A4', scale_factor=0.8)",
+              "line_number": 88,
+              "object_affected": "label_g"
+            },
+            {
+              "problem": "The formula 'G* ≅ G' is using point positioning at A3, but according to guidelines, formulas and symbol groups should use area positioning for optimal centering.",
+              "solution": "Line 98: self.place_in_area(label_g_star, 'A3', 'A4', scale_factor=0.8)",
+              "line_number": 98,
+              "object_affected": "label_g_star"
+            },
+            {
+              "problem": "The multi-word label 'Circuit Schematic' is placed at a single point (A3), which restricts its horizontal balance and violates the area positioning rule for multi-word labels.",
+              "solution": "Line 156: self.place_in_area(label_circuit, 'A2', 'A5', scale_factor=0.8)",
+              "line_number": 156,
+              "object_affected": "label_circuit"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        27,
+        28,
+        29
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/22-The_Hidden_Mirror_Planar_Graph_Duality_and_Eulers_Formula",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 327715,
+      "completion_tokens": 31752,
+      "total_tokens": 451019,
+      "call_count": 25
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 281,
+        "completion_tokens": 883,
+        "total_tokens": 2260,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 23461,
+        "completion_tokens": 809,
+        "total_tokens": 25606,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 22714,
+        "completion_tokens": 1495,
+        "total_tokens": 25264,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 115769,
+        "completion_tokens": 2479,
+        "total_tokens": 121487,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 22302,
+        "completion_tokens": 7221,
+        "total_tokens": 30950,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 27996,
+        "completion_tokens": 3432,
+        "total_tokens": 40289,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 29550,
+        "completion_tokens": 5324,
+        "total_tokens": 43905,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 28878,
+        "completion_tokens": 3956,
+        "total_tokens": 45922,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 35712,
+        "completion_tokens": 4269,
+        "total_tokens": 58025,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4167,
+        "completion_tokens": 396,
+        "total_tokens": 14626,
+        "call_count": 10
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3354,
+        "completion_tokens": 136,
+        "total_tokens": 4515,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 3370,
+        "completion_tokens": 408,
+        "total_tokens": 7625,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 3177,
+        "completion_tokens": 253,
+        "total_tokens": 11108,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3757,
+        "completion_tokens": 317,
+        "total_tokens": 11753,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 3227,
+        "completion_tokens": 374,
+        "total_tokens": 7684,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 327715,
+        "completion_tokens": 31752,
+        "total_tokens": 451019,
+        "call_count": 25
+      }
+    }
+  }
+}

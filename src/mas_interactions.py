@@ -22,6 +22,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union, get_arg
 
 _DEFAULT_CLIENT: Any = None
 _DEFAULT_CLIENT_LOCK = Lock()
+_EVAL_CLIENT: Any = None
+_EVAL_CLIENT_LOCK = Lock()
 
 
 def _json_safe(value: Any) -> Any:
@@ -399,7 +401,18 @@ def response_usage_dict(response: InteractionResponse) -> Dict[str, int]:
     }
 
 
-def _load_api_key() -> str:
+def _load_api_key(*, evaluation: bool = False) -> str:
+    if evaluation:
+        key = os.getenv("EVAL_GEMINI_API_KEY")
+        if key:
+            return key
+        config_path = Path(__file__).with_name("api_config.json")
+        if config_path.exists():
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+            key = str((payload.get("gemini") or {}).get("eval_api_key") or "")
+            if key:
+                return key
+
     key = os.getenv("GEMINI_API_KEY") or os.getenv("API_KEY")
     if key:
         return key
@@ -419,7 +432,18 @@ def default_client() -> Any:
             from google import genai
 
             _DEFAULT_CLIENT = genai.Client(api_key=_load_api_key())
-        return _DEFAULT_CLIENT
+    return _DEFAULT_CLIENT
+
+
+def evaluation_client() -> Any:
+    """Return a client using the evaluation-only key when configured."""
+    global _EVAL_CLIENT
+    with _EVAL_CLIENT_LOCK:
+        if _EVAL_CLIENT is None:
+            from google import genai
+
+            _EVAL_CLIENT = genai.Client(api_key=_load_api_key(evaluation=True))
+        return _EVAL_CLIENT
 
 
 def request_interaction_text(
@@ -428,6 +452,7 @@ def request_interaction_text(
     max_tokens: int = 8000,
     max_retries: int = 3,
     model_name: Optional[str] = None,
+    use_eval_credentials: bool = False,
 ) -> InteractionResponse:
     del log_id
     model = model_name or os.getenv("MAS_MODEL", "gemini-3-flash-preview")
@@ -435,7 +460,7 @@ def request_interaction_text(
     for attempt in range(max_retries + 1):
         try:
             return create_interaction(
-                default_client(),
+                evaluation_client() if use_eval_credentials else default_client(),
                 model=model,
                 input_value=prompt,
                 max_output_tokens=max_tokens,
@@ -455,13 +480,14 @@ def request_interaction_video(
     max_tokens: int = 8000,
     max_retries: int = 3,
     model_name: Optional[str] = None,
+    use_eval_credentials: bool = False,
 ) -> InteractionResponse:
     del log_id
     model = model_name or os.getenv("EVAL_MODEL", "gemini-2.5-pro")
     for attempt in range(max_retries + 1):
         try:
             return create_multimodal_interaction(
-                default_client(),
+                evaluation_client() if use_eval_credentials else default_client(),
                 model=model,
                 prompt=prompt,
                 video_path=video_path,

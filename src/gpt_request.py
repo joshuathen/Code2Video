@@ -19,14 +19,14 @@ def cfg(svc: str, key: str, default=None):
     return os.getenv(f"{svc}_{key}".upper(), _CFG.get(svc, {}).get(key, default))
 
 
-def build_gemini_client():
+def build_gemini_client(api_key=None):
     """
     Build a Gemini client that supports both:
     - Google Gemini OpenAI-compatible endpoint (OpenAI client)
     - Azure/proxy OpenAI-compatible endpoint (AzureOpenAI client)
     """
     base_url = cfg("gemini", "base_url")
-    api_key = cfg("gemini", "api_key")
+    api_key = api_key or cfg("gemini", "api_key")
     api_version = cfg("gemini", "api_version")
 
     if not base_url:
@@ -158,6 +158,7 @@ def request_gemini_with_video(
     max_tokens: int = 10000,
     max_retries: int = 3,
     model_name=None,
+    api_key=None,
 ):
     """
     Makes a multimodal request to the Gemini-2.5 model using video + text.
@@ -174,7 +175,7 @@ def request_gemini_with_video(
     """
     model_name = _resolve_gemini_model(model_name)
 
-    client = build_gemini_client()
+    client = build_gemini_client(api_key=api_key)
 
     if log_id is None:
         log_id = generate_log_id()
@@ -387,7 +388,14 @@ def request_gemini_video_img_token(
     return None, usage_info
 
 
-def request_gemini(prompt, log_id=None, max_tokens=8000, max_retries=3, model_name=None):
+def request_gemini(
+    prompt,
+    log_id=None,
+    max_tokens=8000,
+    max_retries=3,
+    model_name=None,
+    api_key=None,
+):
     """
     Makes a request to the gemini-2.5-pro-preview-03-25 model with retry functionality.
 
@@ -402,7 +410,7 @@ def request_gemini(prompt, log_id=None, max_tokens=8000, max_retries=3, model_na
     """
     model_name = _resolve_gemini_model(model_name)
 
-    client = build_gemini_client()
+    client = build_gemini_client(api_key=api_key)
 
     if log_id is None:
         log_id = generate_log_id()

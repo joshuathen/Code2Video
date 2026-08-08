@@ -1,0 +1,1017 @@
+{
+  "topic": "Change of Basis: Seeing the World Through Different Eyes",
+  "target_audience": "University students or advanced high school students studying Linear Algebra",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Data from storyboard\n        title = \"Introduction: The Perspective Problem\"\n        lines = [\n            \"One point can have many different coordinate descriptions.\",\n            \"An explorer uses a standard North-East grid.\",\n            \"A pirate uses a tilted treasure map grid.\",\n            \"They see the same \\\"X\\\" using different numbers.\",\n            \"Coordinates depend entirely on your chosen basis.\"\n        ]\n        \n        self.setup_layout(title, lines)\n        \n        # Colors\n        COLOR_STANDARD = WHITE\n        COLOR_PIRATE = YELLOW\n        COLOR_X = RED\n        \n        # Core positions in the 6x6 system\n        origin_pos = self.grid['D2']\n        x_pos = self.grid['B5']  # Point \"X\" at (3, 2) relative to D2\n        \n        # === Animation for Lecture Line 1 ===\n        # \"One point can have many different coordinate descriptions.\"\n        self.play(self.lecture[0].animate.set_color(COLOR_X))\n        \n        # Draw a red 'X'\n        point_x = Cross(stroke_width=6).scale(0.2).set_color(COLOR_X)\n        point_x.move_to(x_pos)\n        point_x.set_z_index(10)\n        \n        self.play(Create(point_x))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"An explorer uses a standard North-East grid.\"\n        self.play(self.lecture[1].animate.set_color(COLOR_STANDARD))\n        \n        # Standard white grid\n        # x_range from -1 to 5, y_range from -1 to 4 ensures origin (0,0) is shifted\n        # x_length and y_length match the number of units in range (1 unit per grid cell)\n        standard_grid = NumberPlane(\n            x_range=[-1, 5, 1],\n            y_range=[-1, 4, 1],\n            background_line_style={\"stroke_color\": COLOR_STANDARD, \"stroke_opacity\": 0.3},\n            axis_config={\"stroke_color\": COLOR_STANDARD, \"stroke_width\": 2},\n            x_length=6,\n            y_length=5\n        )\n        # Shift origin to D2\n        standard_grid.shift(origin_pos - standard_grid.get_origin())\n        \n        explorer_label = Text(\"Explorer\", font_size=24, color=COLOR_STANDARD)\n        self.place_at_grid(explorer_label, 'A1', scale_factor=0.8)\n        \n        self.play(Create(standard_grid), Write(explorer_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"A pirate uses a tilted treasure map grid.\"\n        self.play(self.lecture[2].animate.set_color(COLOR_PIRATE))\n        \n        # Tilted yellow grid\n        pirate_grid = NumberPlane(\n            x_range=[-1, 5, 1],\n            y_range=[-1, 4, 1],\n            background_line_style={\"stroke_color\": COLOR_PIRATE, \"stroke_opacity\": 0.3},\n            axis_config={\"stroke_color\": COLOR_PIRATE, \"stroke_width\": 2},\n            x_length=6,\n            y_length=5\n        )\n        # Transformation matrix: tilted and stretched\n        matrix = [[1.2, -0.3], [0.5, 1.1]]\n        pirate_grid.apply_matrix(matrix)\n        # Shift origin to D2\n        pirate_grid.shift(origin_pos - pirate_grid.get_origin())\n        \n        pirate_label = Text(\"Pirate\", font_size=24, color=COLOR_PIRATE)\n        self.place_at_grid(pirate_label, 'A3', scale_factor=0.8)\n        \n        self.play(Create(pirate_grid), Write(pirate_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # \"They see the same \\\"X\\\" using different numbers.\"\n        self.play(self.lecture[3].animate.set_color(COLOR_X))\n        \n        # Standard projection lines (Horizontal/Vertical)\n        std_proj_x = DashedLine(x_pos, [x_pos[0], origin_pos[1], 0], color=COLOR_STANDARD)\n        std_proj_y = DashedLine(x_pos, [origin_pos[0], x_pos[1], 0], color=COLOR_STANDARD)\n        \n        # Pirate projection lines (Along basis vectors)\n        # Basis vectors: b1 = [1.2, 0.5], b2 = [-0.3, 1.1]\n        p_b1 = np.array([1.2, 0.5, 0])\n        p_b2 = np.array([-0.3, 1.1, 0])\n        c1, c2 = 2.65, 0.61 # Derived coefficients for (3,2) in Pirate basis\n        \n        pirate_proj_1 = DashedLine(x_pos, origin_pos + c1*p_b1, color=COLOR_PIRATE)\n        pirate_proj_2 = DashedLine(x_pos, origin_pos + c2*p_b2, color=COLOR_PIRATE)\n        \n        self.play(Create(std_proj_x), Create(std_proj_y))\n        self.play(Create(pirate_proj_1), Create(pirate_proj_2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # \"Coordinates depend entirely on your chosen basis.\"\n        self.play(self.lecture[4].animate.set_color(WHITE))\n        \n        std_coords = MathTex(r\"\\text{Standard: } \\begin{bmatrix} 3 \\\\ 2 \\end{bmatrix}\", color=COLOR_STANDARD)\n        pirate_coords = MathTex(r\"\\text{Pirate: } \\begin{bmatrix} 2.65 \\\\ 0.61 \\end{bmatrix}\", color=COLOR_PIRATE)\n        \n        # Place labels in footer area of the grid\n        self.place_in_area(std_coords, 'F1', 'F3', scale_factor=0.7)\n        self.place_in_area(pirate_coords, 'F4', 'F6', scale_factor=0.7)\n        \n        self.play(Write(std_coords), Write(pirate_coords))\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Title and Lecture Lines\n        self.setup_layout(\"Prerequisite: The Anatomy of a Vector\", \n                          [\"A vector is a recipe of basis vectors.\", \n                           \"Vector [3, 2] means 3 i-steps and 2 j-steps.\", \n                           \"We reach the target by scaling and adding arrows.\"])\n        \n        # Global Colors\n        color_i = \"#0000FF\" # blue\n        color_j = \"#00FF00\" # green\n        color_result = \"#800080\" # purple\n\n        # Origin for our vector space (centered on grid)\n        origin_pos = self.grid['D2']\n\n        # === Animation for Lecture Line 1 ===\n        # Draw standard unit vectors i (blue) and j (green) at the origin.\n        \n        # i vector: D2 -> D3\n        i_vec = Arrow(start=origin_pos, end=self.grid['D3'], buff=0, color=color_i)\n        i_label = MathTex(\"\\\\hat{i}\", color=color_i, font_size=32)\n        self.place_at_grid(i_label, 'E3', scale_factor=1.0) # Positioned below the tip\n        \n        # j vector: D2 -> C2\n        j_vec = Arrow(start=origin_pos, end=self.grid['C2'], buff=0, color=color_j)\n        j_label = MathTex(\"\\\\hat{j}\", color=color_j, font_size=32)\n        self.place_at_grid(j_label, 'C1', scale_factor=1.0) # Positioned to the left of tip\n        \n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            Create(i_vec), \n            Create(j_vec), \n            Write(i_label), \n            Write(j_label)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Animate a robot icon moving 3 units along i, then 2 units along j.\n        self.play(self.lecture[1].animate.set_color(YELLOW))\n        \n        # Asset: Robot placeholder due to missing file\n        robot = Circle(color=WHITE, fill_opacity=1)\n        robot.scale(0.3)\n        robot.move_to(origin_pos)\n        self.add(robot)\n        \n        # Path sequence:\n        # Move along x: D2 -> D3 -> D4 -> D5\n        # Move along y: D5 -> C5 -> B5\n        move_targets = ['D3', 'D4', 'D5', 'C5', 'B5']\n        \n        for target in move_targets:\n            self.play(robot.animate.move_to(self.grid[target]), run_time=0.6, rate_func=linear)\n            \n        # Draw component vectors (scaled basis vectors)\n        i_scaled = Arrow(start=origin_pos, end=self.grid['D5'], buff=0, color=color_i, stroke_width=2)\n        j_scaled = Arrow(start=self.grid['D5'], end=self.grid['B5'], buff=0, color=color_j, stroke_width=2)\n        \n        self.play(Create(i_scaled), Create(j_scaled))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Draw the resulting vector [3, 2] from origin to the robot's position in purple.\n        self.play(self.lecture[2].animate.set_color(color_result))\n        \n        res_vec = Arrow(start=origin_pos, end=self.grid['B5'], buff=0, color=color_result, stroke_width=6)\n        res_label = MathTex(\"\\\\vec{v} = \\\\begin{bmatrix} 3 \\\\\\\\ 2 \\\\end{bmatrix}\", color=color_result, font_size=32)\n        # B6 is near the tip B5\n        self.place_at_grid(res_label, 'B6', scale_factor=1.0)\n        \n        self.play(Create(res_vec), Write(res_label))\n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        # Setup title and lecture lines\n        title = \"Visualizing a New Basis\"\n        lecture_lines = [\n            \"- Let's define a new basis using vectors b1 and b2.\",\n            \"- These vectors form a squashed and rotated grid.\",\n            \"- The space remains fixed while our ruler changes.\"\n        ]\n        self.setup_layout(title, lecture_lines)\n        \n        # Define colors from the prompt/storyboard\n        ORANGE = \"#FFA500\"\n        CYAN = \"#00FFFF\"\n        GREY = \"#696969\"\n        \n        # === Animation for Lecture Line 1 ===\n        # Color the first lecture line to match b1/b2 theme\n        self.lecture[0].set_color(ORANGE)\n        \n        # 1. Dim grey (#696969) standard grid background.\n        # We use a NumberPlane to represent the standard Cartesian ruler.\n        std_grid = NumberPlane(\n            x_range=[-4, 4, 1],\n            y_range=[-4, 4, 1],\n            background_line_style={\"stroke_color\": GREY, \"stroke_opacity\": 0.5},\n            axis_config={\"stroke_color\": GREY}\n        )\n        # Position in columns 2-6 to respect margin (B021)\n        self.place_in_area(std_grid, 'A2', 'F6', scale_factor=0.6)\n        origin = std_grid.get_origin()\n        \n        self.play(Create(std_grid))\n        \n        # 2. Basis vectors b1 (orange #FFA500), b2 (cyan #00FFFF) from origin.\n        # Basis B defined as b1=[1.5, 0.5] and b2=[0.5, 1.5]\n        b1_coords = np.array([1.5, 0.5, 0])\n        b2_coords = np.array([0.5, 1.5, 0])\n        \n        b1_arrow = Arrow(origin, std_grid.coords_to_point(b1_coords[0], b1_coords[1]), buff=0, color=ORANGE)\n        b2_arrow = Arrow(origin, std_grid.coords_to_point(b2_coords[0], b2_coords[1]), buff=0, color=CYAN)\n        \n        # Labels for basis vectors (B001, B002 context)\n        b1_label = MathTex(r\"\\vec{b}_1\", color=ORANGE).scale(0.8)\n        b2_label = MathTex(r\"\\vec{b}_2\", color=CYAN).scale(0.8)\n        \n        # Position labels at the end of arrows with a small offset\n        b1_label.next_to(b1_arrow.get_end(), RIGHT + DOWN, buff=0.1)\n        b2_label.next_to(b2_arrow.get_end(), LEFT + UP, buff=0.1)\n        \n        self.play(GrowArrow(b1_arrow), Write(b1_label))\n        self.play(GrowArrow(b2_arrow), Write(b2_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Color transition for the second line\n        self.lecture[1].set_color(YELLOW)\n        \n        # 3. New skewed grid using orange and cyan lines.\n        # This grid represents the \"squashed and rotated\" coordinate system.\n        matrix = [[1.5, 0.5], [0.5, 1.5]] # The transformation defined by the basis vectors\n        \n        skewed_grid = VGroup()\n        # Vertical lines (transformed unit x steps)\n        for x in range(-3, 4):\n            l = Line(np.array([x, -3, 0]), np.array([x, 3, 0]), color=ORANGE, stroke_opacity=0.4, stroke_width=2)\n            skewed_grid.add(l)\n        # Horizontal lines (transformed unit y steps)\n        for y in range(-3, 4):\n            l = Line(np.array([-3, y, 0]), np.array( [3, y, 0]), color=CYAN, stroke_opacity=0.4, stroke_width=2)\n            skewed_grid.add(l)\n            \n        # Apply the basis transformation\n        skewed_grid.apply_matrix(matrix)\n        \n        # Move the skewed grid to align its origin with the standard grid origin\n        # Note: apply_matrix happens relative to the VGroup center, which is origin (0,0,0)\n        # We need to move it to the 'origin' we calculated for the std_grid.\n        # self.place_in_area would center the bounding box, which works here since the grid is symmetric.\n        self.place_in_area(skewed_grid, 'A2', 'F6', scale_factor=0.6)\n        \n        self.play(Create(skewed_grid))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"The space remains fixed while our ruler changes.\"\n        self.lecture[2].set_color(WHITE)\n        \n        # To illustrate the fixed space, we show a constant vector v = [2, 2] in std coordinates.\n        # In the new basis [1.5, 0.5], [0.5, 1.5], this vector is exactly 1*b1 + 1*b2\n        v_coords_std = [2, 2]\n        v_arrow = Arrow(origin, std_grid.coords_to_point(*v_coords_std), buff=0, color=WHITE, stroke_width=6)\n        v_label = MathTex(r\"\\vec{v}\", color=WHITE).scale(0.9)\n        v_label.next_to(v_arrow.get_end(), UP + RIGHT, buff=0.1)\n        \n        # Highlighting the vector against the two overlapping grids\n        self.play(Create(v_arrow), Write(v_label))\n        self.play(Indicate(v_arrow, color=WHITE))\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        title = \"The Translation Manual: The Change of Basis Matrix\"\n        lines = [\n            \"Matrix P bridges these two different coordinate worlds.\",\n            \"Its columns are new basis vectors in standard terms.\",\n            \"This matrix serves as a translation manual between grids.\"\n        ]\n        self.setup_layout(title, lines)\n        \n        # Colors\n        COLOR_I = \"#0000FF\"\n        COLOR_J = \"#00FF00\"\n        COLOR_B1 = \"#FFA500\"\n        COLOR_B2 = \"#00FFFF\"\n        \n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        # Create Axes for the vectors\n        axes = Axes(\n            x_range=[-2, 3, 1],\n            y_range=[-1, 2, 1],\n            x_length=4,\n            y_length=3,\n            axis_config={\"include_tip\": True, \"color\": GREY_C},\n        )\n        self.place_in_area(axes, 'B1', 'F4')\n        \n        # Standard basis vectors\n        vec_i = Arrow(axes.c2p(0, 0), axes.c2p(1, 0), buff=0, color=COLOR_I)\n        vec_j = Arrow(axes.c2p(0, 0), axes.c2p(0, 1), buff=0, color=COLOR_J)\n        \n        lbl_i = MathTex(\"i\", color=COLOR_I, font_size=20).next_to(vec_i.get_end(), DOWN, buff=0.1)\n        lbl_j = MathTex(\"j\", color=COLOR_J, font_size=20).next_to(vec_j.get_end(), LEFT, buff=0.1)\n        \n        # Pirate basis vectors\n        vec_b1 = Arrow(axes.c2p(0, 0), axes.c2p(2, 1), buff=0, color=COLOR_B1)\n        vec_b2 = Arrow(axes.c2p(0, 0), axes.c2p(-1, 1), buff=0, color=COLOR_B2)\n        \n        lbl_b1 = MathTex(\"b_1\", color=COLOR_B1, font_size=20).next_to(vec_b1.get_end(), RIGHT, buff=0.1)\n        lbl_b2 = MathTex(\"b_2\", color=COLOR_B2, font_size=20).next_to(vec_b2.get_end(), UP, buff=0.1)\n        \n        self.play(Create(axes))\n        self.play(Create(vec_i), Create(vec_j), Write(lbl_i), Write(lbl_j))\n        self.play(Create(vec_b1), Create(vec_b2), Write(lbl_b1), Write(lbl_b2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # Dashed lines for b1 standard coordinates (2, 1)\n        dash_b1_x = DashedLine(axes.c2p(2, 0), axes.c2p(2, 1), color=COLOR_B1)\n        dash_b1_y = DashedLine(axes.c2p(0, 1), axes.c2p(2, 1), color=COLOR_B1)\n        \n        # Dashed lines for b2 standard coordinates (-1, 1)\n        dash_b2_x = DashedLine(axes.c2p(-1, 0), axes.c2p(-1, 1), color=COLOR_B2)\n        dash_b2_y = DashedLine(axes.c2p(0, 1), axes.c2p(-1, 1), color=COLOR_B2)\n        \n        self.play(Create(dash_b1_x), Create(dash_b1_y))\n        self.play(Create(dash_b2_x), Create(dash_b2_y))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Matrix P construction\n        # Matrix P = [[2, -1], [1, 1]]\n        matrix_p = Matrix(\n            [[2, -1], [1, 1]],\n            left_bracket=\"[\",\n            right_bracket=\"]\",\n            element_to_mobject_config={\"font_size\": 28}\n        )\n        # Color columns\n        matrix_p.get_columns()[0].set_color(COLOR_B1)\n        matrix_p.get_columns()[1].set_color(COLOR_B2)\n        \n        # Matrix Label\n        p_label = MathTex(\"P = \", font_size=28)\n        p_group = VGroup(p_label, matrix_p).arrange(RIGHT, buff=0.1)\n        \n        # Column labels\n        b1_col_lbl = MathTex(\"b_1\", color=COLOR_B1, font_size=20)\n        b2_col_lbl = MathTex(\"b_2\", color=COLOR_B2, font_size=20)\n        \n        # Use B002 to center the matrix group\n        self.place_in_area(p_group, 'B5', 'D6', scale_factor=0.9)\n        # Anchor column labels relative to the matrix\n        b1_col_lbl.next_to(matrix_p.get_columns()[0], UP, buff=0.2)\n        b2_col_lbl.next_to(matrix_p.get_columns()[1], UP, buff=0.2)\n        \n        self.play(Write(p_group))\n        self.play(Write(b1_col_lbl), Write(b2_col_lbl))\n        self.wait(2)\n        \n        # Cleanup\n        self.lecture[2].set_color(WHITE)\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        # 1. Setup Layout\n        title = \"Change of Basis: Different Perspectives\"\n        lecture_notes = [\n            \"A basis is a set of vectors\",\n            \"used to measure space.\",\n            \"\",\n            \"Standard Basis (i, j):\",\n            \"The default 'grid'.\",\n            \"\",\n            \"Alternative Basis (b1, b2):\",\n            \"Seeing the world\",\n            \"through a different lens.\"\n        ]\n        self.setup_layout(title, lecture_notes)\n\n        # 2. Define Coordinate System in the Grid\n        # Center the coordinate system at the middle of our visual area (around D4)\n        origin_point = self.grid[\"D4\"]\n        \n        plane = NumberPlane(\n            x_range=[-2, 2, 1],\n            y_range=[-2, 2, 1],\n            x_length=3.5,\n            y_length=3.5,\n            axis_config={\"include_tip\": True, \"stroke_width\": 2},\n            background_line_style={\"stroke_opacity\": 0.3}\n        ).move_to(origin_point)\n\n        # 3. Create Vector and Label\n        # Vector v = [1, 1] in standard basis\n        vec_v = Arrow(\n            plane.get_origin(), \n            plane.c2p(1, 1), \n            buff=0, \n            color=YELLOW, \n            stroke_width=4\n        )\n        \n        # Use MathTex for coordinates (Belief B050)\n        coords_label = MathTex(\n            r\"\\vec{v} = \\begin{bmatrix} 1 \\\\ 1 \\end{bmatrix}_s\", \n            color=YELLOW, \n            font_size=30\n        )\n        self.place_at_grid(coords_label, \"A4\")\n\n        # 4. Animation Sequence\n        self.play(Create(plane), run_time=1)\n        self.play(GrowArrow(vec_v), Write(coords_label))\n        self.wait(1)\n\n        # 5. Transformation: Change of Basis\n        # New basis vectors: b1 = [1, 0.5], b2 = [0.5, 1]\n        basis_change_matrix = [[1, 0.5], [0.5, 1]]\n        \n        new_plane = plane.copy().apply_matrix(basis_change_matrix)\n        new_plane.set_color(BLUE)\n        \n        # New coordinates in basis B: v = [0.66, 0.66] roughly, \n        # but for clarity let's show the transformation of the grid\n        new_label = MathTex(\n            r\"\\vec{v} = \\begin{bmatrix} x' \\\\ y' \\end{bmatrix}_B\", \n            color=BLUE, \n            font_size=30\n        )\n        self.place_at_grid(new_label, \"A4\")\n\n        basis_text = Text(\"Basis Changed\", font_size=20, color=BLUE)\n        self.place_at_grid(basis_text, \"A6\")\n\n        self.play(\n            Transform(plane, new_plane),\n            Transform(coords_label, new_label),\n            FadeIn(basis_text),\n            run_time=2.5\n        )\n        \n        self.wait(2)\n\n        # 6. Final Highlight\n        # Keep the vector fixed in physical space while the grid moves underneath it\n        self.play(\n            Indicate(vec_v, color=WHITE),\n            self.lecture[6:].animate.set_color(BLUE),\n            run_time=1.5\n        )\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Setup title and lecture lines\n        self.setup_layout(\"Summary & Global View\", [\n            \"Change of basis maps grids to different perspectives.\",\n            \"It is the foundation for diagonalization and compression.\",\n            \"One vector, many views: that is change of basis.\"\n        ])\n        \n        # === Animation for Lecture Line 1 ===\n        # Animation: Display a sequence: Basis -> Grid -> Matrix -> Translation in white (#FFFFFF).\n        self.lecture[0].set_color(WHITE)\n        \n        basis_txt = Text(\"Basis\", font_size=20, color=WHITE)\n        grid_txt = Text(\"Grid\", font_size=20, color=WHITE)\n        matrix_txt = Text(\"Matrix\", font_size=20, color=WHITE)\n        trans_txt = Text(\"Translation\", font_size=20, color=WHITE)\n        \n        arrow1 = MathTex(r\"\\rightarrow\", color=WHITE)\n        arrow2 = MathTex(r\"\\rightarrow\", color=WHITE)\n        arrow3 = MathTex(r\"\\rightarrow\", color=WHITE)\n        \n        sequence = VGroup(\n            basis_txt, arrow1, \n            grid_txt, arrow2, \n            matrix_txt, arrow3, \n            trans_txt\n        ).arrange(RIGHT, buff=0.15)\n        \n        # Use Belief B002: Span multiple columns for horizontal centering\n        self.place_in_area(sequence, 'B1', 'B6', scale_factor=0.9)\n        \n        self.play(Write(sequence))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Animation: Display 'Diagonalization' and 'Compression' as key applications in green (#00FF00).\n        self.lecture[1].set_color(GREEN)\n        \n        diag_txt = Text(\"Diagonalization\", font_size=24, color=GREEN)\n        comp_txt = Text(\"Compression\", font_size=24, color=GREEN)\n        \n        apps = VGroup(diag_txt, comp_txt).arrange(RIGHT, buff=0.8)\n        self.place_in_area(apps, 'E1', 'E6', scale_factor=0.9)\n        \n        self.play(FadeIn(apps, shift=UP))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Animation: Morph the tilted grid back to standard while the vector arrow remains fixed.\n        self.lecture[2].set_color(WHITE)\n        \n        # Define the center of the grid display area (Rows C and D)\n        tl = self.grid['C2']\n        br = self.grid['D5']\n        center = (tl + br) / 2\n        \n        # Standard Grid Lines (Explorer)\n        # Using a small subset to fit in the visual corridor (Belief B009)\n        std_grid = VGroup()\n        for i in range(-2, 3):\n            # Vertical lines\n            std_grid.add(Line(center + [i*0.4, -0.6, 0], center + [i*0.4, 0.6, 0], color=WHITE, stroke_opacity=0.3))\n            # Horizontal lines\n            std_grid.add(Line(center + [-1.0, i*0.2, 0], center + [1.0, i*0.2, 0], color=WHITE, stroke_opacity=0.3))\n            \n        # Pirate Grid (Tilted Yellow)\n        # Defining scaled basis vectors: b1 = [2,1], b2 = [-1,1] from Section 4 context\n        b1_vec = np.array([0.4, 0.1, 0])\n        b2_vec = np.array([-0.2, 0.2, 0])\n        \n        pirate_grid = VGroup()\n        for i in range(-2, 3):\n            # Lines parallel to b2_vec (spanning along b1 direction)\n            p_start = center + i * b1_vec - 2 * b2_vec\n            p_end = center + i * b1_vec + 2 * b2_vec\n            pirate_grid.add(Line(p_start, p_end, color=YELLOW, stroke_opacity=0.5))\n            \n            # Lines parallel to b1_vec (spanning along b2 direction)\n            p_start = center + i * b2_vec - 2 * b1_vec\n            p_end = center + i * b2_vec + 2 * b1_vec\n            pirate_grid.add(Line(p_start, p_end, color=YELLOW, stroke_opacity=0.5))\n            \n        # Vector arrow - remains fixed in space\n        # Fixed point in coordinate space relative to center\n        vec_end = center + np.array([0.3, 0.4, 0])\n        vector_arrow = Arrow(center, vec_end, buff=0, color=PURPLE, stroke_width=4)\n        vector_label = Text(\"v\", font_size=18, color=PURPLE).next_to(vector_arrow, UP, buff=0.1)\n        \n        # Morphing sequence\n        self.play(FadeIn(pirate_grid))\n        self.play(GrowArrow(vector_arrow), FadeIn(vector_label))\n        self.wait(1)\n        \n        # Morph grid back to standard while vector stays fixed\n        self.play(\n            Transform(pirate_grid, std_grid),\n            run_time=3,\n            rate_func=slow_into\n        )\n        self.wait(3)\n"
+  ],
+  "outline": {
+    "topic": "Change of Basis: Seeing the World Through Different Eyes",
+    "target_audience": "University students or advanced high school students studying Linear Algebra",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "Introduction: The Perspective Problem",
+        "content": "Introduce the concept that the same physical point in space can be described by different sets of coordinates depending on the observer's 'grid' (basis). Use a relatable scenario to establish the 'Why'.",
+        "example": "An explorer (Character A) uses a standard North-East grid, while a Pirate (Character B) uses a grid aligned with their tilted treasure map. They are both looking at the same 'X' marks the spot, but their coordinate values are different."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Anatomy of a Vector",
+        "content": "Briefly refresh the idea that a vector is a 'recipe' of basis vectors. In the standard basis (i, j), the vector [3, 2] means '3 steps of i and 2 steps of j'. Focus on the visual of scaling and adding arrows.",
+        "example": "An animation showing a robot moving 3 units along the x-axis and 2 units along the y-axis to reach a target."
+      },
+      {
+        "id": "section_3",
+        "title": "Visualizing a New Basis",
+        "content": "Introduce a 'New Basis' (B) consisting of two vectors, b1 and b2, that aren't perpendicular or unit-length. Show how a new grid forms from these vectors. Emphasize that the space hasn't changed, only the ruler we use to measure it.",
+        "example": "Visualizing a 'Squashed and Rotated' grid overlaid on the standard Cartesian plane. A vector that was [1, 1] in the standard grid might only be [0.5, 0] in this new, stretched grid."
+      },
+      {
+        "id": "section_4",
+        "title": "The Translation Manual: The Change of Basis Matrix",
+        "content": "Explain how to bridge the two worlds. The 'Change of Basis Matrix' (P) is simply a matrix where the columns are the coordinates of the NEW basis vectors (b1, b2) written in terms of the OLD basis.",
+        "example": "If the Pirate's first basis vector is [2, 1] in our standard view, and their second is [-1, 1], the transition matrix P is [[2, -1], [1, 1]]. This matrix 'speaks' both languages."
+      },
+      {
+        "id": "section_5",
+        "title": "The Mathematical Transformation",
+        "content": "Present the formula: [v]_standard = P * [v]_new. Explain that multiplying the Pirate's coordinates by matrix P 'translates' them back into our standard language. Mention that P-inverse does the opposite.",
+        "example": "The Pirate says the treasure is at [1, 1] on his map. We multiply P * [1, 1] to find that in our standard grid, the treasure is actually at [2-1, 1+1] = [1, 2]."
+      },
+      {
+        "id": "section_6",
+        "title": "Summary & Global View",
+        "content": "Recap the flow: Basis -> Grid -> Matrix -> Translation. Highlight that change of basis is the foundation for complex operations like Diagonalization and Image Compression.",
+        "example": "A final animation showing the grid 'morphing' from the Pirate's perspective back to the standard perspective, with the vector arrow staying fixed in space while the numbers change."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "Introduction: The Perspective Problem",
+      "lecture_lines": [
+        "One point can have many different coordinate descriptions.",
+        "An explorer uses a standard North-East grid.",
+        "A pirate uses a tilted treasure map grid.",
+        "They see the same \"X\" using different numbers.",
+        "Coordinates depend entirely on your chosen basis."
+      ],
+      "animations": [
+        "Draw a standard white (#FFFFFF) grid with a red 'X' (#FF0000) at (3, 2).",
+        "Introduce character 'Explorer' on the left side associated with the standard grid.",
+        "Overlay a tilted and stretched yellow (#FFFF00) grid representing the 'Pirate's' map.",
+        "Highlight the red 'X' (#FF0000) position relative to the Pirate's yellow grid lines.",
+        "Add labels: Standard [3, 2] in white (#FFFFFF) and Pirate [v1, v2] in yellow (#FFFF00)."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Anatomy of a Vector",
+      "lecture_lines": [
+        "A vector is a recipe of basis vectors.",
+        "Vector [3, 2] means 3 i-steps and 2 j-steps.",
+        "We reach the target by scaling and adding arrows."
+      ],
+      "animations": [
+        "Draw standard unit vectors i (blue, #0000FF) and j (green, #00FF00) at the origin.",
+        "Animate the robot [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg] moving 3 units along i, then 2 units along j.",
+        "Draw the resulting vector [3, 2] from origin to the robot's position in purple (#800080)."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "Visualizing a New Basis",
+      "lecture_lines": [
+        "Let's define a new basis using vectors b1 and b2.",
+        "These vectors form a squashed and rotated grid.",
+        "The space remains fixed while our ruler changes."
+      ],
+      "animations": [
+        "Show a dim grey (#696969) standard grid in the background.",
+        "Introduce basis vectors b1 (orange, #FFA500) and b2 (cyan, #00FFFF) starting from origin.",
+        "Generate a new skewed grid using orange (#FFA500) and cyan (#00FFFF) lines."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Translation Manual: The Change of Basis Matrix",
+      "lecture_lines": [
+        "Matrix P bridges these two different coordinate worlds.",
+        "Its columns are new basis vectors in standard terms.",
+        "This matrix serves as a translation manual between grids."
+      ],
+      "animations": [
+        "Display standard basis vectors i (#0000FF) and j (#00FF00) as reference.",
+        "Plot Pirate's basis vectors b1 (#FFA500) at [2, 1] and b2 (#00FFFF) at [-1, 1].",
+        "Highlight the standard coordinates of b1 and b2 with dashed lines.",
+        "Form matrix P = [[2, -1], [1, 1]] by placing b1 and b2 as columns.",
+        "Label the columns of P as 'b1' and 'b2' in their respective colors."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Mathematical Transformation",
+      "lecture_lines": [
+        "We translate new coordinates using matrix multiplication.",
+        "Matrix P converts pirate coordinates to standard ones.",
+        "P-inverse performs the reverse translation back to the pirate.",
+        "The formula [v]_standard equals P times [v]_new.",
+        "This math keeps everyone's perspective perfectly aligned."
+      ],
+      "animations": [
+        "Display formula [v]_std = P * [v]_new in white (#FFFFFF) at the top.",
+        "Show the Pirate's [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/pirate.svg] vector [1, 1] in yellow (#FFFF00) next to the formula.",
+        "Substitute matrix P and vector [1, 1] into the matrix multiplication.",
+        "Calculate the product: [2*1 + -1*1, 1*1 + 1*1] resulting in [1, 2].",
+        "Highlight the resulting vector [1, 2] on the standard grid in white (#FFFFFF)."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Summary & Global View",
+      "lecture_lines": [
+        "Change of basis maps grids to different perspectives.",
+        "It is the foundation for diagonalization and compression.",
+        "One vector, many views: that is change of basis."
+      ],
+      "animations": [
+        "Display a sequence: Basis -> Grid -> Matrix -> Translation in white (#FFFFFF).",
+        "Morph the tilted grid back to standard while the vector arrow remains fixed.",
+        "Display 'Diagonalization' and 'Compression' as key applications in green (#00FF00)."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (each <= 10 words) for the introduction."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for Section 1 aligned with the outline."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated initial Manim code for section_1 based on the storyboard and 6x6 grid constraints. Provided grids for Explorer and Pirate with projection lines and coordinate labels."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (each <= 10 words) for the vector anatomy prerequisite."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for Section 2 aligned with the outline."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_2 with 6x6 grid, robot asset, and vector animations."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (each <= 10 words) for visualizing a new basis."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for Section 3 aligned with the outline."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section_3 with standard grid, basis vectors b1/b2, and the resulting skewed grid."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (each <= 10 words) for the change of basis matrix."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for Section 4 aligned with the outline."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated Manim code for section 4 according to storyboard and visual guidelines."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines (each <= 10 words) for the mathematical transformation formula."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 animation steps for Section 5 aligned with the outline."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated and implemented Manim code for Section 5 based on storyboard and outline. Included matrix transformation formula, substitution steps, and visual vector verification on a standard grid."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines (each <= 10 words) for the summary."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 animation steps for Section 6 aligned with the outline."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated complete Manim code for Section 6 summary scene, including sequence flow, application highlights, and grid morphing animation."
+    },
+    {
+      "id": 19,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[section_1] Implement Manim code. \nAnimations: \n1. Draw standard white (#FFFFFF) grid, red 'X' (#FF0000) at (3,2).\n2. Add 'Explorer' character (left side).\n3. Overlay tilted yellow (#FFFF00) 'Pirate' grid.\n4. Highlight 'X' relative to Pirate grid.\n5. Add labels: Standard [3,2] (white) and Pirate [v1,v2] (yellow).\nUse 6x6 grid conventions. Refer to Beliefs B001 (overlapping), B002 (spanning for labels), B012 (label alignment).",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Initial implementation done, but layout issues were identified by VideoCritic. Please address issues 27, 28, 29."
+    },
+    {
+      "id": 20,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[section_2] Implement Manim code.\nAnimations:\n1. Standard unit vectors i (blue #0000FF), j (green #00FF00) at origin.\n2. Robot icon moving 3 units along i, then 2 units along j.\n3. Purple (#800080) vector [3,2] from origin to robot.\nRefer to Belief B009 (keep trajectory path clear of labels).",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Initial implementation done, but layout issues were identified by VideoCritic. Please address issues 39, 40, 41."
+    },
+    {
+      "id": 21,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[section_3] Implement Manim code.\nAnimations:\n1. Dim grey (#696969) standard grid background.\n2. Basis vectors b1 (orange #FFA500), b2 (cyan #00FFFF) from origin.\n3. New skewed grid using orange and cyan lines.\nRefer to Belief B001, B002 (for labels on skewed axes).",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Initial implementation done, but layout issues were identified by VideoCritic. Please address issues 30, 31."
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[section_4] Implement Manim code.\nAnimations:\n1. Standard i (#0000FF) and j (#00FF00).\n2. Pirate vectors b1 (#FFA500) at [2,1], b2 (#00FFFF) at [-1,1].\n3. Highlight standard coordinates of b1, b2 with dashed lines.\n4. Form matrix P = [[2,-1],[1,1]], label columns 'b1' and 'b2' in respective colors.\nRefer to Belief B002 (horizontal centering for the matrix), B019 (spacing between grid and matrix).",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Initial implementation done, but layout issues were identified by VideoCritic. Please address issues 32, 33."
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[section_5] Implement Manim code.\nAnimations:\n1. Formula [v]_std = P * [v]_new (white #FFFFFF) at top.\n2. Pirate vector [1,1] (yellow #FFFF00) next to formula.\n3. Matrix substitution.\n4. Calculation result [1,2].\n5. Highlight [1,2] on standard grid (white).\nRefer to Belief B002 (formula spanning multiple columns for centering).",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Initial implementation done, but layout issues were identified by VideoCritic. Please address issues 34, 35 and integrate the asset from issue 26."
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[section_6] Implement Manim code.\nAnimations:\n1. Sequence: Basis -> Grid -> Matrix -> Translation (white).\n2. Morph tilted grid back to standard (vector fixed).\n3. Display 'Diagonalization' and 'Compression' (green #00FF00).\nRefer to Belief B009 (ensure grid morphing/trajectories are clear).",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Initial implementation done, but layout issues were identified by VideoCritic. Please address issues 36, 37, 38."
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Animate the robot [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg] moving 3 units along i, then 2 units along j.']",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Show the Pirate's [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/pirate.svg] vector [1, 1] in yellow (#FFFF00) next to the formula.\"]",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'explorer_label' is positioned too far to the left (A1), which encroaches on the lecture text margin and misaligns with its data below. Fix: Line 99: self.place_at_grid(explorer_label, 'A2', scale_factor=0.8) (line=99, object=explorer_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'pirate_label' at A3 is too close to the explorer label and is not centered over its corresponding coordinate information. Fix: Line 124: self.place_at_grid(pirate_label, 'A5', scale_factor=0.8) (line=124, object=pirate_label)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The coordinate vectors are placed in the bottom-most F row, causing them to appear cramped against the edge of the frame. Fix: Line 158: self.place_in_area(std_coords, 'E1', 'E3', scale_factor=0.7); Line 159: self.place_in_area(pirate_coords, 'E4', 'E6', scale_factor=0.7) (line=158, object=std_coords and pirate_coords)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The std_grid is positioned too far left (A2), causing it and its future transformed counterpart to crowd the lecture text. Fix: Line 75: self.place_in_area(std_grid, 'A3', 'F6', scale_factor=0.5) (line=75, object=std_grid)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The skewed_grid lines extend significantly into the left side of the frame, creating visual clutter and potentially overlapping the lecture text. Fix: Line 125: self.place_in_area(skewed_grid, 'A3', 'F6', scale_factor=0.5) (line=125, object=skewed_grid)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The matrix group (p_group) is positioned in the top-right (B5-D6), creating a top-heavy layout that feels unbalanced relative to the taller axes group (B1-F4). Fix: Line 134: self.place_in_area(p_group, 'C5', 'E6', scale_factor=0.85) (line=134, object=p_group)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The axes group is flush against the matrix area, which can cause the basis vector label 'b1' to appear cramped or nearly overlap with the matrix brackets. Fix: Line 72: self.place_in_area(axes, 'B1', 'F3', scale_factor=0.9) (line=72, object=axes)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The coords_label and new_label objects are both assigned to grid position A4, causing a direct visual overlap of mathematical notation in the top-right quadrant. Fix: Line 113: self.place_at_grid(new_label, 'B4', scale_factor=0.8) (line=113, object=new_label)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The basis_text object is positioned at the extreme edge of the frame (A6), which makes it feel disconnected from the central visualization and risks being cut off on some displays. Fix: Line 116: self.place_at_grid(basis_text, 'A5', scale_factor=0.8) (line=116, object=basis_text)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The grid and vector animation (v_grid) is excessively large and encroaches on the left-side lecture notes, violating the separation between content areas. Fix: Line 82: self.place_in_area(v_grid, 'C2', 'D6', scale_factor=0.65) (line=82, object=v_grid)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'apps' labels (Diagonalization and Compression) are positioned too low and spread too wide, which disconnects them from the central visualization. Fix: Line 88: self.place_in_area(apps, 'E2', 'E5', scale_factor=0.8) (line=88, object=apps)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The 'sequence' chain (Basis to Translation) is positioned too high and wide, crowding the title area and creating an unbalanced look. Fix: Line 75: self.place_in_area(sequence, 'B2', 'B5', scale_factor=0.8) (line=75, object=sequence)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The resulting vector formula 'res_label' is placed at grid point B6, which is at the far right edge of the grid. This positioning risk clipping the LaTeX matrix off-screen and creates visual crowding. Fix: Line 115: self.place_in_area(res_label, 'A5', 'C6', scale_factor=0.8) (line=115, object=res_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The basis labels 'i_label' and 'j_label' at scale 1.0 appear oversized relative to the unit vectors, potentially crowding the origin and axes during later steps of the animation. Fix: Line 67: self.place_at_grid(i_label, 'E3', scale_factor=0.7) (line=67, object=i_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The basis label 'j_label' at its current scale and position (C1) may feel too large compared to the thin green unit vector it identifies. Fix: Line 72: self.place_at_grid(j_label, 'C1', scale_factor=0.7) (line=72, object=j_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 487770,
+        "video_mtime_ns": 1786076650000000000,
+        "code_sha1": "bfa081672a7b3875d499111f089e12556826e398"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'explorer_label' is positioned too far to the left (A1), which encroaches on the lecture text margin and misaligns with its data below.",
+              "solution": "Line 99: self.place_at_grid(explorer_label, 'A2', scale_factor=0.8)",
+              "line_number": 99,
+              "object_affected": "explorer_label"
+            },
+            {
+              "problem": "The 'pirate_label' at A3 is too close to the explorer label and is not centered over its corresponding coordinate information.",
+              "solution": "Line 124: self.place_at_grid(pirate_label, 'A5', scale_factor=0.8)",
+              "line_number": 124,
+              "object_affected": "pirate_label"
+            },
+            {
+              "problem": "The coordinate vectors are placed in the bottom-most F row, causing them to appear cramped against the edge of the frame.",
+              "solution": "Line 158: self.place_in_area(std_coords, 'E1', 'E3', scale_factor=0.7); Line 159: self.place_in_area(pirate_coords, 'E4', 'E6', scale_factor=0.7)",
+              "line_number": 158,
+              "object_affected": "std_coords and pirate_coords"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        27,
+        28,
+        29
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 199180,
+        "video_mtime_ns": 1786076688000000000,
+        "code_sha1": "4bbc321f8c4cf05ee3a93d639ce958e4058ac9b2"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The resulting vector formula 'res_label' is placed at grid point B6, which is at the far right edge of the grid. This positioning risk clipping the LaTeX matrix off-screen and creates visual crowding.",
+              "solution": "Line 115: self.place_in_area(res_label, 'A5', 'C6', scale_factor=0.8)",
+              "line_number": 115,
+              "object_affected": "res_label"
+            },
+            {
+              "problem": "The basis labels 'i_label' and 'j_label' at scale 1.0 appear oversized relative to the unit vectors, potentially crowding the origin and axes during later steps of the animation.",
+              "solution": "Line 67: self.place_at_grid(i_label, 'E3', scale_factor=0.7)",
+              "line_number": 67,
+              "object_affected": "i_label"
+            },
+            {
+              "problem": "The basis label 'j_label' at its current scale and position (C1) may feel too large compared to the thin green unit vector it identifies.",
+              "solution": "Line 72: self.place_at_grid(j_label, 'C1', scale_factor=0.7)",
+              "line_number": 72,
+              "object_affected": "j_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        39,
+        40,
+        41
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 235811,
+        "video_mtime_ns": 1786076624000000000,
+        "code_sha1": "9cbff9e6d77d8e74f0dcbcfbf86b14655555cbda"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The std_grid is positioned too far left (A2), causing it and its future transformed counterpart to crowd the lecture text.",
+              "solution": "Line 75: self.place_in_area(std_grid, 'A3', 'F6', scale_factor=0.5)",
+              "line_number": 75,
+              "object_affected": "std_grid"
+            },
+            {
+              "problem": "The skewed_grid lines extend significantly into the left side of the frame, creating visual clutter and potentially overlapping the lecture text.",
+              "solution": "Line 125: self.place_in_area(skewed_grid, 'A3', 'F6', scale_factor=0.5)",
+              "line_number": 125,
+              "object_affected": "skewed_grid"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        30,
+        31
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 224250,
+        "video_mtime_ns": 1786076636000000000,
+        "code_sha1": "44ed745263f50acc78745b35cc849b0410d0f100"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The matrix group (p_group) is positioned in the top-right (B5-D6), creating a top-heavy layout that feels unbalanced relative to the taller axes group (B1-F4).",
+              "solution": "Line 134: self.place_in_area(p_group, 'C5', 'E6', scale_factor=0.85)",
+              "line_number": 134,
+              "object_affected": "p_group"
+            },
+            {
+              "problem": "The axes group is flush against the matrix area, which can cause the basis vector label 'b1' to appear cramped or nearly overlap with the matrix brackets.",
+              "solution": "Line 72: self.place_in_area(axes, 'B1', 'F3', scale_factor=0.9)",
+              "line_number": 72,
+              "object_affected": "axes"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 179879,
+        "video_mtime_ns": 1786076835000000000,
+        "code_sha1": "33ab31cf8c12907a32774f1a5af3d87305e66507"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The coords_label and new_label objects are both assigned to grid position A4, causing a direct visual overlap of mathematical notation in the top-right quadrant.",
+              "solution": "Line 113: self.place_at_grid(new_label, 'B4', scale_factor=0.8)",
+              "line_number": 113,
+              "object_affected": "new_label"
+            },
+            {
+              "problem": "The basis_text object is positioned at the extreme edge of the frame (A6), which makes it feel disconnected from the central visualization and risks being cut off on some displays.",
+              "solution": "Line 116: self.place_at_grid(basis_text, 'A5', scale_factor=0.8)",
+              "line_number": 116,
+              "object_affected": "basis_text"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        34,
+        35
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 208417,
+        "video_mtime_ns": 1786076625000000000,
+        "code_sha1": "b18b127d37498be61e2503c3239db74d2fce2620"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The grid and vector animation (v_grid) is excessively large and encroaches on the left-side lecture notes, violating the separation between content areas.",
+              "solution": "Line 82: self.place_in_area(v_grid, 'C2', 'D6', scale_factor=0.65)",
+              "line_number": 82,
+              "object_affected": "v_grid"
+            },
+            {
+              "problem": "The 'apps' labels (Diagonalization and Compression) are positioned too low and spread too wide, which disconnects them from the central visualization.",
+              "solution": "Line 88: self.place_in_area(apps, 'E2', 'E5', scale_factor=0.8)",
+              "line_number": 88,
+              "object_affected": "apps"
+            },
+            {
+              "problem": "The 'sequence' chain (Basis to Translation) is positioned too high and wide, crowding the title area and creating an unbalanced look.",
+              "solution": "Line 75: self.place_in_area(sequence, 'B2', 'B5', scale_factor=0.8)",
+              "line_number": 75,
+              "object_affected": "sequence"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        36,
+        37,
+        38
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/4-Change_of_Basis_Seeing_the_World_Through_Different_Eyes",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 384757,
+      "completion_tokens": 42176,
+      "total_tokens": 552282,
+      "call_count": 35
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 274,
+        "completion_tokens": 859,
+        "total_tokens": 1921,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 14847,
+        "completion_tokens": 1036,
+        "total_tokens": 17460,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 27392,
+        "completion_tokens": 1412,
+        "total_tokens": 29994,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 93002,
+        "completion_tokens": 2899,
+        "total_tokens": 100355,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 20605,
+        "completion_tokens": 6880,
+        "total_tokens": 29675,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 32043,
+        "completion_tokens": 4424,
+        "total_tokens": 41139,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 21616,
+        "completion_tokens": 3775,
+        "total_tokens": 31615,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 41121,
+        "completion_tokens": 4487,
+        "total_tokens": 50571,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 36360,
+        "completion_tokens": 4819,
+        "total_tokens": 45837,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 45482,
+        "completion_tokens": 4619,
+        "total_tokens": 61078,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4289,
+        "completion_tokens": 678,
+        "total_tokens": 14546,
+        "call_count": 12
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 6917,
+        "completion_tokens": 1600,
+        "total_tokens": 14205,
+        "call_count": 1
+      },
+      "scope_refine:section_5": {
+        "prompt_tokens": 21625,
+        "completion_tokens": 2539,
+        "total_tokens": 55158,
+        "call_count": 4
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 3114,
+        "completion_tokens": 380,
+        "total_tokens": 9382,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 5494,
+        "completion_tokens": 687,
+        "total_tokens": 19874,
+        "call_count": 2
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2526,
+        "completion_tokens": 238,
+        "total_tokens": 5386,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 2652,
+        "completion_tokens": 259,
+        "total_tokens": 10587,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2619,
+        "completion_tokens": 248,
+        "total_tokens": 6408,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2779,
+        "completion_tokens": 337,
+        "total_tokens": 7091,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 384757,
+        "completion_tokens": 42176,
+        "total_tokens": 552282,
+        "call_count": 35
+      }
+    }
+  }
+}

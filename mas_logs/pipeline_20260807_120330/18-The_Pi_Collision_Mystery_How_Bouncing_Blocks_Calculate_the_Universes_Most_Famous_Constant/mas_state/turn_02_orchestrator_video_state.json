@@ -1,0 +1,977 @@
+{
+  "topic": "The Pi Collision Mystery: How Bouncing Blocks Calculate the Universe's Most Famous Constant",
+  "target_audience": "High school students and undergraduate physics/math enthusiasts",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Fetch data from storyboard\n        title_text = \"The Impossible Coincidence\"\n        lecture_lines = [\n            \"Two blocks and a wall, on a frictionless floor.\",\n            \"A massive block slides toward a smaller one.\",\n            \"We count every collision: block-to-block and block-to-wall.\",\n            \"With mass ratio 100, we count exactly 31 collisions.\",\n            \"Amazingly, increasing mass reveals the digits of Pi!\"\n        ]\n        \n        self.setup_layout(title_text, lecture_lines)\n\n        # Colors from animation plan\n        COLOR_M = \"#FF4500\" # Block M\n        COLOR_m = \"#ADD8E6\" # Block m\n        COLOR_FLASH = \"#FFFF00\"\n        COLOR_PI = \"#FFD700\"\n\n        # === Animation for Lecture Line 1 ===\n        # \"Two blocks and a wall, on a frictionless floor.\"\n        self.lecture[0].set_color(WHITE)\n        \n        # Grid layout\n        # Floor: Line along Row E, Cols 1 to 6\n        floor = Line(self.grid[\"E1\"] + LEFT*0.5, self.grid[\"E6\"] + RIGHT*0.5, color=WHITE)\n        # Wall: Vertical line at Col 2\n        wall_x = self.grid[\"E2\"][0] - 0.5\n        wall = Line(\n            [wall_x, self.grid[\"B2\"][1], 0],\n            [wall_x, self.grid[\"E2\"][1], 0],\n            stroke_width=8,\n            color=GRAY\n        )\n        \n        # Blocks\n        m_block = Square(side_length=0.4, fill_opacity=1, color=COLOR_m)\n        self.place_at_grid(m_block, \"E3\")\n        m_block.shift(UP * 0.2) # Sit on floor (Row E y = -1.8)\n        \n        M_block = Square(side_length=0.8, fill_opacity=1, color=COLOR_M)\n        self.place_at_grid(M_block, \"E5\")\n        M_block.shift(UP * 0.4) # Sit on floor\n        \n        self.play(Create(floor), Create(wall), FadeIn(m_block), FadeIn(M_block))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"A massive block slides toward a smaller one.\"\n        self.lecture[1].set_color(COLOR_M)\n        \n        # Collision Counter setup\n        collision_count = 0\n        counter_label = Text(\"Collisions:\", font_size=24, color=WHITE)\n        counter_num = Integer(collision_count, font_size=24, color=WHITE)\n        counter_group = VGroup(counter_label, counter_num).arrange(RIGHT, buff=0.2)\n        self.place_at_grid(counter_group, \"B4\")\n        \n        self.play(Write(counter_group))\n        \n        # Physics Parameters\n        m = 1\n        M = 100\n        v_m = 0\n        v_M = -2.0 # Initial velocity of large block\n        \n        # Positions relative to the coordinate system\n        x_m = m_block.get_center()[0]\n        x_M = M_block.get_center()[0]\n        w_m = 0.4\n        w_M = 0.8\n        \n        # === Animation for Lecture Line 3 ===\n        # \"We count every collision: block-to-block and block-to-wall.\"\n        self.lecture[2].set_color(COLOR_FLASH)\n        \n        total_collisions = 31\n        \n        while collision_count < total_collisions:\n            # Time to next event\n            # 1. m-M collision (if v_M < v_m)\n            if v_M < v_m:\n                t_collision = (x_M - x_m - (w_m/2 + w_M/2)) / (v_m - v_M)\n            else:\n                t_collision = float('inf')\n                \n            # 2. m-wall collision (if v_m < 0)\n            if v_m < 0:\n                t_wall = (x_m - wall_x - w_m/2) / (-v_m)\n            else:\n                t_wall = float('inf')\n            \n            # Select next event\n            if t_collision < t_wall:\n                dt = t_collision\n                collision_type = \"block\"\n                new_v_m = ((m - M) / (m + M)) * v_m + (2 * M / (m + M)) * v_M\n                new_v_M = (2 * m / (m + M)) * v_m + ((M - m) / (m + M)) * v_M\n            else:\n                dt = t_wall\n                collision_type = \"wall\"\n                new_v_m = -v_m\n                new_v_M = v_M\n            \n            # Adjust animation speed\n            rt = max(0.04, 0.2 * (0.92 ** collision_count))\n            \n            # Animate movement\n            self.play(\n                m_block.animate.shift(RIGHT * v_m * dt),\n                M_block.animate.shift(RIGHT * v_M * dt),\n                run_time=rt,\n                rate_func=linear\n            )\n            \n            # Update state\n            x_m += v_m * dt\n            x_M += v_M * dt\n            v_m, v_M = new_v_m, new_v_M\n            collision_count += 1\n            counter_num.set_value(collision_count)\n            \n            # Flash at collision point\n            if collision_type == \"block\":\n                flash_pos = m_block.get_right()\n            else:\n                flash_pos = m_block.get_left()\n            \n            # Play flash\n            self.play(\n                Flash(flash_pos, color=COLOR_FLASH, flash_radius=0.2, line_length=0.1),\n                run_time=min(0.05, rt)\n            )\n\n        # === Animation for Lecture Line 4 ===\n        # \"With mass ratio 100, we count exactly 31 collisions.\"\n        self.lecture[3].set_color(COLOR_m)\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # \"Amazingly, increasing mass reveals the digits of Pi!\"\n        self.lecture[4].set_color(COLOR_PI)\n        \n        pi_val = MathTex(r\"\\pi \\approx 3.141...\", color=COLOR_PI)\n        self.place_at_grid(pi_val, \"C4\", scale_factor=1.2)\n        \n        final_result = Text(f\"Total Collisions: {collision_count}\", font_size=26, color=COLOR_PI)\n        self.place_at_grid(final_result, \"D4\")\n        \n        self.play(FadeIn(pi_val), Write(final_result))\n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        # Setup layout with title and lecture lines\n        self.setup_layout(\n            \"Prerequisite Physics: The Law of the Land\", \n            [\n                \"Two laws govern every \\\"clack\\\" in this system.\",\n                \"Momentum and energy conservation limit how blocks move.\",\n                \"These equations define an ellipse in the velocity plane.\"\n            ]\n        )\n        \n        # Colors\n        GREEN = \"#00FF00\"\n        LIGHT_GRAY = \"#D3D3D3\"\n        RED = \"#FF0000\"\n        BLUE = \"#0000FF\"\n        WHITE_CLR = \"#FFFFFF\"\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(GREEN))\n        \n        # Display Momentum and Energy equations in green (#00FF00) at top.\n        # Use Row B for equations to avoid Row A (B005).\n        momentum_eq = MathTex(r\"m_1 v_1 + m_2 v_2 = p\", color=GREEN)\n        energy_eq = MathTex(r\"\\frac{1}{2}m_1 v_1^2 + \\frac{1}{2}m_2 v_2^2 = E\", color=GREEN)\n        \n        eqs = VGroup(momentum_eq, energy_eq).arrange(RIGHT, buff=0.8)\n        self.place_in_area(eqs, 'B2', 'B6', scale_factor=0.7)\n        \n        self.play(Write(eqs))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(GREEN))\n        \n        # Draw v1 and v2 axes in light gray (#D3D3D3) on grid.\n        # Visual area spanning C2 to F6. Origin at D4.\n        origin = self.grid['D4']\n        axes = Axes(\n            x_range=[-2.5, 2.5, 1],\n            y_range=[-2.5, 2.5, 1],\n            x_length=3.5,\n            y_length=3.5,\n            axis_config={\"color\": LIGHT_GRAY, \"include_tip\": True},\n            tips=True\n        ).move_to(origin)\n        \n        v1_label = MathTex(\"v_1\", color=LIGHT_GRAY).scale(0.7).next_to(axes.x_axis.get_end(), RIGHT, buff=0.1)\n        v2_label = MathTex(\"v_2\", color=LIGHT_GRAY).scale(0.7).next_to(axes.y_axis.get_top(), UP, buff=0.1)\n        \n        self.play(Create(axes), Write(v1_label), Write(v2_label))\n        \n        # Draw a red ellipse (#FF0000) representing the energy constraint.\n        # Centered at origin. x_radius=1.5, y_radius=1.0 for visual distinction.\n        energy_ellipse = Ellipse(width=3.0, height=2.0, color=RED).move_to(origin)\n        self.play(Create(energy_ellipse))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(GREEN))\n        \n        # Show a blue line (#0000FF) intersecting the red ellipse.\n        # The line represents momentum conservation: m1v1 + m2v2 = const.\n        # We define it such that it intersects the ellipse at two points.\n        # Ellipse points (local): (1.5 cos t, 1.0 sin t)\n        # Point 1: t = 135 deg -> (-1.06, 0.7)\n        # Point 2: t = -45 deg -> (1.06, -0.7)\n        p1 = axes.c2p(-1.06, 0.7)\n        p2 = axes.c2p(1.06, -0.7)\n        \n        momentum_line = Line(\n            start=axes.c2p(-1.8, 1.2), \n            end=axes.c2p(1.8, -1.2), \n            color=BLUE\n        )\n        \n        self.play(Create(momentum_line))\n        self.wait(1)\n\n        # Animate a white dot (#FFFFFF) jumping between intersection points.\n        dot = Dot(point=p1, color=WHITE_CLR, radius=0.08)\n        self.play(FadeIn(dot))\n        \n        # Representing \"clacks\" - jumping between valid states on the intersection.\n        for _ in range(2):\n            self.play(dot.animate.move_to(p2), run_time=0.8, rate_func=smooth)\n            self.play(dot.animate.move_to(p1), run_time=0.8, rate_func=smooth)\n            \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\n            \"Changing the Perspective: Velocity Space\", \n            [\n                \"Let's map the velocities on a coordinate grid.\",\n                \"Rescaling the axes by mass simplifies the math.\",\n                \"The energy ellipse transforms into a perfect circle.\"\n            ]\n        )\n        \n        # Colors\n        YELLOW_DOT = \"#FFFF00\"\n        RED_ELLIPSE = \"#FF0000\"\n        CYAN_CIRCLE = \"#00FFFF\"\n        AXIS_COLOR = \"#D3D3D3\"\n\n        # Center for the visual area (Right side)\n        visual_center = self.place_in_area(Mobject(), \"B2\", \"E6\").get_center()\n\n        # Axes setup\n        axes = Axes(\n            x_range=[-2.5, 2.5, 1],\n            y_range=[-2.5, 2.5, 1],\n            x_length=4,\n            y_length=4,\n            axis_config={\"color\": AXIS_COLOR, \"include_tip\": True},\n            tips=False\n        ).move_to(visual_center)\n        \n        labels = axes.get_axis_labels(\n            x_label=MathTex(\"v_1\", font_size=24), \n            y_label=MathTex(\"v_2\", font_size=24)\n        )\n\n        # === Animation for Lecture Line 1 ===\n        # Let's map the velocities on a coordinate grid.\n        self.lecture[0].set_color(YELLOW_DOT)\n        \n        # Draw axes and labels\n        self.play(Create(axes), Write(labels))\n        \n        # Initial ellipse (representing energy constraint: 1/2 m v1^2 + 1/2 M v2^2 = E)\n        # Assuming M > m, the ellipse is stretched horizontally in v1 space\n        ellipse = Ellipse(width=4, height=1.5, color=RED_ELLIPSE).move_to(visual_center)\n        \n        # The dot represents the current velocities (v1, v2)\n        v_dot = Dot(color=YELLOW_DOT).move_to(ellipse.point_at_angle(PI/4))\n        dot_label = MathTex(\"(v_1, v_2)\", font_size=20, color=YELLOW_DOT).next_to(v_dot, UR, buff=0.1)\n        \n        self.play(Create(ellipse))\n        self.play(FadeIn(v_dot), FadeIn(dot_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Rescaling the axes by mass simplifies the math.\n        self.lecture[1].set_color(CYAN_CIRCLE)\n        \n        # Create scaled axes labels\n        scaled_labels = axes.get_axis_labels(\n            x_label=MathTex(\"\\\\sqrt{m}v_1\", font_size=24), \n            y_label=MathTex(\"\\\\sqrt{M}v_2\", font_size=24)\n        )\n\n        # We \"scale the v1 axis visually\" - meaning we normalize the coordinate system\n        # Transition: Ellipse -> Circle\n        circle = Circle(radius=1.5, color=CYAN_CIRCLE).move_to(visual_center)\n        \n        # Coordinate of dot updates visually but stays on the boundary\n        target_dot_pos = circle.point_at_angle(PI/4)\n\n        self.play(\n            Transform(ellipse, circle),\n            Transform(labels, scaled_labels),\n            v_dot.animate.move_to(target_dot_pos),\n            dot_label.animate.next_to(target_dot_pos, UR, buff=0.1),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # The energy ellipse transforms into a perfect circle.\n        self.lecture[2].set_color(CYAN_CIRCLE)\n        \n        # Show collisions as jumps on the circle\n        # Collision 1: Jump to a new point on the circle\n        pos1 = circle.point_at_angle(3*PI/4)\n        pos2 = circle.point_at_angle(5*PI/4)\n        pos3 = circle.point_at_angle(7*PI/4)\n\n        # Animate the jumps\n        jump_path1 = ArcBetweenPoints(v_dot.get_center(), pos1, angle=-TAU/8)\n        jump_path2 = ArcBetweenPoints(pos1, pos2, angle=-TAU/8)\n        \n        # Update dot and label\n        self.play(\n            MoveAlongPath(v_dot, jump_path1),\n            dot_label.animate.next_to(pos1, UL, buff=0.1),\n            run_time=1\n        )\n        self.wait(0.5)\n        \n        self.play(\n            MoveAlongPath(v_dot, jump_path2),\n            dot_label.animate.next_to(pos2, DL, buff=0.1),\n            run_time=1\n        )\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        title = \"The Geometry of a Collision\"\n        lecture_lines = [\n            \"Each collision is a jump on the circle's edge.\",\n            \"Wall bounces and block hits follow strict geometric paths.\",\n            \"This creates a series of equal-sized arcs.\",\n            \"Imagine the system as a ball bouncing in a wedge.\",\n            \"The wedge angle shrinks as the mass ratio grows.\"\n        ]\n        self.setup_layout(title, lecture_lines)\n\n        # Colors\n        COLOR_CIRCLE = \"#00FFFF\"\n        COLOR_REFLECTION = \"#ADD8E6\"\n        COLOR_ARC = \"#FFA500\"\n        COLOR_WEDGE = \"#FFFFFF\"\n        COLOR_POINT = \"#FFFF00\"\n\n        # === Animation for Lecture Line 1 ===\n        # \"Each collision is a jump on the circle's edge.\"\n        self.play(self.lecture[0].animate.set_color(COLOR_CIRCLE))\n        \n        # Create the cyan circle\n        # B2 to E5 area is central but respects Row A/F constraints (B005)\n        # B021: Leave Column 1 mostly for text, so visuals start from Column 2/3\n        circle = Circle(radius=1.5, color=COLOR_CIRCLE)\n        self.place_in_area(circle, \"B2\", \"E5\")\n        center = circle.get_center()\n        \n        # Dot representing the state (v1, v2)\n        state_dot = Dot(circle.point_at_angle(PI/4), color=COLOR_POINT)\n        \n        self.play(Create(circle))\n        self.play(FadeIn(state_dot))\n        \n        # Simulate a jump\n        target_point = circle.point_at_angle(3*PI/4)\n        self.play(state_dot.animate.move_to(target_point), run_time=1)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"Wall bounces and block hits follow strict geometric paths.\"\n        self.play(self.lecture[1].animate.set_color(COLOR_REFLECTION))\n        \n        # Reflection line (e.g., vertical for wall hits in this space)\n        reflection_line = DashedLine(\n            start=center + UP * 1.8, \n            end=center + DOWN * 1.8, \n            color=COLOR_REFLECTION\n        )\n        \n        # Reflection logic visualization\n        self.play(Create(reflection_line))\n        \n        # Mirror jump\n        start_pt = circle.point_at_angle(PI/6)\n        end_pt = circle.point_at_angle(5*PI/6)\n        state_dot.move_to(start_pt)\n        self.play(state_dot.animate.move_to(end_pt), run_time=1, rate_func=linear)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"This creates a series of equal-sized arcs.\"\n        self.play(self.lecture[2].animate.set_color(COLOR_ARC))\n        \n        # Fixed orange arc\n        arc_angle = PI/6\n        highlight_arc = Arc(\n            radius=1.5, \n            start_angle=PI/4, \n            angle=arc_angle, \n            color=COLOR_ARC, \n            stroke_width=6\n        )\n        highlight_arc.move_to(center)\n        \n        arc_label = Text(\"Fixed Arc\", font_size=18, color=COLOR_ARC)\n        # B009: Place label in peripheral column (Column 6)\n        self.place_at_grid(arc_label, \"C6\")\n        \n        self.play(Create(highlight_arc), FadeIn(arc_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # \"Imagine the system as a ball bouncing in a wedge.\"\n        self.play(self.lecture[3].animate.set_color(COLOR_WEDGE))\n        \n        # Wedge lines\n        wedge_angle = PI/3\n        line1 = Line(center, center + 2.5 * RIGHT, color=COLOR_WEDGE)\n        line2 = Line(center, center + 2.5 * rotate_vector(RIGHT, wedge_angle), color=COLOR_WEDGE)\n        wedge = VGroup(line1, line2)\n        \n        # Hide previous elements to clarify the wedge metaphor\n        self.play(\n            circle.animate.set_stroke(opacity=0.3),\n            reflection_line.animate.set_stroke(opacity=0.3),\n            highlight_arc.animate.set_stroke(opacity=0.3),\n            FadeOut(state_dot),\n            FadeOut(arc_label)\n        )\n        \n        self.play(Create(wedge))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # \"The wedge angle shrinks as the mass ratio grows.\"\n        self.play(self.lecture[4].animate.set_color(COLOR_WEDGE))\n        \n        # Animate wedge shrinking\n        new_angle = PI/12\n        new_line2 = Line(center, center + 2.5 * rotate_vector(RIGHT, new_angle), color=COLOR_WEDGE)\n        \n        # Label for wedge angle\n        angle_label = MathTex(r\"\\theta \\propto \\sqrt{m/M}\", font_size=20, color=COLOR_WEDGE)\n        self.place_at_grid(angle_label, \"D6\") # B009 peripheral column\n        \n        self.play(\n            Transform(line2, new_line2),\n            FadeIn(angle_label)\n        )\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        title = \"Connecting the Dots to Pi\"\n        lecture_lines = [\n            \"Total collisions depend on the arc's size.\",\n            \"We are fitting small steps into a half-circle.\",\n            \"As the large mass increases by powers of 100...\",\n            \"The number of steps precisely matches digits of Pi.\",\n            \"Geometry translates physics directly into this famous constant.\"\n        ]\n        self.setup_layout(title, lecture_lines)\n        \n        cyan_color = \"#00FFFF\"\n        orange_color = \"#FFA500\"\n        highlight_color = YELLOW\n\n        # === Animation for Lecture Line 1 ===\n        # Total collisions depend on the arc's size.\n        self.lecture[0].set_color(highlight_color)\n        \n        # Circle in the center (scaled coordinates phase space)\n        circle = Circle(radius=1.8, color=cyan_color)\n        # B2: (1.5, 1.2), D5: (4.5, -0.8). Center: (3.0, 0.2)\n        self.place_in_area(circle, 'B2', 'D5')\n        circle_center = circle.get_center()\n        self.play(Create(circle))\n        \n        # Angle theta for the arc.\n        theta_val = PI / 8 \n        arcs = VGroup()\n        \n        # Create first 4 arcs in one play to save time and prevent timeout\n        initial_arcs = VGroup()\n        for i in range(4):\n            arc = Arc(radius=1.8, start_angle=PI - (i+1)*theta_val, angle=theta_val, color=orange_color, stroke_width=6)\n            arc.move_to(circle_center)\n            initial_arcs.add(arc)\n        \n        self.play(AnimationGroup(*[Create(a) for a in initial_arcs], lag_ratio=0.5), run_time=1.5)\n        arcs.add(initial_arcs)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # We are fitting small steps into a half-circle.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(highlight_color)\n        \n        # Add more arcs to fill the top half (total ~8 arcs)\n        more_arcs = VGroup()\n        for i in range(4, 8):\n            arc = Arc(radius=1.8, start_angle=PI - (i+1)*theta_val, angle=theta_val, color=orange_color, stroke_width=6)\n            arc.move_to(circle_center)\n            more_arcs.add(arc)\n            \n        self.play(AnimationGroup(*[Create(a) for a in more_arcs], lag_ratio=0.3), run_time=1.2)\n        arcs.add(more_arcs)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # As the large mass increases by powers of 100...\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(highlight_color)\n        \n        # Asset: Mass icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/mass.svg]\n        # Use Row B6 for Mass Icon and Label (avoiding Row A per B005)\n        mass_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/mass.svg\", color=WHITE)\n        self.place_at_grid(mass_icon, 'B6', scale_factor=0.6)\n        \n        mass_label = MathTex(\"M/m = 100^1\", color=WHITE)\n        mass_label.scale(0.8)\n        mass_label.next_to(mass_icon, DOWN, buff=0.2)\n        \n        # Collision counter in Row D6 (away from circle center per B009)\n        collision_label_prefix = MathTex(\"N = \", color=WHITE)\n        self.place_at_grid(collision_label_prefix, 'D6', scale_factor=0.8)\n        collision_label_prefix.shift(LEFT * 0.4)\n        \n        count_tracker = ValueTracker(31)\n        counter_val = DecimalNumber(31, num_decimal_places=0, color=orange_color)\n        counter_val.scale(0.8)\n        counter_val.next_to(collision_label_prefix, RIGHT, buff=0.1)\n        counter_val.add_updater(lambda d: d.set_value(count_tracker.get_value()))\n        \n        self.play(\n            FadeIn(mass_icon), \n            FadeIn(mass_label), \n            FadeIn(collision_label_prefix), \n            FadeIn(counter_val)\n        )\n        \n        # Change mass power and update counter\n        new_mass_label = MathTex(\"M/m = 100^2\", color=WHITE)\n        new_mass_label.scale(0.8)\n        new_mass_label.move_to(mass_label.get_center())\n        \n        self.play(\n            Transform(mass_label, new_mass_label),\n            count_tracker.animate.set_value(314),\n            run_time=1\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # The number of steps precisely matches digits of Pi.\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(highlight_color)\n        \n        # Update mass label to show higher power (100^5 -> 314,159 collisions)\n        final_mass_label = MathTex(\"M/m = 100^5\", color=WHITE)\n        final_mass_label.scale(0.8)\n        final_mass_label.move_to(mass_label.get_center())\n        \n        # Visual representation of \"many tiny arcs\"\n        dense_arc = Arc(radius=1.8, start_angle=0, angle=PI, color=orange_color, stroke_width=2)\n        dense_arc.move_to(circle_center)\n        \n        target_count = 314159\n        \n        # Synchronized transition to tiny arcs and high counter\n        self.play(\n            Transform(mass_label, final_mass_label),\n            FadeOut(arcs),\n            Create(dense_arc),\n            count_tracker.animate.set_value(target_count),\n            run_time=2,\n            rate_func=linear\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Geometry translates physics directly into this famous constant.\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(highlight_color)\n        \n        # Final formula relating N to Pi, placed at E6 (below circle, out of A/F per B005/B001)\n        pi_formula = MathTex(r\"N \\approx \\pi \\sqrt{M/m}\", color=highlight_color)\n        self.place_at_grid(pi_formula, 'E6', scale_factor=0.7)\n        # Shift slightly left for better spacing with the right edge\n        pi_formula.shift(LEFT*0.2)\n        \n        self.play(Write(pi_formula))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        # Initialize layout\n        self.setup_layout(\"Conclusion: The Hidden Harmony\", [\n            \"This experiment acts as a hidden geometric calculator.\",\n            \"Pi is fundamental to motion and energy conservation.\",\n            \"Mathematics connects the simple \\\"clack\\\" to the universe.\"\n        ])\n        \n        # === Animation for Lecture Line 1 ===\n        # Fade in a large glowing gold Pi symbol (#FFD700).\n        # We use MathTex for the Pi symbol and a slight glow effect with a back-copy.\n        pi_sym = MathTex(r\"\\pi\", color=\"#FFD700\", font_size=144)\n        pi_glow = MathTex(r\"\\pi\", color=\"#FFD700\", font_size=150).set_opacity(0.3)\n        pi_group = VGroup(pi_glow, pi_sym)\n        \n        # Central positioning in grid area B3-D4\n        self.place_in_area(pi_group, \"B3\", \"D4\", scale_factor=1.2)\n        \n        self.play(self.lecture[0].animate.set_color(\"#FFD700\"))\n        self.play(FadeIn(pi_group, shift=UP*0.2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Flash labels 'Momentum' and 'Energy' around the Pi symbol.\n        # Positioned symmetrically at C2 and C5.\n        mom_lab = Text(\"Momentum\", color=\"#00FF00\", font_size=24)\n        ene_lab = Text(\"Energy\", color=\"#00FF00\", font_size=24)\n        \n        self.place_at_grid(mom_lab, \"C2\")\n        self.place_at_grid(ene_lab, \"C5\")\n        \n        self.play(self.lecture[1].animate.set_color(\"#00FF00\"))\n        # Indication provides the \"flash\" effect requested in the plan\n        self.play(\n            FadeIn(mom_lab),\n            FadeIn(ene_lab),\n            Indicate(mom_lab, color=\"#00FF00\"),\n            Indicate(ene_lab, color=\"#00FF00\")\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Final flash on the counter showing 3.1415926... in #FFFFFF.\n        # Centered below the Pi symbol in Row E.\n        counter_val = Text(\"3.1415926...\", color=\"#FFFFFF\", font_size=32)\n        self.place_in_area(counter_val, \"E3\", \"E4\")\n        \n        self.play(self.lecture[2].animate.set_color(\"#FFFFFF\"))\n        self.play(\n            FadeIn(counter_val),\n            Indicate(counter_val, scale_factor=1.2, color=WHITE)\n        )\n        self.wait(2)\n"
+  ],
+  "outline": {
+    "topic": "The Pi Collision Mystery: How Bouncing Blocks Calculate the Universe's Most Famous Constant",
+    "target_audience": "High school students and undergraduate physics/math enthusiasts",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Impossible Coincidence",
+        "content": "Introduce the physical setup: a frictionless surface with a wall on the left, a small block (mass m), and a much larger block (mass M). The larger block slides toward the smaller one. We count every collision (block-to-block and block-to-wall). Define the 'Mystery': Why do the number of collisions perfectly match the digits of Pi?",
+        "example": "Visualize a tiny ant pushing a small block and a massive elephant pushing a giant block. When the elephant's block is 100 times heavier than the ant's, the total collisions are 31. If it's 10,000 times heavier, the count is 314."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite Physics: The Law of the Land",
+        "content": "Explain the two fundamental laws governing every collision: Conservation of Momentum and Conservation of Energy. Show how these two equations constrain the velocities of the blocks. Use vector arrows to show speed and direction changing after each 'clack'.",
+        "example": "An animation showing the 'Momentum Equation' as a straight line and the 'Energy Equation' as an ellipse in a velocity-velocity graph (v1 vs v2)."
+      },
+      {
+        "id": "section_3",
+        "title": "Changing the Perspective: Velocity Space",
+        "content": "Introduce the concept of 'Phase Space'. Instead of watching blocks move in real life, we plot their velocities on an X-Y plane. To make the math easier, we rescale the axes based on the square root of the masses. This transformation turns the Energy Ellipse into a perfect Circle.",
+        "example": "Imagine a 'Velocity Map' where the position of a glowing dot represents the speeds of both blocks. As they collide, the dot jumps along the edge of a circle."
+      },
+      {
+        "id": "section_4",
+        "title": "The Geometry of a Collision",
+        "content": "Explain that every collision (block-block or block-wall) corresponds to a 'jump' or a reflection on this circle. The 'clack' of the blocks is mathematically equivalent to a fixed-size arc being carved out of the circle's circumference.",
+        "example": "Visualize a pool table shaped like a wedge. Each bounce of the ball represents a collision. The angle of this wedge gets smaller as the large block's mass increases."
+      },
+      {
+        "id": "section_5",
+        "title": "Connecting the Dots to Pi",
+        "content": "The total number of collisions is the number of times we can fit that specific arc angle into the total 360 degrees (or 2π radians) of the circle. As the mass ratio becomes a power of 100, the angle becomes infinitesimally small, making the counting process identical to calculating the digits of Pi.",
+        "example": "If the mass ratio is 1,000,000:1, the 'angle' of each bounce is so tiny that the blocks must collide 3,141 times before the big block finally turns around and escapes."
+      },
+      {
+        "id": "section_6",
+        "title": "Conclusion: The Hidden Harmony",
+        "content": "Summarize how a seemingly simple physics experiment is actually a hidden geometric calculator. Reinforce that Pi isn't just about circles in geometry; it's baked into the laws of motion and energy conservation.",
+        "example": "Final screen showing a digital counter next to the blocks clicking rapidly: 3... 14... 15... 9... as the Pi symbol glows in the background."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Impossible Coincidence",
+      "lecture_lines": [
+        "Two blocks and a wall, on a frictionless floor.",
+        "A massive block slides toward a smaller one.",
+        "We count every collision: block-to-block and block-to-wall.",
+        "With mass ratio 100, we count exactly 31 collisions.",
+        "Amazingly, increasing mass reveals the digits of Pi!"
+      ],
+      "animations": [
+        "Create floor, wall, and blocks m (#ADD8E6) and M (#FF4500).",
+        "Move block M left toward block m at constant speed.",
+        "Flash #FFFF00 at each collision and increment a counter.",
+        "Show collisions repeating until counter reaches 31 with M=100m.",
+        "Display 'Total: 31' next to '$\\pi \\approx 3.141...$' in gold #FFD700."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite Physics: The Law of the Land",
+      "lecture_lines": [
+        "Two laws govern every \"clack\" in this system.",
+        "Momentum and energy conservation limit how blocks move.",
+        "These equations define an ellipse in the velocity plane."
+      ],
+      "animations": [
+        "Display Momentum and Energy equations in green (#00FF00) at top.",
+        "Draw $v_1$ and $v_2$ axes in light gray (#D3D3D3) on grid.",
+        "Draw a red ellipse (#FF0000) representing the energy constraint.",
+        "Show a blue line (#0000FF) intersecting the red ellipse.",
+        "Animate a white dot (#FFFFFF) jumping between intersection points."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "Changing the Perspective: Velocity Space",
+      "lecture_lines": [
+        "Let's map the velocities on a coordinate grid.",
+        "Rescaling the axes by mass simplifies the math.",
+        "The energy ellipse transforms into a perfect circle."
+      ],
+      "animations": [
+        "Place a yellow dot (#FFFF00) at coordinate $(v_1, v_2)$.",
+        "Scale the $v_1$ axis visually by factor $\\sqrt{m}$.",
+        "Morph the red ellipse into a cyan circle (#00FFFF).",
+        "Animate the yellow dot jumping between points on circle boundary."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Geometry of a Collision",
+      "lecture_lines": [
+        "Each collision is a jump on the circle's edge.",
+        "Wall bounces and block hits follow strict geometric paths.",
+        "This creates a series of equal-sized arcs.",
+        "Imagine the system as a ball bouncing in a wedge.",
+        "The wedge angle shrinks as the mass ratio grows."
+      ],
+      "animations": [
+        "Draw a reflection line through the circle's origin for wall-hits.",
+        "Highlight a fixed orange arc (#FFA500) on the cyan circle.",
+        "Draw a white wedge (#FFFFFF) representing the valid velocity region."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Connecting the Dots to Pi",
+      "lecture_lines": [
+        "Total collisions depend on the arc's size.",
+        "We are fitting small steps into a half-circle.",
+        "As the large mass increases by powers of 100...",
+        "The number of steps precisely matches digits of Pi.",
+        "Geometry translates physics directly into this famous constant."
+      ],
+      "animations": [
+        "Fill the cyan circle with consecutive orange arcs (#FFA500).",
+        "Shrink the arc size while increasing the mass ratio M/m [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/mass.svg].",
+        "Update counter to 314159 as many tiny arcs accumulate."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Conclusion: The Hidden Harmony",
+      "lecture_lines": [
+        "This experiment acts as a hidden geometric calculator.",
+        "Pi is fundamental to motion and energy conservation.",
+        "Mathematics connects the simple \"clack\" to the universe."
+      ],
+      "animations": [
+        "Fade in a large glowing gold Pi symbol (#FFD700).",
+        "Flash labels 'Momentum' and 'Energy' around the Pi symbol.",
+        "Final flash on the counter showing 3.1415926... in #FFFFFF."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 1, introducing the blocks, the wall, and the mystery of Pi."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted animation steps for section 1 based on the outline. These align with the planned setup and the mystery of Pi."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated initial Manim code for Section 1 implementing the block collision simulation with M=100m."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 2, covering momentum, energy conservation, and the velocity ellipse."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted animation steps for section 2 visualizing the physics equations as an ellipse and line in velocity space."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Code generated for Section 2 following the storyboard and grid constraints. Axes, ellipse, and momentum line implemented with an animated dot jumping between intersections."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 3, introducing the rescaled velocity plane and the circle transformation."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted animation steps for section 3 showing the transformation from velocity ellipse to circle via rescaling."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Manim code for Section 3 following the storyboard and visual grid constraints. Added velocity axes, initial ellipse, transformation to circle, and animated dot jumps."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 4, explaining collisions as jumps on a circle and the wedge analogy."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted animation steps for section 4 illustrating reflections and arc angles on the velocity circle."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 4 with 6x6 grid positioning, following the geometric collision plan (reflection line, orange arc, and wedge metaphor). Respected B005 (Rows A/F), B021 (column gap), and B009 (peripheral labels)."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 5 concise lecture lines for Section 5, connecting the geometric steps to the calculation of Pi."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted animation steps for section 5 connecting the geometric arcs to the digits of Pi."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Re-implemented Section 5 with optimized animations to prevent timeout. Circle geometry, arcs, and collision counter are now placed correctly in the 6x6 grid, avoiding rows A and F. Batching animations and reducing total play time to stay within 180s budget."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Generated 3 concise lecture lines for Section 6, summarizing the connection between physics, geometry, and Pi."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted concluding animations summarizing the connection between physics, geometry, and Pi."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 6 with finalized storyboard and lecture lines. Added glowing Pi symbol and labels for Momentum and Energy. Added final counter flash."
+    },
+    {
+      "id": 19,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[section_1] The storyboard and lecture lines are now finalized. Implement the Manim code for Section 1. \nPlan: \n1. Create floor, wall, and blocks m (#ADD8E6) and M (#FF4500). \n2. Move block M left toward block m at constant speed. \n3. Flash #FFFF00 at each collision and increment a counter. \n4. Show collisions repeating until counter reaches 31 with M=100m. \n5. Display 'Total: 31' next to '$\\pi \\approx 3.141...$' in gold #FFD700.\nGrid Constraints: \n- Keep primary mobjects/labels out of Rows A and F (B005).\n- Use a 1-column gap between text and visual area (B021).\n- Avoid placing labels on the collision path (B009).",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 1 with 6x6 grid constraints, frictionless collision physics, and color-coded lecture lines. Simulated 31 collisions for mass ratio 100."
+    },
+    {
+      "id": 20,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[section_2] The storyboard and lecture lines are now finalized. Implement the Manim code for Section 2.\nPlan:\n1. Display Momentum and Energy equations in green (#00FF00) at top.\n2. Draw v1 and v2 axes in light gray (#D3D3D3) on grid.\n3. Draw a red ellipse (#FF0000) representing the energy constraint.\n4. Show a blue line (#0000FF) intersecting the red ellipse.\n5. Animate a white dot (#FFFFFF) jumping between intersection points.\nGrid Constraints:\n- Use Row B or C for the equations to avoid Row A (B005).\n- Maintain vertical balance relative to the center (B040).\n- Ensure no footprint overlaps between axes and equations (B001).",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented the full animation sequence for section 2: equations, axes, energy ellipse, momentum line, and jumping state dot. Used the 6x6 grid and respected all layout beliefs."
+    },
+    {
+      "id": 21,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[section_3] The storyboard and lecture lines are now finalized. Implement the Manim code for Section 3.\nPlan:\n1. Place a yellow dot (#FFFF00) at coordinate (v1, v2).\n2. Scale the v1 axis visually by factor sqrt(m).\n3. Morph the red ellipse into a cyan circle (#00FFFF).\n4. Animate the yellow dot jumping between points on circle boundary.\nGrid Constraints:\n- Keep the rescaling animation centered or symmetric (B040).\n- Do not anchor labels in Row F (B005).\n- Maintain a clear visual corridor for the dot's jumps (B009).",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented the full animation plan: 1. Yellow dot at (v1, v2). 2. Rescaled axes with sqrt(m) factors. 3. Morph red ellipse to cyan circle. 4. Animated jumping dot on circle boundary. Adhered to grid and visual corridor constraints."
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[section_4] The storyboard and lecture lines are now finalized. Implement the Manim code for Section 4.\nPlan:\n1. Draw a reflection line through the circle's origin for wall-hits.\n2. Highlight a fixed orange arc (#FFA500) on the cyan circle.\n3. Draw a white wedge (#FFFFFF) representing the valid velocity region.\nGrid Constraints:\n- Ensure the wedge and arc labels do not overlap the circle geometry (B001).\n- Keep labels in peripheral columns (e.g., Column 6) if the arc is central (B009).\n- Avoid Row A/F (B005).",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 4 with 6x6 grid positioning, following the geometric collision plan (reflection line, orange arc, and wedge metaphor). Respected B005 (Rows A/F), B021 (column gap), and B009 (peripheral labels)."
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[section_5] The storyboard and lecture lines are now finalized. Implement the Manim code for Section 5.\nPlan:\n1. Fill the cyan circle with consecutive orange arcs (#FFA500).\n2. Shrink the arc size while increasing the mass ratio M/m.\n3. Update counter to 314159 as many tiny arcs accumulate.\nGrid Constraints:\n- Center the circle to maintain symmetry (B040).\n- Place the counter in a peripheral column (Column 6) to avoid blocking the arc animation (B009).\n- Ensure the text labels don't encroach on the circle area (B021).",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Re-implemented Section 5 following the finalized storyboard. Added circle-arc filling, mass-ratio increase, and synchronized counter update to 314,159. Used ValueTracker and DecimalNumber for the counter. Respected grid constraints (B005, B021, B009, B001)."
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[section_6] The storyboard and lecture lines are now finalized. Implement the Manim code for Section 6.\nPlan:\n1. Fade in a large glowing gold Pi symbol (#FFD700).\n2. Flash labels 'Momentum' and 'Energy' around the Pi symbol.\n3. Final flash on the counter showing 3.1415926... in #FFFFFF.\nGrid Constraints:\n- Avoid Row A/F for the large Pi symbol and its labels (B005).\n- If multiple labels appear, ensure their coordinates do not overlap (B001).\n- Maintain symmetry for the final composition (B040).",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Implemented Section 6 with finalized storyboard and lecture lines. Added glowing Pi symbol and labels for Momentum and Energy. Added final counter flash."
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Shrink the arc size while increasing the mass ratio M/m [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/mass.svg].']",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Integrated the mass icon asset [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/mass.svg] into the mass-ratio increase animation in Section 5."
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The formulas 'eqs' are slightly small and positioned too high, creating a large visual gap with the graph below. Fix: Line 74: self.place_in_area(eqs, 'B1', 'B6', scale_factor=0.8) (line=74, object=eqs)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The graph elements (axes, ellipse, line, and dot) are not utilizing the central grid space effectively, making the visualization feel cramped at the bottom. Fix: Line 85: self.place_in_area(graph_group, 'C2', 'F6', scale_factor=0.9) (line=85, object=graph_group)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Axis label 'v2' is too close to the y-axis arrow, potentially causing overlap during the animation. Fix: Line 92: self.place_at_grid(v2_label, 'C4', scale_factor=0.6) (line=92, object=v2_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The coordinate system and its vertical axis label are positioned too high, creating a cramped layout near the title at the top of the screen. Fix: Line 64: self.place_in_area(Mobject(), 'B2', 'F5', scale_factor=0.7) (object=Mobject())",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The horizontal axis label 'sqrt(m)v1' is positioned too close to the right edge of the frame, which may lead to it being cut off on some displays. Fix: Line 64: Adjust the area to 'B2' to 'F5' and ensure the scale_factor is 0.7 to pull the assembly inward from the right boundary. (object=Mobject())",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The circle area (B2-E5) is too large, leaving no buffer space on the right and forcing labels to the very edge of the frame. Fix: Line 73: self.place_in_area(circle, 'B2', 'E4') (line=73, object=circle)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The 'Fixed Arc' label at C6 is positioned too far from its visual reference (the orange arc segment) inside the circle. Fix: Line 125: self.place_at_grid(arc_label, 'C5', scale_factor=0.8) (line=125, object=arc_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The mathematical formula at D6 is positioned at the extreme right edge of the grid, risking being cut off and appearing unbalanced. Fix: Line 162: self.place_at_grid(angle_label, 'D5', scale_factor=0.7) (line=162, object=angle_label)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The pi_group is over-scaled at 1.2 for its assigned area (B3-D4), which causes it to dominate the right-side grid and creates a cramped workspace for the surrounding labels. Fix: Line 63: self.place_in_area(self.pi_group, 'B3', 'D4', scale_factor=0.9) (line=63, object=pi_group)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: The mom_lab and ene_lab labels are positioned at C2 and C5, aligning them exactly with the horizontal center of the large pi_group and resulting in a cluttered mid-section. Fix: Line 75: self.place_at_grid(self.mom_lab, 'B2', scale_factor=0.8) (line=75, object=mom_lab)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder6",
+      "description": "[VideoCritic][section_6] Problem: Positioning the energy label at C5 places it too close to the central visual; moving it to B5 provides better vertical separation and improves the layout's symmetry. Fix: Line 76: self.place_at_grid(self.ene_lab, 'B5', scale_factor=0.8) (line=76, object=ene_lab)",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The pi_val object is scaled too large (1.2), causing it to vertically crowd the collision counter above and the results text below. Fix: Line 190: self.place_at_grid(pi_val, 'C5', scale_factor=1.0)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The text labels (counter_group and final_result) are horizontally off-center in the animation panel, making the layout feel unbalanced. Fix: Line 102: self.place_at_grid(counter_group, 'B5'); Line 193: self.place_at_grid(final_result, 'D5')",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The massive block (M_block) starts too close to the smaller block, which doesn't fully utilize the available horizontal space for its approach animation. Fix: Line 87: self.place_at_grid(M_block, 'E6')",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The mass ratio label ('mass_icon') at B6 overlaps with the upward trajectory of the orange arc animation. Fix: Line 112: self.place_at_grid('A6', scale_factor=0.6). Note: Row A is near the title; ensure it doesn't overlap.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 41,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The collision count label ('collision_label_prefix') at D6 is obstructed by the expanding arc during the mass increase animation. Fix: Line 120: self.place_in_area('C5', 'C6', scale_factor=0.8)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 42,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The final approximation formula ('pi_formula') at E6 is too close to the circle's edge, causing a crowded layout at the bottom right. Fix: Line 182: self.place_in_area('F4', 'F6', scale_factor=0.7). Note: Row F is near the bottom edge.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_6/480p15/Section6Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 969884,
+        "video_mtime_ns": 1786081448000000000,
+        "code_sha1": "0eb1bc47ad44fb3c0a0e0866c44af026f65ad618"
+      },
+      "analysis": {
+        "raw_response": "```json\n{\n    \"layout\": {\n        \"has_issues\": true,\n        \"improvements\": [\n            {\n                \"problem\": \"The pi_val object is scaled too large (1.2), causing it to vertically crowd the collision counter above and the results text below.\",\n                \"solution\": \"Line 190: self.place_at_grid(pi_val, 'C5', scale_factor=1.0)\",\n                \"line_number\": 190,\n                \"object_affected\": \"pi_val\"\n            },\n            {\n                \"problem\": \"The text labels (counter_group and final_result) are horizontally off-center in the animation panel, making the layout feel unbalanced.\",\n                \"solution\": \"Line 102: self.place_at_grid(counter_group, 'B5'); Line 193: self.place_at_grid(final_result, 'D5')\",\n                \"line_number\": 102,\n                \"object_affected\": \"counter_group\"\n            },\n            {\n                \"problem\": \"The massive block (M_block) starts too close to the smaller block, which doesn't fully utilize the available horizontal space for its approach animation.\",\n                \"solution\": \"Line 87: self.place_at_grid(M_block, 'E6')\",\n                \"line_number\": 87,\n                "
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 385021,
+        "video_mtime_ns": 1786081397000000000,
+        "code_sha1": "f0cbdfdecf4bb8f3976cb2b07cd1fdd5a10ee961"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The formulas 'eqs' are slightly small and positioned too high, creating a large visual gap with the graph below.",
+              "solution": "Line 74: self.place_in_area(eqs, 'B1', 'B6', scale_factor=0.8)",
+              "line_number": 74,
+              "object_affected": "eqs"
+            },
+            {
+              "problem": "The graph elements (axes, ellipse, line, and dot) are not utilizing the central grid space effectively, making the visualization feel cramped at the bottom.",
+              "solution": "Line 85: self.place_in_area(graph_group, 'C2', 'F6', scale_factor=0.9)",
+              "line_number": 85,
+              "object_affected": "graph_group"
+            },
+            {
+              "problem": "Axis label 'v2' is too close to the y-axis arrow, potentially causing overlap during the animation.",
+              "solution": "Line 92: self.place_at_grid(v2_label, 'C4', scale_factor=0.6)",
+              "line_number": 92,
+              "object_affected": "v2_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        26,
+        27,
+        28
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 227226,
+        "video_mtime_ns": 1786081388000000000,
+        "code_sha1": "601b49ad01f3bd82b1b06ad4af1e6fc7c98b183e"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The coordinate system and its vertical axis label are positioned too high, creating a cramped layout near the title at the top of the screen.",
+              "solution": "Line 64: self.place_in_area(Mobject(), 'B2', 'F5', scale_factor=0.7)",
+              "object_affected": "Mobject()"
+            },
+            {
+              "problem": "The horizontal axis label 'sqrt(m)v1' is positioned too close to the right edge of the frame, which may lead to it being cut off on some displays.",
+              "solution": "Line 64: Adjust the area to 'B2' to 'F5' and ensure the scale_factor is 0.7 to pull the assembly inward from the right boundary.",
+              "object_affected": "Mobject()"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        29,
+        30
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 448304,
+        "video_mtime_ns": 1786081405000000000,
+        "code_sha1": "73dfa31372ab899ec560ee9ca94403c9a70aae09"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The circle area (B2-E5) is too large, leaving no buffer space on the right and forcing labels to the very edge of the frame.",
+              "solution": "Line 73: self.place_in_area(circle, 'B2', 'E4')",
+              "line_number": 73,
+              "object_affected": "circle"
+            },
+            {
+              "problem": "The 'Fixed Arc' label at C6 is positioned too far from its visual reference (the orange arc segment) inside the circle.",
+              "solution": "Line 125: self.place_at_grid(arc_label, 'C5', scale_factor=0.8)",
+              "line_number": 125,
+              "object_affected": "arc_label"
+            },
+            {
+              "problem": "The mathematical formula at D6 is positioned at the extreme right edge of the grid, risking being cut off and appearing unbalanced.",
+              "solution": "Line 162: self.place_at_grid(angle_label, 'D5', scale_factor=0.7)",
+              "line_number": 162,
+              "object_affected": "angle_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        31,
+        32,
+        33
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 325792,
+        "video_mtime_ns": 1786081647000000000,
+        "code_sha1": "45146d8ccc7451298a5f4505db2906a07bfccaad"
+      },
+      "analysis": {
+        "raw_response": "```json\n{\n    \"layout\": {\n        \"has_issues\": true,\n        \"improvements\": [\n            {\n                \"problem\": \"The mass ratio label ('mass_icon') at B6 overlaps with the upward trajectory of the orange arc animation.\",\n                \"solution\": \"Line 112: self.place_at_grid('A6', scale_factor=0.6)\",\n                \"line_number\": 112,\n                \"object_affected\": \"mass_icon\"\n            },\n            {\n                \"problem\": \"The collision count label ('collision_label_prefix') at D6 is obstructed by the expanding arc during the mass increase animation.\",\n                \"solution\": \"Line 120: self.place_in_area('C5', 'C6', scale_factor=0.8)\",\n                \"line_number\": 120,\n                \"object_affected\": \"collision_label_prefix\"\n            },\n            {\n                \"problem\": \"The final approximation formula ('pi_formula') at E6 is too close to the circle's edge, causing a crowded layout at the bottom right.\",\n                \"solution\": \"Line 182: self.place_in_area('F4', 'F6', scale_factor=0.7)\",\n                \"line_number\": 182,\n                \"object_affected\": \"pi_formula\"\n            }"
+      },
+      "created_issue_ids": [],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_6",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_6/480p15/Section6Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant/media/videos/section_6/480p15/Section6Scene.mp4",
+        "video_size": 153016,
+        "video_mtime_ns": 1786081388000000000,
+        "code_sha1": "921056d3494a932c437cdf796c83fc7a7157764a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The pi_group is over-scaled at 1.2 for its assigned area (B3-D4), which causes it to dominate the right-side grid and creates a cramped workspace for the surrounding labels.",
+              "solution": "Line 63: self.place_in_area(self.pi_group, 'B3', 'D4', scale_factor=0.9)",
+              "line_number": 63,
+              "object_affected": "pi_group"
+            },
+            {
+              "problem": "The mom_lab and ene_lab labels are positioned at C2 and C5, aligning them exactly with the horizontal center of the large pi_group and resulting in a cluttered mid-section.",
+              "solution": "Line 75: self.place_at_grid(self.mom_lab, 'B2', scale_factor=0.8)",
+              "line_number": 75,
+              "object_affected": "mom_lab"
+            },
+            {
+              "problem": "Positioning the energy label at C5 places it too close to the central visual; moving it to B5 provides better vertical separation and improves the layout's symmetry.",
+              "solution": "Line 76: self.place_at_grid(self.ene_lab, 'B5', scale_factor=0.8)",
+              "line_number": 76,
+              "object_affected": "ene_lab"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        34,
+        35,
+        36
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260807_120330/18-The_Pi_Collision_Mystery_How_Bouncing_Blocks_Calculate_the_Universes_Most_Famous_Constant",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 369153,
+      "completion_tokens": 44495,
+      "total_tokens": 503602,
+      "call_count": 30
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 281,
+        "completion_tokens": 901,
+        "total_tokens": 1746,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 24585,
+        "completion_tokens": 1125,
+        "total_tokens": 28236,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 29491,
+        "completion_tokens": 1287,
+        "total_tokens": 33112,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 100008,
+        "completion_tokens": 4440,
+        "total_tokens": 108448,
+        "call_count": 2
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 22244,
+        "completion_tokens": 2857,
+        "total_tokens": 28301,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 22420,
+        "completion_tokens": 5881,
+        "total_tokens": 29479,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 22192,
+        "completion_tokens": 6441,
+        "total_tokens": 29762,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 28744,
+        "completion_tokens": 3879,
+        "total_tokens": 35329,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 53343,
+        "completion_tokens": 10033,
+        "total_tokens": 74874,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 44775,
+        "completion_tokens": 5233,
+        "total_tokens": 59934,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 3987,
+        "completion_tokens": 531,
+        "total_tokens": 15346,
+        "call_count": 12
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2872,
+        "completion_tokens": 320,
+        "total_tokens": 10868,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2961,
+        "completion_tokens": 331,
+        "total_tokens": 9337,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2560,
+        "completion_tokens": 222,
+        "total_tokens": 7336,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 3216,
+        "completion_tokens": 325,
+        "total_tokens": 11034,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2916,
+        "completion_tokens": 316,
+        "total_tokens": 10912,
+        "call_count": 1
+      },
+      "video_review:section_6": {
+        "prompt_tokens": 2558,
+        "completion_tokens": 373,
+        "total_tokens": 9548,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 369153,
+        "completion_tokens": 44495,
+        "total_tokens": 503602,
+        "call_count": 30
+      }
+    }
+  }
+}

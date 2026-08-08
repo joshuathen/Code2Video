@@ -561,6 +561,12 @@ class BeliefSelector:
             scope = belief.get("scope") if isinstance(belief.get("scope"), dict) else {}
             roles = {normalize_role(item) for item in scope.get("roles", [])}
             stages = {normalize_stage(item) for item in scope.get("stages", [])}
+            # Role scope is an eligibility constraint, not merely weak
+            # evidence of applicability. A Coder belief must never enter a
+            # ScriptWriter, AnimationPlanner, or Orchestrator prompt. Beliefs
+            # without an explicit role remain eligible for legacy libraries.
+            if roles and role not in roles:
+                continue
             belief_timing = str(belief.get("timing") or "both").lower()
             if timing != "both" and belief_timing not in {timing, "both"}:
                 continue
@@ -602,7 +608,7 @@ class BeliefSelector:
                     "belief": belief,
                     "status": status,
                     "problem_similarity": similarity,
-                    "role_match": 1.0 if not roles or role in roles else 0.0,
+                    "role_match": 1.0,
                     "stage_match": 1.0 if not stages or stage in stages else 0.0,
                     "context_match": context_score,
                     "context_match_exact": exact_context,
