@@ -1,0 +1,926 @@
+{
+  "topic": "Understanding Discrete Convolutions: From Filters to Features",
+  "target_audience": "Undergraduate Computer Science or Engineering Students",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"Intuitive Hook: The Sliding Window\", [\n            \"Think of filters as sliding magnifying glasses.\",\n            \"Scanning photographs extracts vital visual details.\",\n            \"Imagine our filter detecting cat ears.\"\n        ])\n        \n        # Elements\n        grid = VGroup(*[Dot(radius=0.1) for _ in range(9)]).arrange_in_grid(3, 3, buff=0.2)\n        highlight = Square(side_length=0.3, color=YELLOW).move_to(grid[4])\n        filter_box = Square(side_length=1.0, color=BLUE)\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        self.place_in_area(grid, 'B2', 'D4', scale_factor=0.8)\n        self.play(FadeIn(grid))\n        self.play(FadeIn(highlight))\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(BLUE)\n        self.place_in_area(filter_box, 'B2', 'D4', scale_factor=0.8)\n        self.play(Create(filter_box))\n        # Move filter box over the grid\n        self.play(filter_box.animate.shift(RIGHT * 0.8), run_time=1.5)\n        self.play(filter_box.animate.shift(LEFT * 0.8), run_time=1.5)\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(RED)\n        self.play(filter_box.animate.set_color(RED))\n        self.play(Indicate(filter_box))\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"Convolution combines input and kernel matrices.\",\n            \"Multiply overlapping elements, then sum them up.\",\n            \"Flipping the kernel defines the operation formally.\",\n            \"Slide across grid to create new map.\",\n            \"One input pixel results from every shift.\"\n        ]\n        self.setup_layout(\"Mathematical Core: Element-wise Product and Sum\", lecture_lines)\n\n        # Assets\n        vec_a = MathTex(\"A = [1, 2, 3]\", color=BLUE)\n        vec_k = MathTex(\"K = [0.5, 1, 2]\", color=RED)\n        \n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(BLUE)\n        self.place_at_grid(vec_a, \"B2\", scale_factor=1.0)\n        self.place_at_grid(vec_k, \"C2\", scale_factor=1.0)\n        self.play(Write(vec_a), Write(vec_k))\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(YELLOW)\n        # Showing product elements\n        dots = VGroup(*[Dot(color=WHITE).move_to(vec_a[0][i+2].get_center() + DOWN*0.5) for i in range(3)])\n        # Actually, let's just use arrows for simplicity\n        arrows = VGroup(*[Arrow(vec_a[0][i+2].get_bottom(), vec_k[0][i+2].get_top(), color=WHITE, buff=0.1) for i in range(3)])\n        self.play(Create(arrows))\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(RED)\n        # Just highlighting kernel\n        self.play(Indicate(vec_k))\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(GREEN)\n        # Visual slide simulation\n        rect = Square(side_length=0.5, color=GREEN).next_to(vec_a, RIGHT)\n        self.play(FadeIn(rect))\n        self.play(rect.animate.shift(RIGHT))\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(PURPLE)\n        res = MathTex(\"= 0.5 + 2 + 6 = 8.5\", color=PURPLE)\n        self.place_at_grid(res, \"D3\", scale_factor=0.8)\n        self.play(Write(res))\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"Dot products measure how well patterns match.\",\n            \"High values indicate strong pattern alignment.\",\n            \"Convolution acts as a powerful feature detector.\"\n        ]\n        self.setup_layout(\"Prerequisite Sync: Dot Products\", lecture_lines)\n        \n        # Define objects\n        v1 = Vector([1, 2], color=WHITE)\n        v2 = Vector([2, 1], color=WHITE)\n        label_dot = MathTex(r\"a \\cdot b = \\sum a_i b_i\", color=WHITE)\n        \n        # === Animation for Lecture Line 1 ===\n        self.place_at_grid(v1, 'C2')\n        self.place_at_grid(v2, 'C2')\n        self.play(Create(v1), Create(v2))\n        self.lecture[0].set_color(\"#00FFFF\")\n        \n        # === Animation for Lecture Line 2 ===\n        self.place_at_grid(label_dot, 'B4', scale_factor=0.7)\n        self.play(Write(label_dot))\n        self.lecture[1].set_color(\"#FFD700\")\n        \n        # === Animation for Lecture Line 3 ===\n        highlight = label_dot.copy().set_color(\"#FFD700\")\n        self.play(ReplacementTransform(label_dot.copy(), highlight))\n        self.lecture[2].set_color(\"#FF69B4\")\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"Real-World Application: Image Processing & CNNs\", [\n            \"Convolutional layers stack to form deep networks.\",\n            \"Simple edges evolve into complex object recognition.\",\n            \"Drones use convolutions to identify landing pads.\"\n        ])\n        \n        # Create a grid for the filter visualization\n        grid_rows, grid_cols = 5, 5\n        image_grid = VGroup(*[Square(side_length=0.7) for _ in range(grid_rows * grid_cols)])\n        image_grid.arrange_in_grid(rows=grid_rows, cols=grid_cols, buff=0)\n        self.place_in_area(image_grid, 'A1', 'E5', scale_factor=0.6)\n        self.add(image_grid)\n\n        # Create filter\n        filter_box = Square(side_length=0.7, color=YELLOW)\n        filter_box.scale(0.9)\n        self.place_at_grid(filter_box, 'A1', scale_factor=0.6)\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(BLUE))\n        self.add(filter_box)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(ORANGE))\n        # Animate filter sliding\n        path = VGroup(*[image_grid[i] for i in [0, 1, 2, 6, 7, 8, 12, 13, 14]])\n        self.play(filter_box.animate.move_to(image_grid[2].get_center()), run_time=1.5)\n        self.play(filter_box.animate.move_to(image_grid[12].get_center()), run_time=1.5)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(GREEN))\n        feature_cell = image_grid[6].copy().set_fill(GREEN, opacity=0.5)\n        self.play(FadeIn(feature_cell))\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"Summary & Reflection\", [\n            \"Convolution is scanning, multiplying, and summing.\",\n            \"It serves as a template matching engine.\",\n            \"Visualize it extracting features from data.\"\n        ])\n        \n        # Elements\n        title_obj = Text(\"Convolution\", font_size=48, color=WHITE)\n        label1 = Text(\"Sliding Window\", font_size=32, color=\"#FFCC00\")\n        label2 = Text(\"Dot Product\", font_size=32, color=\"#00FFCC\")\n        \n        # === Animation for Lecture Line 1 ===\n        self.place_at_grid(title_obj, \"B3\")\n        self.play(FadeIn(title_obj))\n        self.lecture[0].set_color(\"#FFCC00\")\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.place_at_grid(label1, \"D2\")\n        self.place_at_grid(label2, \"D5\")\n        self.play(GrowFromCenter(label1), GrowFromCenter(label2))\n        self.lecture[1].set_color(\"#00FFCC\")\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        pulse_group = VGroup(title_obj, label1, label2)\n        self.play(\n            pulse_group.animate.scale(1.1),\n            run_time=0.5\n        )\n        self.play(\n            pulse_group.animate.scale(1/1.1),\n            run_time=0.5\n        )\n        self.lecture[2].set_color(\"#FF99FF\")\n        self.wait(2)\n"
+  ],
+  "outline": {
+    "topic": "Understanding Discrete Convolutions: From Filters to Features",
+    "target_audience": "Undergraduate Computer Science or Engineering Students",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "Intuitive Hook: The Sliding Window",
+        "content": "Introduce the concept of a 'filter' moving over data. Use an analogy of a magnifying glass scanning a photograph to extract specific details like edges or brightness.",
+        "example": "A 3x3 'cat-ear detector' filter sliding over a pixel grid of a house pet image to highlight where the ears are located."
+      },
+      {
+        "id": "section_2",
+        "title": "Mathematical Core: Element-wise Product and Sum",
+        "content": "Define discrete convolution as the sum of element-wise products. Visually represent this as two overlapping matrices: the input matrix (A) and the kernel (K). Emphasize the 'flip and shift' mechanism (flipping the kernel) for formal definition.",
+        "example": "Visual animation of a 3x3 kernel sliding over a 5x5 grid, showing the multiplication of overlapping values and the summation resulting in a single output pixel."
+      },
+      {
+        "id": "section_3",
+        "title": "Prerequisite Sync: Dot Products",
+        "content": "Briefly recap the Dot Product: the idea that the result is high only when the kernel 'matches' the underlying pattern. This ensures students understand why convolution functions as a 'feature detector'.",
+        "example": "Comparing a 'vertical edge' kernel to a vertical line on a image grid—demonstrating how the high multiplication values produce a bright spot in the output."
+      },
+      {
+        "id": "section_4",
+        "title": "Real-World Application: Image Processing & CNNs",
+        "content": "Transition to modern applications. Explain how stacks of convolutions form Convolutional Neural Networks (CNNs). Move from simple edge detection to complex object recognition.",
+        "example": "A drone navigation system using a convolution layer to identify a 'landing pad' symbol on the ground amidst a noisy background."
+      },
+      {
+        "id": "section_5",
+        "title": "Summary & Reflection",
+        "content": "Recap: Convolution = Scanning + Dot Product + Feature Extraction. Encourage learners to visualize convolution as a 'template matching' engine.",
+        "example": "A quick visual recap of the 'cat ear' filter evolving into a complex 'cat face' detector in deep layers."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "Intuitive Hook: The Sliding Window",
+      "lecture_lines": [
+        "Think of filters as sliding magnifying glasses.",
+        "Scanning photographs extracts vital visual details.",
+        "Imagine our filter detecting cat ears."
+      ],
+      "animations": [
+        "Create a 3x3 grid of moving dots; fade in central highlight using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/magnifying.svg].",
+        "Transition grid to a sliding square window over data.",
+        "Flash the window red to signal data capture, displaying a captured [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/photograph.svg]."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Mathematical Core: Element-wise Product and Sum",
+      "lecture_lines": [
+        "Convolution combines input and kernel matrices.",
+        "Multiply overlapping elements, then sum them up.",
+        "Flipping the kernel defines the operation formally.",
+        "Slide across grid to create new map.",
+        "One input pixel results from every shift."
+      ],
+      "animations": [
+        "Display two vectors side-by-side using MathTex, positioned over a background [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/grid.svg].",
+        "Animate arrows connecting corresponding vector elements.",
+        "Show product result floating below each pair."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "Prerequisite Sync: Dot Products",
+      "lecture_lines": [
+        "Dot products measure how well patterns match.",
+        "High values indicate strong pattern alignment.",
+        "Convolution acts as a powerful feature detector."
+      ],
+      "animations": [
+        "Draw two vectors as arrows from origin using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/vector.svg] in #FFFFFF.",
+        "Fade in the Dot Product scalar value definition.",
+        "Highlight the scalar value in #FFD700."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Real-World Application: Image Processing & CNNs",
+      "lecture_lines": [
+        "Convolutional layers stack to form deep networks.",
+        "Simple edges evolve into complex object recognition.",
+        "Drones use convolutions to identify landing pads."
+      ],
+      "animations": [
+        "Overlay a 3x3 filter on a pixelated image represented by a [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/drone.svg].",
+        "Animate the filter sliding across the grid over the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/drone.svg].",
+        "Flash the output feature map cells in #00FF00 based on the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/drone.svg] analysis."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Summary & Reflection",
+      "lecture_lines": [
+        "Convolution is scanning, multiplying, and summing.",
+        "It serves as a template matching engine.",
+        "Visualize it extracting features from data."
+      ],
+      "animations": [
+        "Fade in 'Convolution' title centered in #FFFFFF.",
+        "Pop up labels: 'Sliding Window' [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/window.svg], 'Dot Product' [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/filter.svg].",
+        "Pulse all labels simultaneously to signal completion."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added concise lecture lines for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations generated based on section title and outline; awaiting final lecture lines."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated code for section_1 implementing the sliding window visual hook, as requested. Adhered to the 6x6 grid system and layout constraints."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations generated based on section title and outline; awaiting final lecture lines."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Code implemented and tested for section_2. Followed all guidelines, including the 6x6 grid system and layout constraints."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added concise lecture lines for Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations generated based on section title and outline; awaiting final lecture lines."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated the scene code for section_3, using the TeachingScene template and following grid-based positioning rules."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added concise lecture lines for Section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations generated based on section title and outline; awaiting final lecture lines."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented Manim code for section_4 following layout and animation constraints."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added concise lecture lines for Section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Animations generated based on section title and outline; awaiting final lecture lines."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_5, adhering to grid layout and lecture line styling."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Create a 3x3 grid of moving dots; fade in central highlight using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/magnifying.svg].', 'Flash the window red to signal data capture, displaying a captured [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/photograph.svg].']",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Display two vectors side-by-side using MathTex, positioned over a background [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/grid.svg].']",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Draw two vectors as arrows from origin using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/vector.svg] in #FFFFFF.']",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Overlay a 3x3 filter on a pixelated image represented by a [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/drone.svg].', 'Animate the filter sliding across the grid over the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/drone.svg].', 'Flash the output feature map cells in #00FF00 based on the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/drone.svg] analysis.']",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Pop up labels: 'Sliding Window' [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/window.svg], 'Dot Product' [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/filter.svg].\"]",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 21,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The animation occupies the same central grid space (B2-D4) consistently, creating a static feel and failing to utilize available screen real estate. Fix: Line 66: self.place_in_area(filter_box, 'C4', 'E6', scale_factor=0.9) (line=66, object=filter_box)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The grid object appears centered in a way that creates visual tension with the left-aligned text; shifting it right improves balance. Fix: Line 60: self.place_in_area(grid, 'B3', 'E5', scale_factor=0.75) (line=60, object=grid)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: Potential for visual clutter when the sliding window animation overlaps the static grid background, reducing clarity. Fix: Line 66: self.place_in_area(filter_box, 'C3', 'D4', scale_factor=0.85) (line=66, object=filter_box)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Elements are clustered too tightly in the top-left of the grid area, causing visual crowding. Fix: Line 63: self.place_at_grid(vec_a, 'B3', scale_factor=0.9) (line=63, object=vec_a)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The kernel matrix is too close to the vector matrix, creating insufficient vertical breathing room. Fix: Line 64: self.place_at_grid(vec_k, 'C3', scale_factor=0.9) (line=64, object=vec_k)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The result element is positioned awkwardly, distant from the operational flow and potentially obstructing the lower-middle grid space. Fix: Line 90: self.place_at_grid(res, 'D5', scale_factor=0.9) (line=90, object=res)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: Objects v1 and v2 are stacked at the same grid coordinate (C2), causing visual overlap and confusion. Fix: Line 60: self.place_at_grid(v1, 'C2', scale_factor=0.6); Line 61: self.place_at_grid(v2, 'D2', scale_factor=0.6) (line=61, object=v2)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The label_dot overlaps with the space intended for the vectors and potentially interferes with the visual flow near the center. Fix: Line 66: self.place_at_grid(label_dot, 'B5', scale_factor=0.7) (line=66, object=label_dot)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The animation elements are clustered too tightly in the upper-left quadrant of the grid, leaving the rest of the workspace underutilized. Fix: Shift group elements to cover a wider area: self.place_in_area(group_vectors, 'B2', 'D4', scale_factor=0.8) (line=60, object=v1, v2)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The filter_box animation frequently overlays and obscures the grid boundary, making the convolution process difficult to track. Fix: Line 63: self.place_in_area(filter_box, 'B2', 'B2', scale_factor=0.5) (line=63, object=filter_box)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The image_grid is currently centered too far left, competing for visual space with the lecture notes. Fix: Line 57: self.place_in_area(image_grid, 'B2', 'E5', scale_factor=0.7) (line=57, object=image_grid)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: Suboptimal utilization of the right-hand grid space, leaving the right columns (A6-F6) empty and crowding the center. Fix: Line 57: self.place_in_area(image_grid, 'A3', 'F6', scale_factor=0.8) (line=57, object=image_grid)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: Title 'Convolution' is poorly positioned at B3, creating a visual imbalance with the right-side grid structure. Fix: Line 59: self.place_in_area(title_obj, 'A1', 'A6', scale_factor=1.0) (line=59, object=title_obj)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: 'Sliding Window' label is placed too close to the edge of the grid boundary, risking clipping. Fix: Line 65: self.place_at_grid(label1, 'C2', scale_factor=0.9) (line=65, object=label1)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: 'Dot Product' label is isolated from its contextual group, leading to poor visual proximity. Fix: Line 66: self.place_at_grid(label2, 'C5', scale_factor=0.9) (line=66, object=label2)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "Layout improvements needed:\n1. Shift filter_box to C4-E6 (scale 0.9) to utilize space.\n2. Shift grid to B3-E5 (scale 0.75) for balance.\n3. Reposition filter_box to C3-D4 (scale 0.85) to avoid clutter.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "Layout improvements needed:\n1. Shift vec_a to B3 (scale 0.9).\n2. Shift vec_k to C3 (scale 0.9).\n3. Shift res to D5 (scale 0.9).",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "Layout improvements needed:\n1. Shift v1 to C2 (scale 0.6) and v2 to D2 (scale 0.6).\n2. Shift label_dot to B5 (scale 0.7).\n3. Shift group_vectors to B2-D4 (scale 0.8).",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "Layout improvements needed:\n1. Shift filter_box to B2-B2 (scale 0.5).\n2. Shift image_grid to B2-E5 (scale 0.7).\n3. Shift image_grid to A3-F6 (scale 0.8).",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "Layout improvements needed:\n1. Shift title_obj to A1-A6 (scale 1.0).\n2. Shift label1 to C2 (scale 0.9).\n3. Shift label2 to C5 (scale 0.9).",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_5/480p15/Section5Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 124270,
+        "video_mtime_ns": 1786335879000000000,
+        "code_sha1": "ccce8de80e6fb05c9599a3dd70f7b48429b5b932"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The animation occupies the same central grid space (B2-D4) consistently, creating a static feel and failing to utilize available screen real estate.",
+              "solution": "Line 66: self.place_in_area(filter_box, 'C4', 'E6', scale_factor=0.9)",
+              "line_number": 66,
+              "object_affected": "filter_box"
+            },
+            {
+              "problem": "The grid object appears centered in a way that creates visual tension with the left-aligned text; shifting it right improves balance.",
+              "solution": "Line 60: self.place_in_area(grid, 'B3', 'E5', scale_factor=0.75)",
+              "line_number": 60,
+              "object_affected": "grid"
+            },
+            {
+              "problem": "Potential for visual clutter when the sliding window animation overlaps the static grid background, reducing clarity.",
+              "solution": "Line 66: self.place_in_area(filter_box, 'C3', 'D4', scale_factor=0.85)",
+              "line_number": 66,
+              "object_affected": "filter_box"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        21,
+        22,
+        23
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 178660,
+        "video_mtime_ns": 1786335885000000000,
+        "code_sha1": "d19d457eb280ce355066b35bda71d6dfb0fff3ca"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Elements are clustered too tightly in the top-left of the grid area, causing visual crowding.",
+              "solution": "Line 63: self.place_at_grid(vec_a, 'B3', scale_factor=0.9)",
+              "line_number": 63,
+              "object_affected": "vec_a"
+            },
+            {
+              "problem": "The kernel matrix is too close to the vector matrix, creating insufficient vertical breathing room.",
+              "solution": "Line 64: self.place_at_grid(vec_k, 'C3', scale_factor=0.9)",
+              "line_number": 64,
+              "object_affected": "vec_k"
+            },
+            {
+              "problem": "The result element is positioned awkwardly, distant from the operational flow and potentially obstructing the lower-middle grid space.",
+              "solution": "Line 90: self.place_at_grid(res, 'D5', scale_factor=0.9)",
+              "line_number": 90,
+              "object_affected": "res"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        24,
+        25,
+        26
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 72082,
+        "video_mtime_ns": 1786335878000000000,
+        "code_sha1": "d24c6e83cd1c93a1f87dc4ec19a03c4d9a67a977"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Objects v1 and v2 are stacked at the same grid coordinate (C2), causing visual overlap and confusion.",
+              "solution": "Line 60: self.place_at_grid(v1, 'C2', scale_factor=0.6); Line 61: self.place_at_grid(v2, 'D2', scale_factor=0.6)",
+              "line_number": 61,
+              "object_affected": "v2"
+            },
+            {
+              "problem": "The label_dot overlaps with the space intended for the vectors and potentially interferes with the visual flow near the center.",
+              "solution": "Line 66: self.place_at_grid(label_dot, 'B5', scale_factor=0.7)",
+              "line_number": 66,
+              "object_affected": "label_dot"
+            },
+            {
+              "problem": "The animation elements are clustered too tightly in the upper-left quadrant of the grid, leaving the rest of the workspace underutilized.",
+              "solution": "Shift group elements to cover a wider area: self.place_in_area(group_vectors, 'B2', 'D4', scale_factor=0.8)",
+              "line_number": 60,
+              "object_affected": "v1, v2"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        27,
+        28,
+        29
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 144223,
+        "video_mtime_ns": 1786335882000000000,
+        "code_sha1": "d9a85feb350a678bf00afc73f0eac05812a18843"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The filter_box animation frequently overlays and obscures the grid boundary, making the convolution process difficult to track.",
+              "solution": "Line 63: self.place_in_area(filter_box, 'B2', 'B2', scale_factor=0.5)",
+              "line_number": 63,
+              "object_affected": "filter_box"
+            },
+            {
+              "problem": "The image_grid is currently centered too far left, competing for visual space with the lecture notes.",
+              "solution": "Line 57: self.place_in_area(image_grid, 'B2', 'E5', scale_factor=0.7)",
+              "line_number": 57,
+              "object_affected": "image_grid"
+            },
+            {
+              "problem": "Suboptimal utilization of the right-hand grid space, leaving the right columns (A6-F6) empty and crowding the center.",
+              "solution": "Line 57: self.place_in_area(image_grid, 'A3', 'F6', scale_factor=0.8)",
+              "line_number": 57,
+              "object_affected": "image_grid"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        30,
+        31,
+        32
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 155464,
+        "video_mtime_ns": 1786335880000000000,
+        "code_sha1": "4dc541a4e064566e4f3aefa83d0a285a40a8aa19"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Title 'Convolution' is poorly positioned at B3, creating a visual imbalance with the right-side grid structure.",
+              "solution": "Line 59: self.place_in_area(title_obj, 'A1', 'A6', scale_factor=1.0)",
+              "line_number": 59,
+              "object_affected": "title_obj"
+            },
+            {
+              "problem": "'Sliding Window' label is placed too close to the edge of the grid boundary, risking clipping.",
+              "solution": "Line 65: self.place_at_grid(label1, 'C2', scale_factor=0.9)",
+              "line_number": 65,
+              "object_affected": "label1"
+            },
+            {
+              "problem": "'Dot Product' label is isolated from its contextual group, leading to poor visual proximity.",
+              "solution": "Line 66: self.place_at_grid(label2, 'C5', scale_factor=0.9)",
+              "line_number": 66,
+              "object_affected": "label2"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        33,
+        34,
+        35
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_115223/14-Understanding_Discrete_Convolutions_From_Filters_to_Features",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 160454,
+      "completion_tokens": 11474,
+      "total_tokens": 171928,
+      "call_count": 25
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 276,
+        "completion_tokens": 582,
+        "total_tokens": 858,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 11405,
+        "completion_tokens": 617,
+        "total_tokens": 12022,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 10216,
+        "completion_tokens": 597,
+        "total_tokens": 10813,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 30540,
+        "completion_tokens": 1099,
+        "total_tokens": 31639,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 18457,
+        "completion_tokens": 1161,
+        "total_tokens": 19618,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 18570,
+        "completion_tokens": 1215,
+        "total_tokens": 19785,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 18484,
+        "completion_tokens": 1196,
+        "total_tokens": 19680,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 19016,
+        "completion_tokens": 1398,
+        "total_tokens": 20414,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 18666,
+        "completion_tokens": 1317,
+        "total_tokens": 19983,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 3191,
+        "completion_tokens": 701,
+        "total_tokens": 3892,
+        "call_count": 10
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2380,
+        "completion_tokens": 328,
+        "total_tokens": 2708,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2351,
+        "completion_tokens": 294,
+        "total_tokens": 2645,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2194,
+        "completion_tokens": 348,
+        "total_tokens": 2542,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 2386,
+        "completion_tokens": 321,
+        "total_tokens": 2707,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2322,
+        "completion_tokens": 300,
+        "total_tokens": 2622,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3.1-flash-lite": {
+        "prompt_tokens": 160454,
+        "completion_tokens": 11474,
+        "total_tokens": 171928,
+        "call_count": 25
+      }
+    }
+  }
+}

@@ -43,7 +43,6 @@ def decision(action, candidate_id=None, instruction=None):
             ),
             "impact": "high",
             "belief_type": "confirmed",
-            "timing": "both",
             "compliance": "followed",
             "outcome": "positive",
             "strategy_application": "full",
@@ -124,7 +123,6 @@ class ThreeStageBeliefTests(unittest.TestCase):
                     },
                     impact="high",
                     belief_type="confirmed",
-                    timing="both",
                     source_candidate_ids=["C001"],
                     consolidation_reason="Both records describe the same construction mechanism.",
                 )
@@ -235,7 +233,6 @@ class ThreeStageBeliefTests(unittest.TestCase):
             },
             "impact": "medium",
             "belief_type": "confirmed",
-            "timing": "both",
             "source_candidate_ids": ["C001"],
             "consolidation_reason": "The source candidates share one conditional mechanism.",
         }
@@ -253,7 +250,6 @@ class ThreeStageBeliefTests(unittest.TestCase):
             },
             "impact": "medium",
             "belief_type": "confirmed",
-            "timing": "both",
             "source_candidate_ids": ["C001", "C002", "C003", "C004", "C005"],
             "consolidation_reason": "These candidates were incorrectly bundled.",
         }
@@ -287,7 +283,6 @@ class ThreeStageBeliefTests(unittest.TestCase):
                     },
                     impact="high",
                     belief_type="confirmed",
-                    timing="preventative",
                     source_candidate_ids=["C001"],
                     consolidation_reason="The candidate describes one reusable mechanism.",
                 )
@@ -327,7 +322,6 @@ class ThreeStageBeliefTests(unittest.TestCase):
                     },
                     impact="low",
                     belief_type="quality",
-                    timing="preventative",
                     source_candidate_ids=["C001"],
                     consolidation_reason="This repeats a useful formatting requirement.",
                 )
@@ -355,7 +349,6 @@ class ThreeStageBeliefTests(unittest.TestCase):
                     },
                     impact="medium",
                     belief_type="quality",
-                    timing="preventative",
                     source_candidate_ids=["C001"],
                     consolidation_reason="The evidence identifies one visual-clearance mechanism.",
                 )

@@ -1,0 +1,938 @@
+{
+  "topic": "The Attention Mechanism: How Transformers Read",
+  "target_audience": "University students (CS/Engineering background)",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"The Core Problem: Contextual Ambiguity\", [\n            \"Previous models processed words only linearly.\", \n            \"This misses dependencies across long distances.\", \n            \"Ambiguity arises when words shift meaning.\"\n        ])\n        \n        # Assets\n        dictionary_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/dictionary.svg\")\n        pen_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/pen.svg\")\n        \n        # === Animation for Lecture Line 1 ===\n        # Previous models processed words only linearly.\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        \n        # Create 'Word Ambiguity' with assets\n        ambiguity_text = Text(\"Word Ambiguity\", font_size=24, color=WHITE)\n        ambiguity_group = VGroup(ambiguity_text, dictionary_icon).arrange(RIGHT, buff=0.2)\n        self.place_in_area(ambiguity_group, \"A1\", \"A3\", scale_factor=0.7)\n        self.play(Write(ambiguity_text), FadeIn(dictionary_icon))\n        \n        # Visualize \\\"Linear Processing\\\"\n        words = VGroup(*[Text(w, font_size=24) for w in [\"The\", \"river\", \"bank\"]])\n        words.arrange(RIGHT, buff=0.5)\n        self.place_in_area(words, \"B1\", \"B6\")\n        self.play(Write(words))\n        \n        # Arrows showing sequential flow\n        arrows = VGroup(*[Arrow(words[i].get_right(), words[i+1].get_left(), buff=0.1, color=BLUE) for i in range(2)])\n        self.play(Create(arrows))\n        \n        # === Animation for Lecture Line 2 ===\n        # This misses dependencies across long distances.\n        self.play(self.lecture[0].animate.set_color(WHITE), self.lecture[1].animate.set_color(YELLOW))\n        \n        # Show long distance dependency\n        long_arrow = CurvedArrow(words[0].get_top(), words[2].get_top(), angle=-PI/2, color=RED)\n        \n        # Fix #20: Move label position\n        missed_context = Text(\"Missed Context\", font_size=18, color=RED)\n        self.place_at_grid(missed_context, \"C3\", scale_factor=0.9)\n        \n        # Include pen icon in analysis process\n        self.place_at_grid(pen_icon, \"C5\", scale_factor=0.8)\n        \n        self.play(Create(long_arrow), Write(missed_context), FadeIn(pen_icon))\n        \n        # === Animation for Lecture Line 3 ===\n        # Ambiguity arises when words shift meaning.\n        self.play(self.lecture[1].animate.set_color(WHITE), self.lecture[2].animate.set_color(YELLOW))\n        \n        # Highlight \\\"bank\\\"\n        bank_word = words[2]\n        self.play(bank_word.animate.set_color(GOLD), Indicate(bank_word))\n        \n        # Fix #21: Move footer position\n        comparison_label = Text(\"river bank vs bank account\", font_size=20, color=\"#00FFFF\")\n        self.place_in_area(comparison_label, \"E2\", \"E5\", scale_factor=0.75)\n        self.play(FadeIn(comparison_label))\n        \n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"We treat retrieval like a search system.\",\n            \"Queries ask for what we need.\",\n            \"Keys label what is available.\",\n            \"Values contain the actual information content.\"\n        ]\n        self.setup_layout(\"The Intuition: Query, Key, and Value (QKV)\", lecture_lines)\n        \n        # Load SVGs\n        magnifying_glass = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/magnifyingglass.svg\", color=WHITE)\n        doc_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/document.svg\", color=WHITE)\n\n        # Prepare vectors\n        query = Arrow(ORIGIN, UP*1.0, color=\"#FF0000\")\n        key = Arrow(ORIGIN, RIGHT*1.0, color=\"#00FF00\")\n        value = Arrow(ORIGIN, LEFT*1.0, color=\"#0000FF\")\n        \n        q_label = MathTex(\"Q\", color=\"#FF0000\")\n        k_label = MathTex(\"K\", color=\"#00FF00\")\n        v_label = MathTex(\"V\", color=\"#0000FF\")\n        \n        # Groupings\n        q_group = VGroup(query, q_label, magnifying_glass)\n        k_group = VGroup(key, k_label)\n        v_group = VGroup(value, v_label, doc_icon)\n        \n        qkv_system = VGroup(q_group, k_group, v_group)\n        self.place_in_area(qkv_system, 'B2', 'E5', scale_factor=0.9)\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(\"#FFD700\"))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(\"#FF0000\"))\n        self.place_at_grid(q_label, 'B2', scale_factor=0.7, offset=DOWN*0.5)\n        self.play(Create(query), Write(q_label), FadeIn(magnifying_glass))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(\"#00FF00\"))\n        self.place_at_grid(k_label, 'B4', scale_factor=0.7, offset=DOWN*0.5)\n        self.play(Create(key), Write(k_label))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.play(self.lecture[3].animate.set_color(\"#0000FF\"))\n        self.place_at_grid(v_label, 'B6', scale_factor=0.7, offset=DOWN*0.5)\n        self.play(Create(value), Write(v_label), FadeIn(doc_icon))\n        \n        projection_line = DashedLine(query.get_end(), key.get_end(), color=WHITE)\n        self.play(Create(projection_line))\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"The Math: Visualizing Attention Weights\", [\n            \"Attention matches queries to keys.\", \n            \"Higher scores indicate stronger relevance.\", \n            \"Softmax normalizes these scores to weights.\"\n        ])\n        \n        # === Animation for Lecture Line 1 ===\n        # Display matrix multiplication WQ * X\n        eq = MathTex(r\"W_Q X\", color=WHITE)\n        self.place_at_grid(eq, \"B2\", scale_factor=0.8)\n        self.play(Write(eq))\n        self.lecture[0].set_color(\"#FFFFFF\")\n\n        # === Animation for Lecture Line 2 ===\n        # Highlight dot product result in #FFD700 color\n        dot_product = MathTex(r\"Q K^T\", color=\"#FFD700\")\n        self.place_at_grid(dot_product, \"D2\", scale_factor=0.8)\n        self.play(FadeIn(dot_product), self.lecture[0].animate.set_color(WHITE), self.lecture[1].animate.set_color(\"#FFD700\"))\n\n        # === Animation for Lecture Line 3 ===\n        # Show Softmax normalization curve in #00FFFF color\n        softmax = MathTex(r\"\\text{Softmax}\\left(\\frac{Q K^T}{\\sqrt{d_k}}\\right)\", color=\"#00FFFF\")\n        self.place_at_grid(softmax, \"F2\", scale_factor=0.7)\n        self.play(FadeIn(softmax), self.lecture[1].animate.set_color(WHITE), self.lecture[2].animate.set_color(\"#00FFFF\"))\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"All words attend to each other simultaneously.\",\n            \"The model links related words directly.\",\n            \"This resolves long-range dependencies efficiently.\"\n        ]\n        self.setup_layout(\"Self-Attention in Action\", lecture_lines)\n        \n        # Define visual elements\n        words = [\"The\", \"cat\", \"chased\", \"the\", \"mouse\", \"it\"]\n        colors = [RED, GREEN, BLUE, YELLOW, PURPLE, WHITE]\n        \n        # Create mobjects\n        word_mobjects = VGroup(*[Text(word, font_size=24, color=c) for word, c in zip(words, colors)])\n        word_mobjects.arrange(RIGHT, buff=0.3)\n        self.place_in_area(word_mobjects, 'B1', 'B6', scale_factor=0.9)\n        \n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(RED))\n        \n        # Load asset\n        brain = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg\")\n        \n        # Visualize parallel heads\n        head1 = VGroup(*[Circle(radius=0.15, color=\"#FF0000\", fill_opacity=0.5) for _ in range(6)])\n        head2 = VGroup(*[Circle(radius=0.15, color=\"#00FF00\", fill_opacity=0.5) for _ in range(6)])\n        head3 = VGroup(*[Circle(radius=0.15, color=\"#0000FF\", fill_opacity=0.5) for _ in range(6)])\n        \n        heads = VGroup(brain, head1, head2, head3).arrange(DOWN, buff=0.5)\n        self.place_in_area(heads, 'C1', 'E6', scale_factor=0.7)\n        \n        self.play(FadeIn(heads))\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(GREEN))\n        \n        # Link 'it' (word_mobjects[5]) to 'cat' (word_mobjects[1])\n        link = Line(word_mobjects[5].get_bottom(), word_mobjects[1].get_bottom(), color=WHITE)\n        self.play(Create(link))\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(BLUE))\n        \n        # Merge vectors using network asset\n        network = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/network.svg\")\n        final_vec = VGroup(network, Rectangle(width=2, height=0.5, color=\"#FFD700\", fill_opacity=0.7)).arrange(DOWN)\n        self.place_at_grid(final_vec, 'F3', scale_factor=0.8)\n        \n        self.play(\n            FadeOut(heads),\n            FadeOut(link),\n            FadeIn(final_vec)\n        )\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"Synthesis: From Mechanism to LLMs\", [\n            \"Stacking layers creates the Transformer.\", \n            \"Layers transform inputs into complex vectors.\", \n            \"These vectors capture deep semantic meaning.\"\n        ])\n        \n        # Elements\n        transformer_icon = SVGMobject(\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/transformer.svg\")\n        transformer_icon.set_color(\"#FFFFFF\")\n        \n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(\"#FFFFFF\"))\n        self.place_at_grid(transformer_icon, \"B3\", scale_factor=0.6)\n        self.play(FadeIn(transformer_icon))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(\"#00FFFF\"))\n        flow = VGroup(*[Dot(color=\"#00FFFF\") for _ in range(5)])\n        flow.arrange(DOWN, buff=0.5)\n        self.place_in_area(flow, \"B4\", \"D5\", scale_factor=0.8)\n        self.play(FadeIn(flow), run_time=1)\n        self.play(flow.animate.shift(LEFT * 0.5), run_time=1)\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(\"#FFD700\"))\n        label = Text(\"Context Vector\", font_size=20, color=\"#FFD700\")\n        self.place_at_grid(label, \"E4\", scale_factor=0.9)\n        self.play(Write(label))\n        self.play(transformer_icon.animate.scale(1.2), run_time=1)\n        self.wait(2)\n"
+  ],
+  "outline": {
+    "topic": "The Attention Mechanism: How Transformers Read",
+    "target_audience": "University students (CS/Engineering background)",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Core Problem: Contextual Ambiguity",
+        "content": "Introduce the limitation of previous models (RNNs) that process words linearly. Use the concept of 'referential ambiguity' where one word changes meaning based on its surroundings.",
+        "example": "The word 'bank' in 'The river bank' vs. 'The bank account'. An animation shows the word 'bank' glowing differently based on the proximity of 'river' or 'account'."
+      },
+      {
+        "id": "section_2",
+        "title": "The Intuition: Query, Key, and Value (QKV)",
+        "content": "Explain the retrieval analogy. Prerequisite: Basic dot-product concept. Q (what I'm looking for), K (what I have to offer), V (the actual information).",
+        "example": "A library search: You type a search term (Query), the book spine labels (Keys) determine relevance, and the book's content (Value) is the information you retrieve."
+      },
+      {
+        "id": "section_3",
+        "title": "The Math: Visualizing Attention Weights",
+        "content": "Explain the Scaled Dot-Product Attention: Softmax(QK^T / sqrt(d_k)) * V. Use a heatmap visual to show how Query and Key interactions create a weight matrix.",
+        "example": "A grid of icons representing words. As 'The' moves to 'cat', the cell at (The, cat) lights up brightly, demonstrating a high attention score using a heatmap color gradient."
+      },
+      {
+        "id": "section_4",
+        "title": "Self-Attention in Action",
+        "content": "Show how all words in a sentence attend to each other simultaneously. Explain how this allows the model to capture long-range dependencies.",
+        "example": "A sentence 'The cat chased the mouse because it was hungry.' An animation draws lines connecting 'it' to 'cat' (strong line) and 'mouse' (faint line), visually proving the model understands 'it' refers to the cat."
+      },
+      {
+        "id": "section_5",
+        "title": "Synthesis: From Mechanism to LLMs",
+        "content": "Summarize how stacking many attention layers leads to the 'Transformer' architecture, enabling deep semantic understanding in modern LLMs.",
+        "example": "A multi-layered stack of cubes (layers). Input 'The cat...' enters the bottom, and by the top, the model has a complex 'thought vector' capturing the entire context."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Core Problem: Contextual Ambiguity",
+      "lecture_lines": [
+        "Previous models processed words only linearly.",
+        "This misses dependencies across long distances.",
+        "Ambiguity arises when words shift meaning."
+      ],
+      "animations": [
+        "Create text 'Word Ambiguity' in #FFFFFF color alongside [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/dictionary.svg].",
+        "Display two similar words with changing highlights in #FFD700.",
+        "Add directional arrows #00FFFF between context and word, incorporating [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/pen.svg] to signify the analysis process."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "The Intuition: Query, Key, and Value (QKV)",
+      "lecture_lines": [
+        "We treat retrieval like a search system.",
+        "Queries ask for what we need.",
+        "Keys label what is available.",
+        "Values contain the actual information content."
+      ],
+      "animations": [
+        "Show Query vector #FF0000 targeting specific Key #00FF00 using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/magnifyingglass.svg].",
+        "Reveal Value vector #0000FF associated with that key.",
+        "Animate vector projection #FFFFFF for interaction visualization using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/document.svg]."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Math: Visualizing Attention Weights",
+      "lecture_lines": [
+        "Attention matches queries to keys.",
+        "Higher scores indicate stronger relevance.",
+        "Softmax normalizes these scores to weights."
+      ],
+      "animations": [
+        "Display matrix multiplication WQ * X in #FFFFFF.",
+        "Highlight dot product result in #FFD700 color.",
+        "Show Softmax normalization curve in #00FFFF color."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Self-Attention in Action",
+      "lecture_lines": [
+        "All words attend to each other simultaneously.",
+        "The model links related words directly.",
+        "This resolves long-range dependencies efficiently."
+      ],
+      "animations": [
+        "Parallel heads visualized as stacked layers in #FF0000,#00FF00,#0000FF using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg].",
+        "Synchronized movement to output space #FFFFFF.",
+        "Merge vectors into single final representation in #FFD700 using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/network.svg]."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Synthesis: From Mechanism to LLMs",
+      "lecture_lines": [
+        "Stacking layers creates the Transformer.",
+        "Layers transform inputs into complex vectors.",
+        "These vectors capture deep semantic meaning."
+      ],
+      "animations": [
+        "Display Transformer block icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/transformer.svg] in #FFFFFF color.",
+        "Show recursive sequence flow in #00FFFF color.",
+        "Zoom out to full model architecture in #FFD700."
+      ]
+    }
+  ],
+  "turns_run": 3,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added lecture lines for section_1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations are set, but animation planners should wait for script feedback if any. Closing task to reduce noise."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated and implemented the Manim scene code for Section 1, following the storyboard requirements and layout constraints."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added lecture lines for section_2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations are set, but animation planners should wait for script feedback if any. Closing task to reduce noise."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented section_2 scene with QKV visualization using grid layout as requested."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added lecture lines for section_3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations are set, but animation planners should wait for script feedback if any. Closing task to reduce noise."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated the section_3 animation code following the specified grid-based layout and lecture line color logic, and incorporated visual layout feedback."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added lecture lines for section_4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations are set, but animation planners should wait for script feedback if any. Closing task to reduce noise."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated the Manim code for Section 4 following all layout and styling guidelines."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added lecture lines for section_5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations are set, but animation planners should wait for script feedback if any. Closing task to reduce noise."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented section 5 animations using the TeachingScene template and required storyboard elements."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Create text 'Word Ambiguity' in #FFFFFF color alongside [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/dictionary.svg].\", 'Add directional arrows #00FFFF between context and word, incorporating [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/pen.svg] to signify the analysis process.']",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated [Asset: ...] references into the animation sequence as requested."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show Query vector #FF0000 targeting specific Key #00FF00 using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/magnifyingglass.svg].', 'Animate vector projection #FFFFFF for interaction visualization using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/document.svg].']",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated assets into the animation workflow."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Parallel heads visualized as stacked layers in #FF0000,#00FF00,#0000FF using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg].', 'Merge vectors into single final representation in #FFD700 using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/network.svg].']",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Integrated required SVGMobject assets (brain.svg and network.svg) into the scene structure."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Display Transformer block icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/transformer.svg] in #FFFFFF color.']",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated code to use SVGMobject with the asset path for the transformer icon."
+    },
+    {
+      "id": 20,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'Missed Context' label and its associated arc animation appear in the upper-right quadrant, which is visually cramped and competes with the Title space. Fix: Line 4: self.place_at_grid(missed_context, 'C3', scale_factor=0.9) (line=4, object=Missed Context)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Fixed label position for 'Missed Context' as suggested."
+    },
+    {
+      "id": 21,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The 'river bank vs bank account' footer is positioned too low near the edge of the screen, creating a cluttered look against the grid. Fix: Line 9: self.place_in_area(comparison_label, 'E2', 'E5', scale_factor=0.75) (line=9, object=river bank vs bank account)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Fixed 'river bank vs bank account' footer position as suggested."
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The grid visual itself (A1-F6) is shifted too far to the right, leaving excessive negative space on the left and risking alignment issues with the lecture text. Fix: Line 10: self.place_in_area(grid_group, 'B3', 'F6', scale_factor=0.9) (line=10, object=Grid Visual)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted grid visual layout and positioning to prevent excessive empty space."
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Horizontal layout creates excessive empty space and poor visual hierarchy. Fix: Line 72, 79, 86: self.place_in_area(group_qkv, 'B2', 'D5', scale_factor=1.0) (line=72, object=QKV_System_Group)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Refined layout using place_in_area and updated label offsets as suggested."
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Labels (Q, K, V) are floating too far above their associated points, leading to disconnect. Fix: Line 73, 80, 87: self.place_at_grid(label, 'B2', offset=DOWN*0.5, scale_factor=0.7) (line=73, object=q_label, k_label, v_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Updated label positioning with offset to prevent disconnect from points."
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Animations lack vertical integration with the lecture text, wasting the right-side grid columns (A5-F6). Fix: Line 72: self.place_in_area(diagram_group, 'B2', 'E5', scale_factor=0.9) (line=72, object=all_diagram_elements)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Improved vertical integration of diagrams."
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: Elements are clustered too tightly in the top-left of the grid, creating visual imbalance. Fix: Line 56: self.place_at_grid(eq, 'B2', scale_factor=0.8) (line=56, object=eq)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted scale and position of matrix multiplication formula per instructions."
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The dot product formula overlaps with its intended visual space and lacks clear separation from other equations. Fix: Line 63: self.place_at_grid(dot_product, 'D2', scale_factor=0.8) (line=63, object=dot_product)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted scale and position of dot product formula per instructions."
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The Softmax formula is positioned too low relative to the primary math, making it disconnected. Fix: Line 69: self.place_at_grid(softmax, 'F2', scale_factor=0.7) (line=69, object=softmax)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Adjusted scale and position of Softmax formula per instructions."
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The 'word_mobjects' currently occupy the top row (A1-A6), which is too close to the title and causes visual crowding. Fix: Line 61: self.place_in_area(word_mobjects, 'B1', 'B6', scale_factor=0.9) (line=61, object=word_mobjects)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned word_mobjects to B1-B6 for better visual spacing."
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The 'heads' animation overlaps with the proposed new position of word_mobjects; shifting down improves separation. Fix: Line 72: self.place_in_area(heads, 'C1', 'E6', scale_factor=0.7) (line=72, object=heads)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Shifted heads animation to C1-E6 for better separation."
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The 'final_vec' is currently placed at E3, which is now obstructed by the shifted heads group. Fix: Line 92: self.place_at_grid(final_vec, 'F3', scale_factor=1.0) (line=92, object=final_vec)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Repositioned final_vec to F3 to avoid overlap with heads group."
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The Transformer icon at C3 is positioned too close to the horizontal center, creating a crowded appearance with the flow animation at C5. Fix: Line 59: self.place_at_grid(transformer_icon, 'B3', scale_factor=0.6) (line=59, object=transformer_icon)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Fixed transformer icon position and scaling."
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The flow animation at C5 lacks visual hierarchy and consumes too much horizontal space for its function. Fix: Line 67: self.place_in_area(flow, 'B4', 'D5', scale_factor=0.8) (line=67, object=flow)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Fixed flow animation position and scaling."
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: The 'Context Vector' label at E3 is too close to the lower-middle grid area, potentially colliding with future elements. Fix: Line 75: self.place_at_grid(label, 'E4', scale_factor=0.9) (line=75, object=label)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Fixed context vector label position and scaling."
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "Improve layout: The 'Missed Context' label and its associated arc animation appear in the upper-right quadrant, which is visually cramped. Line 4: Use self.place_at_grid(missed_context, 'C3', scale_factor=0.9). 'river bank vs bank account' footer is too low. Line 9: Use self.place_in_area(comparison_label, 'E2', 'E5', scale_factor=0.75). The grid visual (A1-F6) is shifted too far right. Line 10: Use self.place_in_area(grid_group, 'B3', 'F6', scale_factor=0.9).",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Addressed all layout improvements requested by VideoCritic."
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "Improve layout: Horizontal layout creates excessive empty space. Line 72, 79, 86: Use self.place_in_area(group_qkv, 'B2', 'D5', scale_factor=1.0). QKV labels are floating too far above. Line 73, 80, 87: Use self.place_at_grid(label, 'B2', offset=DOWN*0.5, scale_factor=0.7). Animation lacks vertical integration. Line 72: Use self.place_in_area(diagram_group, 'B2', 'E5', scale_factor=0.9).",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Consolidated layout improvements and label/diagram integration fixes."
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "Improve layout: Elements clustered too tightly in top-left. Line 56: Use self.place_at_grid(eq, 'B2', scale_factor=0.8). Dot product formula overlaps visual space. Line 63: Use self.place_at_grid(dot_product, 'D2', scale_factor=0.8). Softmax formula positioned too low. Line 69: Use self.place_at_grid(softmax, 'F2', scale_factor=0.7).",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented all requested layout adjustments to avoid visual clustering and overlaps."
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "Improve layout: word_mobjects occupy top row (too close to title). Line 61: Use self.place_in_area(word_mobjects, 'B1', 'B6', scale_factor=0.9). Heads animation overlaps; shift down. Line 72: Use self.place_in_area(heads, 'C1', 'E6', scale_factor=0.7). final_vec obstructed by heads. Line 92: Use self.place_at_grid(final_vec, 'F3', scale_factor=1.0).",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Addressed all layout improvements requested."
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "Improve layout: Transformer icon at C3 too close to center. Line 59: Use self.place_at_grid(transformer_icon, 'B3', scale_factor=0.6). Flow animation lacks hierarchy. Line 67: Use self.place_in_area(flow, 'B4', 'D5', scale_factor=0.8). Context Vector label at E3 too close to lower-middle. Line 75: Use self.place_at_grid(label, 'E4', scale_factor=0.9).",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Addressed all layout improvements."
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_5/480p15/Section5Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 171844,
+        "video_mtime_ns": 1786346773000000000,
+        "code_sha1": "86eff772b651a8be9467f7b3472ad3330670a159"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'Missed Context' label and its associated arc animation appear in the upper-right quadrant, which is visually cramped and competes with the Title space.",
+              "solution": "Line 4: self.place_at_grid(missed_context, 'C3', scale_factor=0.9)",
+              "line_number": 4,
+              "object_affected": "Missed Context"
+            },
+            {
+              "problem": "The 'river bank vs bank account' footer is positioned too low near the edge of the screen, creating a cluttered look against the grid.",
+              "solution": "Line 9: self.place_in_area(comparison_label, 'E2', 'E5', scale_factor=0.75)",
+              "line_number": 9,
+              "object_affected": "river bank vs bank account"
+            },
+            {
+              "problem": "The grid visual itself (A1-F6) is shifted too far to the right, leaving excessive negative space on the left and risking alignment issues with the lecture text.",
+              "solution": "Line 10: self.place_in_area(grid_group, 'B3', 'F6', scale_factor=0.9)",
+              "line_number": 10,
+              "object_affected": "Grid Visual"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        20,
+        21,
+        22
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 207668,
+        "video_mtime_ns": 1786346746000000000,
+        "code_sha1": "89a30d5afdada05a4b7df29171367187462fa310"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Horizontal layout creates excessive empty space and poor visual hierarchy.",
+              "solution": "Line 72, 79, 86: self.place_in_area(group_qkv, 'B2', 'D5', scale_factor=1.0)",
+              "line_number": 72,
+              "object_affected": "QKV_System_Group"
+            },
+            {
+              "problem": "Labels (Q, K, V) are floating too far above their associated points, leading to disconnect.",
+              "solution": "Line 73, 80, 87: self.place_at_grid(label, 'B2', offset=DOWN*0.5, scale_factor=0.7)",
+              "line_number": 73,
+              "object_affected": "q_label, k_label, v_label"
+            },
+            {
+              "problem": "Animations lack vertical integration with the lecture text, wasting the right-side grid columns (A5-F6).",
+              "solution": "Line 72: self.place_in_area(diagram_group, 'B2', 'E5', scale_factor=0.9)",
+              "line_number": 72,
+              "object_affected": "all_diagram_elements"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        23,
+        24,
+        25
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 86626,
+        "video_mtime_ns": 1786346736000000000,
+        "code_sha1": "11632bc22c28804f784d657a8b994bc33aa9922a"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Elements are clustered too tightly in the top-left of the grid, creating visual imbalance.",
+              "solution": "Line 56: self.place_at_grid(eq, 'B2', scale_factor=0.8)",
+              "line_number": 56,
+              "object_affected": "eq"
+            },
+            {
+              "problem": "The dot product formula overlaps with its intended visual space and lacks clear separation from other equations.",
+              "solution": "Line 63: self.place_at_grid(dot_product, 'D2', scale_factor=0.8)",
+              "line_number": 63,
+              "object_affected": "dot_product"
+            },
+            {
+              "problem": "The Softmax formula is positioned too low relative to the primary math, making it disconnected.",
+              "solution": "Line 69: self.place_at_grid(softmax, 'F2', scale_factor=0.7)",
+              "line_number": 69,
+              "object_affected": "softmax"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        26,
+        27,
+        28
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 124345,
+        "video_mtime_ns": 1786346764000000000,
+        "code_sha1": "29e00ddfccac9ea36580c62eb0b0496a04f99f38"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The 'word_mobjects' currently occupy the top row (A1-A6), which is too close to the title and causes visual crowding.",
+              "solution": "Line 61: self.place_in_area(word_mobjects, 'B1', 'B6', scale_factor=0.9)",
+              "line_number": 61,
+              "object_affected": "word_mobjects"
+            },
+            {
+              "problem": "The 'heads' animation overlaps with the proposed new position of word_mobjects; shifting down improves separation.",
+              "solution": "Line 72: self.place_in_area(heads, 'C1', 'E6', scale_factor=0.7)",
+              "line_number": 72,
+              "object_affected": "heads"
+            },
+            {
+              "problem": "The 'final_vec' is currently placed at E3, which is now obstructed by the shifted heads group.",
+              "solution": "Line 92: self.place_at_grid(final_vec, 'F3', scale_factor=1.0)",
+              "line_number": 92,
+              "object_affected": "final_vec"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        29,
+        30,
+        31
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 180374,
+        "video_mtime_ns": 1786346741000000000,
+        "code_sha1": "5e80da31e3d24800ff0815b5b25bcc8f93ba2613"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The Transformer icon at C3 is positioned too close to the horizontal center, creating a crowded appearance with the flow animation at C5.",
+              "solution": "Line 59: self.place_at_grid(transformer_icon, 'B3', scale_factor=0.6)",
+              "line_number": 59,
+              "object_affected": "transformer_icon"
+            },
+            {
+              "problem": "The flow animation at C5 lacks visual hierarchy and consumes too much horizontal space for its function.",
+              "solution": "Line 67: self.place_in_area(flow, 'B4', 'D5', scale_factor=0.8)",
+              "line_number": 67,
+              "object_affected": "flow"
+            },
+            {
+              "problem": "The 'Context Vector' label at E3 is too close to the lower-middle grid area, potentially colliding with future elements.",
+              "solution": "Line 75: self.place_at_grid(label, 'E4', scale_factor=0.9)",
+              "line_number": 75,
+              "object_affected": "label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        32,
+        33,
+        34
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260810_151703/3-The_Attention_Mechanism_How_Transformers_Read",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 336631,
+      "completion_tokens": 28078,
+      "total_tokens": 364709,
+      "call_count": 35
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 279,
+        "completion_tokens": 630,
+        "total_tokens": 909,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 15876,
+        "completion_tokens": 593,
+        "total_tokens": 16469,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 20186,
+        "completion_tokens": 698,
+        "total_tokens": 20884,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 35290,
+        "completion_tokens": 1614,
+        "total_tokens": 36904,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 45704,
+        "completion_tokens": 3057,
+        "total_tokens": 48761,
+        "call_count": 2
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 41551,
+        "completion_tokens": 2574,
+        "total_tokens": 44125,
+        "call_count": 2
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 42766,
+        "completion_tokens": 3672,
+        "total_tokens": 46438,
+        "call_count": 2
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 44898,
+        "completion_tokens": 3252,
+        "total_tokens": 48150,
+        "call_count": 2
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 46606,
+        "completion_tokens": 3408,
+        "total_tokens": 50014,
+        "call_count": 2
+      },
+      "assets": {
+        "prompt_tokens": 3312,
+        "completion_tokens": 750,
+        "total_tokens": 4062,
+        "call_count": 10
+      },
+      "scope_refine:section_4": {
+        "prompt_tokens": 5096,
+        "completion_tokens": 1327,
+        "total_tokens": 6423,
+        "call_count": 1
+      },
+      "scope_refine:section_1": {
+        "prompt_tokens": 5749,
+        "completion_tokens": 1155,
+        "total_tokens": 6904,
+        "call_count": 1
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2506,
+        "completion_tokens": 341,
+        "total_tokens": 2847,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2789,
+        "completion_tokens": 340,
+        "total_tokens": 3129,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2195,
+        "completion_tokens": 286,
+        "total_tokens": 2481,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 2336,
+        "completion_tokens": 327,
+        "total_tokens": 2663,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2657,
+        "completion_tokens": 308,
+        "total_tokens": 2965,
+        "call_count": 1
+      },
+      "scope_refine:section_3": {
+        "prompt_tokens": 6939,
+        "completion_tokens": 979,
+        "total_tokens": 7918,
+        "call_count": 1
+      },
+      "scope_refine:section_2": {
+        "prompt_tokens": 9896,
+        "completion_tokens": 2767,
+        "total_tokens": 12663,
+        "call_count": 2
+      }
+    },
+    "by_model": {
+      "gemini-3.1-flash-lite": {
+        "prompt_tokens": 336631,
+        "completion_tokens": 28078,
+        "total_tokens": 364709,
+        "call_count": 35
+      }
+    }
+  }
+}

@@ -45,7 +45,6 @@ from mas_belief_reflection import (
     apply_assessments,
     cfg,
     save_evidence,
-    save_library,
     summarise_run,
 )
 
@@ -87,10 +86,10 @@ BAD: "In the Moser section, move the purple point away from C4."
 BETTER: "When a geometric construction assumes general position, avoid coincident
 intersections by selecting non-degenerate parameters and verify the resulting count."
 
-5. IMPACT/TIMING CALIBRATION
-BAD: Mark "use NumPy for matrices" as critical and reactive.
-BETTER: A recoverable incorrect displayed value is medium impact. Programmatic
-calculation is preventative unless evidence establishes a reactive correction workflow.
+5. IMPACT/STAGE CALIBRATION
+BAD: Mark "use NumPy for matrices" as critical and leave its workflow scope vague.
+BETTER: A recoverable incorrect displayed value is medium impact. List every workflow
+stage where the exact strategy applies, such as generation, fix, or refine.
 
 6. STRONG BEFORE/AFTER EVIDENCE -> SUPPORTED/CONFIRMED
 Attempt A rebuilds hundreds of objects per frame and times out. Attempt B changes only
@@ -125,7 +124,6 @@ class CandidateDecision(EvidenceClassification):
     scope: Optional[ReflectionScopePayload] = None
     impact: Literal["low", "medium", "high", "critical"]
     belief_type: Literal["confirmed", "precaution", "hypothesis", "quality"]
-    timing: Literal["preventative", "reactive", "both"]
 
     @model_validator(mode="after")
     def validate_target(self) -> "CandidateDecision":
@@ -156,7 +154,6 @@ class ConsolidatedBeliefPayload(BaseModel):
     scope: ReflectionScopePayload
     impact: Literal["low", "medium", "high", "critical"]
     belief_type: Literal["confirmed", "precaution", "hypothesis", "quality"]
-    timing: Literal["preventative", "reactive", "both"]
     # Candidate discovery already uses MATCH for duplicate evidence. A final
     # belief should therefore need only a small number of genuinely overlapping
     # candidate definitions. This bound prevents broad thematic bundles.
@@ -264,7 +261,6 @@ def _compact_candidate(candidate: Dict[str, Any]) -> Dict[str, Any]:
         "scope": candidate["scope"],
         "impact": candidate["impact"],
         "belief_type": candidate["belief_type"],
-        "timing": candidate["timing"],
         "origin_count": len(candidate.get("origins", [])),
         "match_count": len(candidate.get("matches", [])),
         "revision_proposal_count": len(candidate.get("revision_proposals", [])),
@@ -365,7 +361,6 @@ def _apply_discovery_decisions(
                 "scope": decision.scope.model_dump() if decision.scope else {},
                 "impact": decision.impact,
                 "belief_type": decision.belief_type,
-                "timing": decision.timing,
                 "origins": [evidence],
                 "matches": [],
                 "revision_proposals": [],
@@ -406,7 +401,7 @@ Produce stable, reusable, ATOMIC beliefs:
   remain a frozen probationary belief for retrospective evaluation;
 - replace fixed topic-specific coordinates or thresholds with a conditional principle
   only when the combined evidence demonstrates that principle;
-- preserve distinct causes, roles, timing, or mitigations as separate beliefs;
+- preserve distinct causes, roles, workflow stages, or mitigations as separate beliefs;
 - exclude candidates that are demonstrably incorrect, redundant without contributing
   distinct evidence, lack any concrete origin evidence, merely restate an existing
   constraint, make an unsupported causal/API claim, or are not reusable, and explain why;
@@ -424,8 +419,9 @@ ATOMICITY REQUIREMENTS:
   unrelated numerical scale factors, or multiple pedagogical techniques.
 - A shared word such as "layout", "quality", "rendering", "MathTex", "SVG", or
   "animation" is not by itself a shared mechanism.
-- Keep preventative guidance separate from reactive recovery when the actions or
-  triggering conditions differ.
+- Keep generation guidance separate from fix-stage recovery when the actions or
+  triggering conditions differ; use multiple scope.stages only when the exact same
+  instruction genuinely applies in each listed stage.
 - Keep runtime correctness, render performance, visual composition, mathematical
   accuracy, and pedagogy as separate mechanisms.
 - Prefer retaining two narrowly testable beliefs over producing one broad instruction.
@@ -631,7 +627,6 @@ def _evaluation_prompt(
             "belief_id": item["belief_id"],
             "instruction": item["instruction"],
             "scope": item["scope"],
-            "timing": item["timing"],
         }
         for item in frozen_beliefs
     ]
@@ -851,12 +846,21 @@ def _records_from_frozen(frozen: List[Dict[str, Any]]) -> Dict[str, BeliefRecord
             status="probation",
             impact=item["impact"],
             belief_type=item["belief_type"],
-            timing=item["timing"],
         )
         record.update_confidence()
         record.status = "probation"
         records[record.belief_id] = record
     return records
+
+
+def _record_payload(record: BeliefRecord) -> Dict[str, Any]:
+    """Serialize a three-stage belief without legacy timing metadata."""
+    payload = asdict(record)
+    payload.pop("timing", None)
+    for evidence in payload.get("evidence", []):
+        if isinstance(evidence, dict):
+            evidence.pop("timing", None)
+    return payload
 
 
 def _assessment_from_observation(
@@ -896,7 +900,6 @@ def _assessment_from_observation(
         evidence_confidence=derived_confidence,
         impact=belief.impact,
         belief_type=belief.belief_type,
-        timing=belief.timing,
         agent=item.agent,
         section_id=item.section_id,
         reason=item.reason,
@@ -1444,23 +1447,31 @@ def main() -> int:
 
     for record in records.values():
         _assign_operational_status(record)
-    save_library(
+        for evidence in record.evidence:
+            if isinstance(evidence, dict):
+                evidence.pop("timing", None)
+    _write_json(
         paths["library"],
-        records,
-        metadata={
+        {
+            "metadata": {
             "method": "three_stage",
             "definitions_frozen": True,
             "source_pipeline": str(pipeline_dir),
             "candidate_count": len(candidates),
             "belief_count": len(records),
             "topic_count": len(runs),
+            },
+            "beliefs": [
+                _record_payload(record)
+                for record in sorted(records.values(), key=lambda item: item.belief_id)
+            ],
         },
     )
     save_evidence(paths["evidence"], records)
     _write_json(paths["bbn"], BBNParameters().to_payload())
     if args.belief_embedding_model:
         BeliefEmbeddingIndex.build(
-            [asdict(record) for record in records.values()],
+            [_record_payload(record) for record in records.values()],
             model_name_or_path=args.belief_embedding_model,
             embeddings_path=paths["embeddings"],
             metadata_path=paths["embedding_metadata"],

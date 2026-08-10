@@ -37,6 +37,7 @@ class ApplicabilityEvidence:
     stage_match: float
     problem_match: float
     context_match: float
+    exact_error_match: float = 0.0
 
 
 @dataclass
@@ -49,10 +50,11 @@ class BBNParameters:
 
     intercept: float = -4.0
     role_match: float = 1.5
-    stage_match: float = 1.2
-    problem_match: float = 2.0
-    context_match: float = 1.5
-    version: int = 1
+    stage_match: float = 1.5
+    problem_match: float = 3.0
+    context_match: float = 2.0
+    exact_error_match: float = 4.0
+    version: int = 2
 
     @classmethod
     def from_path(cls, path: Optional[Path]) -> "BBNParameters":
@@ -66,6 +68,7 @@ class BBNParameters:
             "stage_match",
             "problem_match",
             "context_match",
+            "exact_error_match",
             "version",
         }
         return cls(**{key: value for key, value in model.items() if key in allowed})
@@ -77,6 +80,8 @@ class BBNParameters:
             + self.stage_match * clamp_probability(evidence.stage_match)
             + self.problem_match * clamp_probability(evidence.problem_match)
             + self.context_match * clamp_probability(evidence.context_match)
+            + self.exact_error_match
+            * clamp_probability(evidence.exact_error_match, default=0.0)
         )
         return 1.0 / (1.0 + math.exp(-log_odds))
 
@@ -105,6 +110,7 @@ def fit_bbn_parameters(
         "stage_match",
         "problem_match",
         "context_match",
+        "exact_error_match",
     ]
     weights = [getattr(prior, name) for name in names]
     prior_weights = list(weights)
@@ -121,6 +127,7 @@ def fit_bbn_parameters(
                 clamp_probability(case.get("stage_match")),
                 clamp_probability(case.get("problem_match")),
                 clamp_probability(case.get("context_match")),
+                clamp_probability(case.get("exact_error_match"), default=0.0),
             ]
             predicted = 1.0 / (
                 1.0 + math.exp(-sum(w * x for w, x in zip(weights, features)))
@@ -141,6 +148,7 @@ def fit_bbn_parameters(
         stage_match=weights[2],
         problem_match=weights[3],
         context_match=weights[4],
+        exact_error_match=weights[5],
         version=prior.version + 1,
     )
 
@@ -474,10 +482,190 @@ def normalize_stage(value: Any) -> str:
     aliases = {
         "writing": "planning",
         "revision": "planning",
-        "debugging": "coding",
+        "debugging": "fix",
+        "coding": "generation",
         "evaluation": "coordination",
     }
     return aliases.get(stage, stage)
+
+
+def select_pipeline_stage(
+    agent_role: Any,
+    invocation_phase: str,
+    *,
+    has_runtime_failure: bool = False,
+) -> str:
+    """Choose the workflow stage from the work being performed."""
+    if normalize_role(agent_role) == "Coder" and has_runtime_failure:
+        return "fix"
+    return "generation" if invocation_phase == "preventative" else "refine"
+
+
+def embedding_query_for_situation(situation: BeliefSituation) -> str:
+    """Return a compact semantic query suited to the current workflow stage.
+
+    Runtime-repair situations often include the topic, audience, storyboard, and
+    active-issue state before the actual exception.  That lesson context is
+    useful to agents, but it dilutes retrieval of a technical repair belief.
+    Exact identifier matching continues to inspect the complete ``problem_text``;
+    only the embedding query is narrowed here.
+    """
+    problem_text = str(situation.problem_text or "").strip()
+    if normalize_stage(situation.pipeline_stage) != "fix":
+        return problem_text
+
+    marker = "Current exception or failure:"
+    marker_index = problem_text.lower().find(marker.lower())
+    if marker_index >= 0:
+        diagnostic = problem_text[marker_index + len(marker) :].strip()
+    else:
+        diagnostic = problem_text
+
+    # Error payloads can contain very long tracebacks or renderer output.  The
+    # normalized exception and implicated identifiers occur at the start of the
+    # payload produced by the MAS error extractor, so retain that focused prefix.
+    diagnostic = diagnostic[:2000].strip()
+    tags = ", ".join(
+        str(tag).strip() for tag in situation.context_tags if str(tag).strip()
+    )
+    parts = [diagnostic]
+    if tags:
+        parts.append("Error categories: " + tags)
+    return "\n".join(part for part in parts if part).strip()
+
+
+def exact_error_match(problem_text: str, belief_text: str) -> float:
+    """Match concrete runtime identifiers before broad semantic similarity.
+
+    A matching missing name, key, attribute, class, or API token is decisive.
+    Matching only an exception family is weak evidence because many unrelated
+    repair beliefs mention the same broad exception type.
+    """
+    problem = str(problem_text or "")
+    belief = str(belief_text or "")
+    problem_lower = problem.lower()
+    belief_lower = belief.lower()
+
+    # Generalize unavailable Manim colour constants beyond the examples stored
+    # in a belief (for example CYAN -> MAGENTA or STEELBLUE).  Requiring a
+    # recognizable colour-family token avoids treating every uppercase missing
+    # name as a colour error.
+    missing_name_match = re.search(
+        r"name\s+['\"]([^'\"]+)['\"]\s+is\s+not\s+defined",
+        problem,
+        flags=re.IGNORECASE,
+    )
+    if missing_name_match:
+        missing_name = missing_name_match.group(1).strip().upper()
+        colour_tokens = (
+            "BLACK",
+            "BLUE",
+            "BROWN",
+            "CYAN",
+            "GOLD",
+            "GRAY",
+            "GREY",
+            "GREEN",
+            "MAGENTA",
+            "MAROON",
+            "ORANGE",
+            "PINK",
+            "PURPLE",
+            "RED",
+            "TEAL",
+            "WHITE",
+            "YELLOW",
+        )
+        colour_belief = any(
+            phrase in belief_lower
+            for phrase in ("color specification", "colour specification", "hexadecimal")
+        )
+        if colour_belief and any(token in missing_name for token in colour_tokens):
+            return 1.0
+
+    # Custom helper signature errors identify the callable even when the
+    # unexpected keyword itself has never appeared in the belief library.
+    unexpected_keyword = re.search(
+        r"([A-Za-z_][A-Za-z0-9_.]*)\(\)\s+got an unexpected keyword argument\s+['\"]([^'\"]+)['\"]",
+        problem,
+        flags=re.IGNORECASE,
+    )
+    if unexpected_keyword:
+        callable_name = unexpected_keyword.group(1).split(".")[-1].lower()
+        if (
+            callable_name
+            and re.search(
+                r"(?<![A-Za-z0-9_])"
+                + re.escape(callable_name)
+                + r"(?![A-Za-z0-9_])",
+                belief_lower,
+            )
+            and "typeerror" in belief_lower
+        ):
+            return 1.0
+
+    if (
+        "manimcolor" in problem_lower
+        and "get_color" in problem_lower
+        and any(
+            phrase in belief_lower
+            for phrase in ("color specification", "colour specification", "hexadecimal")
+        )
+    ):
+        return 1.0
+
+    identifier_patterns = (
+        r"name\s+['\"]([^'\"]+)['\"]\s+is\s+not\s+defined",
+        r"keyerror\s*:\s*['\"]([^'\"]+)['\"]",
+        r"has\s+no\s+attribute\s+['\"]([^'\"]+)['\"]",
+    )
+    identifiers = {
+        match.group(1).strip().lower()
+        for pattern in identifier_patterns
+        for match in re.finditer(pattern, problem, flags=re.IGNORECASE)
+        if match.group(1).strip()
+    }
+    # Backtick-quoted API/class names are also intentionally exact.
+    identifiers.update(
+        match.group(1).strip().lower()
+        for match in re.finditer(r"`([^`]+)`", problem)
+        if match.group(1).strip()
+    )
+    if identifiers:
+        identifier_match = any(
+            re.search(
+                r"(?<![A-Za-z0-9_])" + re.escape(identifier) + r"(?![A-Za-z0-9_])",
+                belief_lower,
+            )
+            for identifier in identifiers
+        )
+        if identifier_match:
+            exception_types = {
+                item.lower()
+                for item in re.findall(
+                    r"\b[A-Z][A-Za-z0-9_]*(?:Error|Exception)\b", problem
+                )
+            }
+            # Full priority requires both the concrete identifier and its
+            # exception family. Identifier-only overlap (for example the word
+            # "Plane" in a layout belief) is useful but not decisive.
+            if exception_types and any(item in belief_lower for item in exception_types):
+                return 1.0
+            return 0.5
+        # Once the runtime supplies a concrete missing name/key/attribute, a
+        # belief about a different NameError is not an exact match merely
+        # because both texts contain the same exception family.
+        return 0.0
+
+    exception_types = {
+        item.lower()
+        for item in re.findall(
+            r"\b[A-Z][A-Za-z0-9_]*(?:Error|Exception)\b", problem
+        )
+    }
+    if exception_types and any(item in belief_lower for item in exception_types):
+        return 0.25
+    return 0.0
 
 
 class BeliefSelector:
@@ -505,18 +693,14 @@ class BeliefSelector:
         *,
         top_k: int = 3,
         threshold: float = 0.0,
+        minimum_effectiveness: float = 0.50,
         candidate_limit: int = 20,
     ) -> List[Dict[str, Any]]:
         role = normalize_role(situation.agent_role)
         stage = normalize_stage(situation.pipeline_stage)
-        timing = situation.timing.strip().lower()
         evaluated: List[Dict[str, Any]] = []
-        context_query = "\n".join(
-            [
-                situation.problem_text,
-                "Observed context tags: " + ", ".join(situation.context_tags),
-            ]
-        ).strip()
+        embedding_query = embedding_query_for_situation(situation)
+        context_query = embedding_query
         context_texts = {}
         for belief in self.beliefs:
             belief_id = str(
@@ -542,7 +726,7 @@ class BeliefSelector:
             )
         else:
             stored_similarities = (
-                self.embedding_index.similarities(situation.problem_text)
+                self.embedding_index.similarities(embedding_query)
                 if self.embedding_index is not None
                 else {}
             )
@@ -567,15 +751,21 @@ class BeliefSelector:
             # without an explicit role remain eligible for legacy libraries.
             if roles and role not in roles:
                 continue
-            belief_timing = str(belief.get("timing") or "both").lower()
-            if timing != "both" and belief_timing not in {timing, "both"}:
-                continue
-
             problem_description = str(
                 scope.get("problem_description")
                 or belief.get("problem_description")
                 or belief.get("instruction")
                 or ""
+            )
+            exact_error = exact_error_match(
+                situation.problem_text,
+                "\n".join(
+                    [
+                        problem_description,
+                        str(belief.get("instruction") or ""),
+                        " ".join(str(item) for item in scope.get("context_conditions", [])),
+                    ]
+                ),
             )
             belief_id = str(
                 belief.get("belief_id", belief.get("lesson_id")) or ""
@@ -584,7 +774,7 @@ class BeliefSelector:
                 raw_similarity = stored_similarities[belief_id]
             else:
                 raw_similarity = self.similarity_fn(
-                    situation.problem_text, problem_description
+                    embedding_query, problem_description
                 )
             similarity = clamp_probability(raw_similarity, default=0.0)
             exact_context = context_match(
@@ -613,10 +803,18 @@ class BeliefSelector:
                     "context_match": context_score,
                     "context_match_exact": exact_context,
                     "context_match_semantic": semantic_context,
+                    "exact_error_match": exact_error,
                 }
             )
 
-        evaluated.sort(key=lambda item: item["problem_similarity"], reverse=True)
+        evaluated.sort(
+            key=lambda item: (
+                -(1 if item["exact_error_match"] >= 1.0 else 0),
+                -item["stage_match"],
+                -item["exact_error_match"],
+                -item["problem_similarity"],
+            )
+        )
         evaluated = evaluated[: max(0, candidate_limit)]
 
         results: List[Dict[str, Any]] = []
@@ -628,20 +826,31 @@ class BeliefSelector:
                     stage_match=item["stage_match"],
                     problem_match=item["problem_similarity"],
                     context_match=item["context_match"],
+                    exact_error_match=item["exact_error_match"],
                 )
             )
             effectiveness = posterior_mean(
                 float(belief.get("alpha", 2.0)),
                 float(belief.get("beta", 2.0)),
             )
-            usefulness = applicability * effectiveness
+            # Historical effectiveness governs library eligibility only.  Once
+            # a belief clears the inclusive neutral-prior floor, selection is
+            # based entirely on how applicable it is to the current situation.
+            # This prevents a common, well-supported layout belief from
+            # outranking a less-observed belief that directly matches an error.
+            effectiveness_eligible = effectiveness >= minimum_effectiveness
+            selection_score = applicability
             result = {
                 "belief_id": belief.get("belief_id", belief.get("lesson_id")),
                 "instruction": str(belief.get("instruction") or ""),
                 "status": item["status"],
                 "p_applicable": round(applicability, 6),
                 "p_effective": round(effectiveness, 6),
-                "usefulness": round(usefulness, 6),
+                # Keep the legacy field for downstream compatibility.  It now
+                # records the applicability-only selection score.
+                "usefulness": round(selection_score, 6),
+                "selection_score": round(selection_score, 6),
+                "effectiveness_eligible": effectiveness_eligible,
                 "problem_similarity": round(item["problem_similarity"], 6),
                 "role_match": round(item["role_match"], 6),
                 "stage_match": round(item["stage_match"], 6),
@@ -650,12 +859,71 @@ class BeliefSelector:
                 "context_match_semantic": round(
                     item["context_match_semantic"], 6
                 ),
-                "selected": usefulness >= threshold,
+                "exact_error_match": round(item["exact_error_match"], 6),
+                "selected": effectiveness_eligible and selection_score >= threshold,
             }
             results.append(result)
 
         results.sort(key=lambda item: (-item["usefulness"], str(item["belief_id"])))
-        selected = [item for item in results if item["selected"]][: max(0, top_k)]
+        eligible = [item for item in results if item["selected"]]
+        exact = [item for item in eligible if item["exact_error_match"] >= 1.0]
+        stage_matched = [
+            item
+            for item in eligible
+            if item["exact_error_match"] < 1.0 and item["stage_match"] >= 1.0
+        ]
+        cross_stage = [
+            item
+            for item in eligible
+            if item["exact_error_match"] < 1.0 and item["stage_match"] < 1.0
+        ]
+        # Exact signature matches come first, followed by current-stage
+        # beliefs. Cross-stage beliefs only fill otherwise unused slots.
+        # Historical ``timing`` metadata is deliberately ignored.
+        if stage == "fix":
+            # Runtime embeddings are useful for candidate discovery but were
+            # not calibrated well enough to distinguish technical repairs in
+            # the completed 30-topic replay: irrelevant candidates routinely
+            # had high combined applicability.  Inject one decisive structured
+            # match.  Otherwise permit one exceptionally close semantic match
+            # only when its raw problem similarity is >= 0.90 and clearly
+            # separated from the next current-stage candidate.  In the replay,
+            # the highest unmatched/irrelevant raw similarity was 0.823.
+            if exact:
+                selected = exact[:1]
+            else:
+                semantic_fix = sorted(
+                    stage_matched,
+                    key=lambda item: (
+                        -item["problem_similarity"],
+                        str(item["belief_id"]),
+                    ),
+                )
+                best = semantic_fix[0] if semantic_fix else None
+                runner_up = semantic_fix[1] if len(semantic_fix) > 1 else None
+                margin = (
+                    best["problem_similarity"] - runner_up["problem_similarity"]
+                    if best is not None and runner_up is not None
+                    else 1.0
+                )
+                exact_context_fix = [
+                    item
+                    for item in semantic_fix
+                    if item["context_match_exact"] >= 1.0
+                    and item["problem_similarity"] >= 0.70
+                ]
+                if exact_context_fix:
+                    selected = exact_context_fix[:1]
+                else:
+                    selected = (
+                        [best]
+                        if best is not None
+                        and best["problem_similarity"] >= 0.90
+                        and margin >= 0.05
+                        else []
+                    )
+        else:
+            selected = (exact + stage_matched + cross_stage)[: max(0, top_k)]
         selected_ids = {item["belief_id"] for item in selected}
         for item in results:
             item["selected"] = item["belief_id"] in selected_ids
@@ -664,6 +932,7 @@ class BeliefSelector:
             results,
             top_k=top_k,
             threshold=threshold,
+            minimum_effectiveness=minimum_effectiveness,
             candidate_limit=candidate_limit,
         )
         return selected
@@ -675,6 +944,7 @@ class BeliefSelector:
         *,
         top_k: int,
         threshold: float,
+        minimum_effectiveness: float,
         candidate_limit: int,
     ) -> None:
         if self.log_path is None:
@@ -687,6 +957,12 @@ class BeliefSelector:
             "decision_policy": {
                 "top_k": top_k,
                 "threshold": threshold,
+                "minimum_effectiveness": minimum_effectiveness,
+                "ranking": "applicability_only",
+                "fix_selection": (
+                    "top_1_structured_else_exact_context_else_"
+                    "semantic_0.90_with_0.05_margin"
+                ),
                 "candidate_limit": candidate_limit,
             },
             "candidates": list(candidates),

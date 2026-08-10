@@ -15,13 +15,113 @@ from belief_bbn import (  # noqa: E402
     BeliefSelector,
     BeliefSituation,
     TransitionEvidence,
+    embedding_query_for_situation,
     fit_bbn_parameters,
+    exact_error_match,
     normalize_stage,
+    select_pipeline_stage,
     update_beta_posterior,
 )
 
 
 class BeliefBBNTests(unittest.TestCase):
+    def test_fix_embedding_query_excludes_lesson_context(self):
+        query = embedding_query_for_situation(
+            BeliefSituation(
+                topic="Backpropagation",
+                agent_role="Coder",
+                pipeline_stage="fix",
+                problem_text=(
+                    "Topic: Backpropagation\n\n"
+                    "Target audience: university students\n\n"
+                    "Current exception or failure:\n"
+                    "NameError: name 'STEELBLUE' is not defined"
+                ),
+                context_tags=("missing_import", "render_error"),
+            )
+        )
+        self.assertNotIn("Backpropagation", query)
+        self.assertNotIn("university students", query)
+        self.assertIn("STEELBLUE", query)
+        self.assertIn("missing_import", query)
+
+    def test_non_fix_embedding_query_retains_problem_text(self):
+        problem = "Topic: vectors\nIssue: labels overlap arrow tips."
+        query = embedding_query_for_situation(
+            BeliefSituation(
+                topic="Vectors",
+                agent_role="Coder",
+                pipeline_stage="refine",
+                problem_text=problem,
+            )
+        )
+        self.assertEqual(query, problem)
+
+    def test_selection_ranks_by_applicability_not_effectiveness(self):
+        beliefs = [
+            {
+                "belief_id": "DIRECT",
+                "instruction": "Direct repair.",
+                "scope": {
+                    "roles": ["Coder"],
+                    "stages": ["fix"],
+                    "problem_description": "direct error repair",
+                },
+                "alpha": 1,
+                "beta": 1,
+                "status": "probation",
+            },
+            {
+                "belief_id": "GENERIC",
+                "instruction": "Historically strong generic advice.",
+                "scope": {
+                    "roles": ["Coder"],
+                    "stages": ["fix"],
+                    "problem_description": "generic advice",
+                },
+                "alpha": 9,
+                "beta": 1,
+                "status": "active",
+            },
+        ]
+        selector = BeliefSelector(
+            beliefs,
+            similarity_fn=lambda _query, description: (
+                0.95 if description == "direct error repair" else 0.50
+            ),
+        )
+        selected = selector.select(
+            BeliefSituation("T", "Coder", "fix", "runtime failure"),
+            top_k=1,
+        )
+        self.assertEqual([item["belief_id"] for item in selected], ["DIRECT"])
+        self.assertEqual(selected[0]["usefulness"], selected[0]["p_applicable"])
+
+    def test_effectiveness_floor_is_inclusive_and_filters_below_neutral(self):
+        beliefs = [
+            {
+                "belief_id": "NEUTRAL",
+                "instruction": "Neutral-prior repair.",
+                "scope": {"roles": ["Coder"], "stages": ["fix"]},
+                "alpha": 1,
+                "beta": 1,
+                "status": "probation",
+            },
+            {
+                "belief_id": "BELOW",
+                "instruction": "Contested repair.",
+                "scope": {"roles": ["Coder"], "stages": ["fix"]},
+                "alpha": 49,
+                "beta": 51,
+                "status": "probation",
+            },
+        ]
+        selected = BeliefSelector(beliefs, similarity_fn=lambda _a, _b: 0.9).select(
+            BeliefSituation("T", "Coder", "fix", "runtime failure"),
+            top_k=2,
+        )
+        self.assertEqual([item["belief_id"] for item in selected], ["NEUTRAL"])
+
     def test_matching_evidence_increases_applicability(self):
         model = BBNParameters()
         poor = model.probability(ApplicabilityEvidence(0, 0, 0, 0))
@@ -149,9 +249,59 @@ class BeliefBBNTests(unittest.TestCase):
         self.assertEqual([item["belief_id"] for item in selected], ["B002"])
 
     def test_runtime_stage_aliases_match_frozen_stage_vocabulary(self):
-        self.assertEqual(normalize_stage("debugging"), "coding")
+        self.assertEqual(normalize_stage("debugging"), "fix")
+        self.assertEqual(normalize_stage("coding"), "generation")
         self.assertEqual(normalize_stage("writing"), "planning")
         self.assertEqual(normalize_stage("revision"), "planning")
+
+    def test_coder_regeneration_after_runtime_failure_is_fix(self):
+        self.assertEqual(
+            select_pipeline_stage(
+                "Coder",
+                "reactive",
+                has_runtime_failure=True,
+            ),
+            "fix",
+        )
+        self.assertEqual(
+            select_pipeline_stage(
+                "Coder",
+                "reactive",
+                has_runtime_failure=False,
+            ),
+            "refine",
+        )
+        self.assertEqual(
+            select_pipeline_stage(
+                "AnimationPlanner",
+                "reactive",
+                has_runtime_failure=True,
+            ),
+            "refine",
+        )
+
+    def test_exact_error_identifier_outweighs_shared_exception_family(self):
+        problem = "NameError: name 'CYAN' is not defined"
+        self.assertEqual(
+            exact_error_match(problem, "Replace the unavailable CYAN constant."),
+            0.5,
+        )
+        self.assertEqual(
+            exact_error_match(
+                problem,
+                "NameError from unavailable CYAN constants.",
+            ),
+            1.0,
+        )
+        self.assertEqual(
+            exact_error_match(problem, "NameError caused by HGroup."),
+            0.0,
+        )
+        self.assertEqual(exact_error_match(problem, "Prevent text overlap."), 0.0)
+        self.assertEqual(
+            exact_error_match("NameError: name 'Ring' is not defined", "during render"),
+            0.0,
+        )
 
     def test_parameter_fit_learns_from_labelled_cases(self):
         cases = [
@@ -268,7 +418,7 @@ class BeliefBBNTests(unittest.TestCase):
         self.assertEqual([item["belief_id"] for item in selected], ["B001"])
         self.assertEqual(selected[0]["context_match_semantic"], 0.8)
 
-    def test_probationary_belief_can_collect_selection_evidence(self):
+    def test_timing_does_not_filter_stage_applicable_belief(self):
         belief = {
             "belief_id": "B058",
             "instruction": "Qualify rate functions.",
@@ -316,6 +466,41 @@ class BeliefBBNTests(unittest.TestCase):
             [item["belief_id"] for item in preventative],
             ["B058"],
         )
+
+    def test_selector_prefers_current_stage_before_cross_stage_fallback(self):
+        beliefs = [
+            {
+                "belief_id": "CURRENT",
+                "instruction": "Current-stage repair.",
+                "scope": {"roles": ["Coder"], "stages": ["fix"]},
+                "alpha": 2,
+                "beta": 2,
+                "status": "active",
+            },
+            {
+                "belief_id": "OTHER",
+                "instruction": "Historically strong generation advice.",
+                "scope": {"roles": ["Coder"], "stages": ["generation"]},
+                "alpha": 99,
+                "beta": 1,
+                "status": "active",
+            },
+        ]
+        selector = BeliefSelector(
+            beliefs,
+            similarity_fn=lambda first, second: 1.0,
+        )
+        selected = selector.select(
+            BeliefSituation(
+                topic="T",
+                agent_role="Coder",
+                pipeline_stage="fix",
+                problem_text="runtime repair",
+            ),
+            top_k=1,
+            threshold=0.0,
+        )
+        self.assertEqual([item["belief_id"] for item in selected], ["CURRENT"])
 
 
 if __name__ == "__main__":

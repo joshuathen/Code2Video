@@ -28,6 +28,7 @@ from belief_bbn import (
     BeliefEmbeddingIndex,
     BeliefSelector,
     BeliefSituation,
+    select_pipeline_stage,
     format_selected_beliefs,
 )
 from scope_refine import ScopeRefineFixer, GridPositionExtractor
@@ -368,7 +369,6 @@ def _load_ranked_beliefs_for_prompt(belief_library_path: Optional[Path]) -> Dict
             "impact": str(belief.get("impact") or "medium").strip().lower(),
             "priority": float(belief.get("priority", belief.get("confidence", 0.0)) or 0.0),
             "belief_type": belief_type,
-            "timing": str(belief.get("timing") or "both").strip().lower(),
             "weighted_support": float(belief.get("weighted_support", 0.0) or 0.0),
             "support_count": int(belief.get("support_count", 0) or 0),
         }
@@ -395,13 +395,14 @@ def _format_beliefs_for_prompt(
     # no longer exist; every belief is selected from an explicit role scope.
     del top_general_k
     role_limit = max(0, top_specialized_k)
-    timing_filter = allowed_timings or {"preventative", "reactive", "both"}
+    # Retained for compatibility with existing callers. Workflow
+    # applicability is now represented solely by scope.stages.
+    del allowed_timings
     belief_type_filter = allowed_belief_types or {"confirmed", "precaution", "quality"}
     role_pool = [
         belief
         for belief in (((belief_payload or {}).get("by_role") or {}).get(agent_role or "", []))
-        if belief.get("timing", "both") in timing_filter
-        and belief.get("belief_type", "confirmed") in belief_type_filter
+        if belief.get("belief_type", "confirmed") in belief_type_filter
     ]
 
     watch_candidates = [
@@ -437,7 +438,6 @@ def _format_beliefs_for_prompt(
             lines.append(
                 f"{idx}. [{belief.get('belief_id') or 'WATCH'} | {agent_role}-scoped | "
                 f"{belief.get('belief_type')} | impact={belief.get('impact')} | "
-                f"timing={belief.get('timing', 'both')} | "
                 f"conf={belief.get('confidence', 0.0):.3f}] {belief['instruction']}"
             )
     if role_beliefs:
@@ -445,7 +445,7 @@ def _format_beliefs_for_prompt(
         for idx, belief in enumerate(role_beliefs, start=1):
             lines.append(
                 f"{idx}. [{belief.get('belief_id') or agent_role} | "
-                f"timing={belief.get('timing', 'both')} | conf={belief.get('confidence', 0.0):.3f}] "
+                f"conf={belief.get('confidence', 0.0):.3f}] "
                 f"{belief['instruction']}"
             )
     return "\n".join(lines)
@@ -1734,7 +1734,7 @@ def _build_runtime_reactive_belief_prompt_fn(
         situation = BeliefSituation(
             topic=topic,
             agent_role=CODER,
-            pipeline_stage="coding",
+            pipeline_stage="fix",
             problem_text=problem_text,
             context_tags=context_tags,
             section_ids=[current_section_id],
@@ -3790,6 +3790,7 @@ class MASVideoRunner:
             )
 
         relevant_issues = []
+        has_runtime_failure = False
         normalized_role = _normalize_role_label(agent_role)
         for issue in self.video_state.issues:
             if not issue.isActive:
@@ -3800,6 +3801,14 @@ class MASVideoRunner:
             if issue.section_id and issue.section_id not in section_ids:
                 continue
             relevant_issues.append(issue.description)
+            if re.search(
+                r"(?:timed?\s*out|timeout|traceback|exception|"
+                r"(?:name|type|attribute|key|index|syntax)error|"
+                r"render\s+(?:failed|failure|error)|failed\s+to\s+render)",
+                issue.description,
+                flags=re.IGNORECASE,
+            ):
+                has_runtime_failure = True
 
         situation_parts = [
             f"Topic: {self.video_state.topic}",
@@ -3827,6 +3836,7 @@ class MASVideoRunner:
                 )
             render_error = self.video_state.render_error[section_index] or ""
             if render_error.strip():
+                has_runtime_failure = True
                 situation_parts.append("Current render error:\n" + render_error[:2000])
         problem_text = "\n\n".join(
             part for part in situation_parts if part.strip()
@@ -3844,16 +3854,15 @@ class MASVideoRunner:
             }.items()
             if any(pattern in lowered for pattern in patterns)
         }
-        stage_by_role = {
-            SCRIPT_WRITER: "planning",
-            ANIMATION_PLANNER: "planning",
-            CODER: "coding",
-            ORCHESTRATOR: "coordination",
-        }
+        current_stage = select_pipeline_stage(
+            agent_role,
+            timing,
+            has_runtime_failure=has_runtime_failure,
+        )
         situation = BeliefSituation(
             topic=self.video_state.topic,
             agent_role=agent_role,
-            pipeline_stage=stage_by_role.get(agent_role, timing),
+            pipeline_stage=current_stage,
             problem_text=problem_text,
             context_tags=sorted(context_tags),
             section_ids=section_ids,
