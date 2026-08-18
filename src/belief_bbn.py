@@ -885,10 +885,11 @@ class BeliefSelector:
             # not calibrated well enough to distinguish technical repairs in
             # the completed 30-topic replay: irrelevant candidates routinely
             # had high combined applicability.  Inject one decisive structured
-            # match.  Otherwise permit one exceptionally close semantic match
-            # only when its raw problem similarity is >= 0.90 and clearly
-            # separated from the next current-stage candidate.  In the replay,
-            # the highest unmatched/irrelevant raw similarity was 0.823.
+            # match. Otherwise select the most semantically relevant
+            # current-stage repair. Applicability, role, stage, and
+            # effectiveness eligibility have already been evaluated above, so
+            # do not add a second raw-similarity cutoff or runner-up margin
+            # that can suppress a useful general repair.
             if exact:
                 selected = exact[:1]
             else:
@@ -900,12 +901,6 @@ class BeliefSelector:
                     ),
                 )
                 best = semantic_fix[0] if semantic_fix else None
-                runner_up = semantic_fix[1] if len(semantic_fix) > 1 else None
-                margin = (
-                    best["problem_similarity"] - runner_up["problem_similarity"]
-                    if best is not None and runner_up is not None
-                    else 1.0
-                )
                 exact_context_fix = [
                     item
                     for item in semantic_fix
@@ -915,13 +910,7 @@ class BeliefSelector:
                 if exact_context_fix:
                     selected = exact_context_fix[:1]
                 else:
-                    selected = (
-                        [best]
-                        if best is not None
-                        and best["problem_similarity"] >= 0.90
-                        and margin >= 0.05
-                        else []
-                    )
+                    selected = [best] if best is not None else []
         else:
             selected = (exact + stage_matched + cross_stage)[: max(0, top_k)]
         selected_ids = {item["belief_id"] for item in selected}
@@ -961,7 +950,7 @@ class BeliefSelector:
                 "ranking": "applicability_only",
                 "fix_selection": (
                     "top_1_structured_else_exact_context_else_"
-                    "semantic_0.90_with_0.05_margin"
+                    "best_semantic_current_stage"
                 ),
                 "candidate_limit": candidate_limit,
             },

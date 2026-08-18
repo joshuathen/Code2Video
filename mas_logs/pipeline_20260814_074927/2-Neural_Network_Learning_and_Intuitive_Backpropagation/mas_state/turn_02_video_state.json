@@ -1,0 +1,516 @@
+{
+  "topic": "Neural Network Learning and Intuitive Backpropagation",
+  "target_audience": "University students or beginners in Artificial Intelligence",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1TheGoalScene(TeachingScene):\n    def construct(self):\n        # Title and Lecture Lines\n        title = \"The Learning Goal: Pixel the Robot's Task\"\n        lines = [\n            \"Meet Pixel, a robot learning to see.\",\n            \"Pixel's guesses are compared to the truth.\",\n            \"The error, or loss, shows how wrong he is.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # === Animation for Lecture Line 1 ===\n        # A blurry dog image appears on the left (#FFFFFF). \n        # Pixel (#00FF00) appears on the right with a thought bubble showing a toaster (#C0C0C0).\n        \n        # Blurry dog image representation\n        dog_box = Square(color=WHITE, fill_opacity=0.3)\n        dog_label_internal = Text(\"DOG\", font_size=36, color=WHITE).set_opacity(0.4)\n        dog_image = VGroup(dog_box, dog_label_internal)\n        self.place_in_area(dog_image, \"B1\", \"D2\", scale_factor=0.8)\n        \n        # Pixel the Robot\n        pixel_body = Square(color=\"#00FF00\", fill_opacity=1).scale(0.5)\n        pixel_head = Square(color=\"#00FF00\", fill_opacity=1).scale(0.25).next_to(pixel_body, UP, buff=0.05)\n        pixel_eye_l = Dot(color=BLACK).move_to(pixel_head.get_left() + RIGHT*0.1 + UP*0.05).scale(0.6)\n        pixel_eye_r = Dot(color=BLACK).move_to(pixel_head.get_right() + LEFT*0.1 + UP*0.05).scale(0.6)\n        pixel_mouth_line = Line(pixel_head.get_bottom()+UP*0.1+LEFT*0.1, pixel_head.get_bottom()+UP*0.1+RIGHT*0.1, color=BLACK)\n        pixel = VGroup(pixel_body, pixel_head, pixel_eye_l, pixel_eye_r, pixel_mouth_line)\n        self.place_in_area(pixel, \"C5\", \"D6\", scale_factor=1.0)\n        \n        # Thought bubble\n        bubble1 = Circle(radius=0.1, color=\"#C0C0C0\", fill_opacity=0.8).move_to(pixel_head.get_corner(UR) + UP*0.2 + RIGHT*0.2)\n        bubble2 = Circle(radius=0.15, color=\"#C0C0C0\", fill_opacity=0.8).next_to(bubble1, UP+RIGHT, buff=0.1)\n        thought_main = Ellipse(width=1.5, height=1.0, color=\"#C0C0C0\", fill_opacity=0.2).next_to(bubble2, UP+RIGHT, buff=0.1)\n        toaster_icon = Rectangle(width=0.8, height=0.5, color=\"#C0C0C0\", fill_opacity=0.6).move_to(thought_main.get_center())\n        thought_bubble = VGroup(bubble1, bubble2, thought_main, toaster_icon)\n        \n        self.play(self.lecture[0].animate.set_color(\"#00FF00\"))\n        self.play(FadeIn(dog_image))\n        self.play(Create(pixel))\n        self.play(FadeIn(thought_bubble))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Text 'Toaster' (#FF0000) appears above Pixel. Text 'Dog' (#00FF00) appears above the image.\n        \n        toaster_text = Text(\"Toaster\", color=\"#FF0000\", font_size=32)\n        self.place_at_grid(toaster_text, \"A5\")\n        \n        dog_text = Text(\"Dog\", color=\"#00FF00\", font_size=32)\n        self.place_at_grid(dog_text, \"A1\")\n        \n        self.play(self.lecture[0].animate.set_color(WHITE), self.lecture[1].animate.set_color(\"#FF0000\"))\n        self.play(Write(dog_text), Write(toaster_text))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # A bar graph labeled 'Loss' (#FFD700) rises to 80% height. Pixel looks sad (#FF0000).\n        \n        loss_label = Text(\"Loss\", color=\"#FFD700\", font_size=28)\n        self.place_at_grid(loss_label, \"F3\")\n        \n        # Bar graph container\n        bar_bg = Rectangle(width=0.8, height=3.0, color=GREY, fill_opacity=0.2)\n        self.place_in_area(bar_bg, \"B3\", \"E3\") # Place in column 3\n        \n        # Bar fill\n        bar_fill = Rectangle(width=0.8, height=0.01, color=\"#FFD700\", fill_opacity=1)\n        bar_fill.move_to(bar_bg.get_bottom(), aligned_edge=DOWN)\n        \n        # Sad face\n        sad_mouth = Arc(radius=0.12, start_angle=0, angle=PI, color=BLACK).move_to(pixel_mouth_line.get_center() + DOWN*0.05)\n        \n        self.play(self.lecture[1].animate.set_color(WHITE), self.lecture[2].animate.set_color(\"#FFD700\"))\n        self.play(FadeIn(loss_label), Create(bar_bg))\n        self.play(\n            bar_fill.animate.stretch_to_fit_height(3.0 * 0.8, about_edge=DOWN),\n            pixel_mouth_line.animate.become(sad_mouth),\n            pixel_body.animate.set_color(\"#FF0000\"),\n            pixel_head.animate.set_color(\"#FF0000\")\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2PrerequisitesScene(TeachingScene):\n    def construct(self):\n        title = \"Prerequisite: The Anatomy of a Decision\"\n        lines = [\n            \"Networks use weights as adjustable control knobs.\",\n            \"High weights mean an input is very important.\",\n            \"A bias sets the baseline for every decision.\"\n        ]\n        self.setup_layout(title, lines)\n        \n        # === Animation for Lecture Line 1 ===\n        # Networks use weights as adjustable control knobs.\n        self.lecture[0].set_color(YELLOW)\n        \n        # Circles representing 'Floppy Ears' and 'Metal Texture' (#FFFFFF)\n        fe_circle = Circle(radius=0.35, color=WHITE)\n        mt_circle = Circle(radius=0.35, color=WHITE)\n        self.place_at_grid(fe_circle, 'B1')\n        self.place_at_grid(mt_circle, 'E1')\n        \n        fe_label = Text(\"Floppy Ears\", font_size=16, color=WHITE)\n        mt_label = Text(\"Metal Texture\", font_size=16, color=WHITE)\n        self.place_at_grid(fe_label, 'A1')\n        self.place_at_grid(mt_label, 'F1')\n        \n        # Central neuron (#00FFFF)\n        neuron = Circle(radius=0.5, color=\"#00FFFF\", fill_opacity=0.3)\n        self.place_at_grid(neuron, 'C4')\n        n_label = Text(\"Neuron\", font_size=16, color=\"#00FFFF\")\n        self.place_at_grid(n_label, 'B4')\n        \n        # Flow arrows toward a central neuron\n        arrow_fe = Line(fe_circle.get_right(), neuron.get_left(), buff=0.1, color=WHITE).add_tip()\n        arrow_mt = Line(mt_circle.get_right(), neuron.get_left(), buff=0.1, color=WHITE).add_tip()\n        \n        # Knobs (#A9A9A9) appear on the arrows\n        knob_fe_base = Circle(radius=0.15, color=\"#A9A9A9\", fill_opacity=0.5)\n        knob_fe_line = Line(ORIGIN, UP * 0.15, color=\"#A9A9A9\")\n        knob_fe = VGroup(knob_fe_base, knob_fe_line)\n        self.place_at_grid(knob_fe, 'B2')\n        \n        knob_mt_base = Circle(radius=0.15, color=\"#A9A9A9\", fill_opacity=0.5)\n        knob_mt_line = Line(ORIGIN, UP * 0.15, color=\"#A9A9A9\")\n        knob_mt = VGroup(knob_mt_base, knob_mt_line)\n        self.place_at_grid(knob_mt, 'E2')\n        \n        self.play(\n            FadeIn(fe_circle), FadeIn(mt_circle),\n            Write(fe_label), Write(mt_label)\n        )\n        self.play(GrowFromCenter(neuron), Write(n_label))\n        self.play(Create(arrow_fe), Create(arrow_mt))\n        self.play(FadeIn(knob_fe), FadeIn(knob_mt))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # High weights mean an input is very important.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # The 'Floppy Ears' knob turns to a high setting (#FFFF00)\n        self.play(\n            knob_fe.animate.set_color(\"#FFFF00\"),\n            knob_fe_line.animate.rotate(-PI/2, about_point=knob_fe_base.get_center()),\n            arrow_fe.animate.set_stroke(color=\"#FFFF00\", width=8)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # A bias sets the baseline for every decision.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # A 'Bias' slider (#FFA500) moves\n        slider_track = Line(self.grid['A5'], self.grid['B5'], color=\"#FFA500\")\n        slider_knob = Square(side_length=0.15, color=\"#FFA500\", fill_opacity=1)\n        slider_knob.move_to(slider_track.get_start())\n        bias_label = Text(\"Bias\", font_size=16, color=\"#FFA500\")\n        self.place_at_grid(bias_label, 'A4')\n        \n        # Neuron's output bulb (#FFFFFF) glows brighter\n        bulb = Circle(radius=0.25, color=WHITE, fill_opacity=0.1)\n        self.place_at_grid(bulb, 'C6')\n        bulb_label = Text(\"Output\", font_size=16, color=WHITE)\n        self.place_at_grid(bulb_label, 'B6')\n        \n        self.play(\n            Create(slider_track),\n            FadeIn(slider_knob),\n            Write(bias_label),\n            FadeIn(bulb),\n            Write(bulb_label)\n        )\n        \n        # Slider moves and bulb glows\n        self.play(\n            slider_knob.animate.move_to(slider_track.get_end()),\n            bulb.animate.set_fill(WHITE, opacity=1).scale(1.5),\n            neuron.animate.set_fill(opacity=0.8),\n            run_time=2\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3LossLandscapeScene(TeachingScene):\n    def construct(self):\n        title = \"The Loss Landscape: Walking in the Fog\"\n        lecture_lines = [\n            \"Imagine the total error as a hilly landscape.\",\n            \"The height at any point is the loss.\",\n            \"Learning is finding the lowest valley.\",\n            \"We feel the slope to find the way down.\",\n            \"This slope is called the gradient.\"\n        ]\n        self.setup_layout(title, lecture_lines)\n\n        # Helper for the loss function\n        def loss_func(x):\n            # A wavy line that fits within the grid area\n            return 0.8 * np.sin(x) + 0.5 * np.cos(2 * x) + 0.2 * x - 1\n\n        # Landscape area roughly B1 to E6\n        axes = Axes(\n            x_range=[0, 6, 1],\n            y_range=[-3, 3, 1],\n            x_length=5,\n            y_length=4,\n            axis_config={\"include_tip\": False, \"stroke_opacity\": 0}\n        )\n        self.place_in_area(axes, \"B1\", \"E6\")\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(YELLOW)\n        \n        curve = axes.plot(loss_func, x_range=[0, 6], color=\"#FFFFFF\")\n        \n        # Fog: multiple rectangles with low opacity\n        fog_rects = VGroup(*[\n            Rectangle(\n                width=6, height=5, \n                fill_color=\"#808080\", fill_opacity=0.1, \n                stroke_width=0\n            ).move_to(axes.get_center() + np.array([np.random.uniform(-0.2, 0.2), np.random.uniform(-0.2, 0.2), 0]))\n            for _ in range(5)\n        ])\n        \n        self.play(Create(curve), FadeIn(fog_rects))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        x_tracker = ValueTracker(1.0)\n        \n        # Height arrow using Line + Updaters to avoid expensive mobjects in always_redraw\n        height_arrow = Line(color=\"#FF0000\", stroke_width=4)\n        def update_arrow(m):\n            curr_x = x_tracker.get_value()\n            start_p = axes.c2p(curr_x, -3) \n            end_p = axes.c2p(curr_x, loss_func(curr_x))\n            m.set_points_as_corners([start_p, end_p])\n        \n        height_arrow.add_updater(update_arrow)\n        \n        # Height tip\n        height_tip = Triangle(color=\"#FF0000\", fill_opacity=1).scale(0.1)\n        def update_tip(m):\n            curr_x = x_tracker.get_value()\n            m.move_to(axes.c2p(curr_x, loss_func(curr_x)), aligned_edge=DOWN)\n        height_tip.add_updater(update_tip)\n\n        height_label = Text(\"Loss Height\", color=\"#FF0000\", font_size=18)\n        def update_label(m):\n            curr_x = x_tracker.get_value()\n            m.next_to(axes.c2p(curr_x, loss_func(curr_x)/2 - 1.5), RIGHT, buff=0.1)\n        \n        height_label.add_updater(update_label)\n\n        self.play(Create(height_arrow), FadeIn(height_tip), FadeIn(height_label))\n        self.play(x_tracker.animate.set_value(4.5), run_time=3, rate_func=linear)\n        self.wait(1)\n        \n        height_arrow.remove_updater(update_arrow)\n        height_tip.remove_updater(update_tip)\n        height_label.remove_updater(update_label)\n        self.play(FadeOut(height_arrow), FadeOut(height_tip), FadeOut(height_label))\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        # Pixel character represented with primitives\n        pixel = VGroup(\n            Square(side_length=0.3, fill_color=\"#00FF00\", fill_opacity=1, stroke_color=WHITE),\n            Dot(radius=0.03, color=BLACK).shift(LEFT*0.06 + UP*0.05),\n            Dot(radius=0.03, color=BLACK).shift(RIGHT*0.06 + UP*0.05)\n        )\n        \n        # Initial position on a steep part\n        pixel_x = 0.8\n        pixel_pos = axes.c2p(pixel_x, loss_func(pixel_x))\n        pixel.move_to(pixel_pos)\n        \n        # Calculate tangent angle\n        def get_tangent_angle(x):\n            dx = 0.001\n            dy = loss_func(x + dx) - loss_func(x)\n            return np.arctan2(dy, dx)\n\n        pixel.rotate(get_tangent_angle(pixel_x))\n\n        # Star at global minimum\n        min_x = 4.14 \n        star = Star(n=5, outer_radius=0.2, inner_radius=0.1, color=\"#00FF00\", fill_opacity=1)\n        star.move_to(axes.c2p(min_x, loss_func(min_x)))\n\n        self.play(FadeIn(pixel))\n        self.play(Create(star))\n        self.play(fog_rects.animate.set_style(fill_opacity=0.03)) \n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        # Gradient arrow pointing directly UP the slope\n        slope = (loss_func(pixel_x + 0.001) - loss_func(pixel_x)) / 0.001\n        angle = get_tangent_angle(pixel_x)\n        \n        grad_arrow = Arrow(ORIGIN, RIGHT * 0.8, color=\"#FFFF00\", buff=0)\n        if slope > 0:\n            grad_arrow.set_angle(angle)\n        else:\n            grad_arrow.set_angle(angle + PI)\n            \n        grad_arrow.move_to(pixel.get_bottom(), aligned_edge=DOWN)\n        \n        self.play(GrowArrow(grad_arrow))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        grad_text = Text(\"Gradient\", color=\"#FFFF00\", font_size=18)\n        grad_text.next_to(grad_arrow, UP, buff=0.1)\n        \n        self.play(Write(grad_text))\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4BackpropagationLogicScene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"To improve, we send error signals backward.\",\n            \"We ask which knobs caused the final mistake.\",\n            \"The chain rule connects every layer's influence.\",\n            \"Each connection gets a share of the blame.\",\n            \"This blame guides the direction of change.\"\n        ]\n        self.setup_layout(\"Backpropagation: Tracing the Blame\", lecture_lines)\n\n        # === Animation for Lecture Line 1 ===\n        # A red glow (#FF0000) starts at the output lightbulb and pulses back toward the neuron.\n        self.lecture[0].set_color(\"#FF0000\")\n        \n        # Output lightbulb at D6\n        lightbulb_circle = Circle(radius=0.3, color=WHITE, fill_opacity=0.2)\n        lightbulb_rays = VGroup(*[\n            Line(0.3 * np.array([np.cos(a), np.sin(a), 0]), 0.5 * np.array([np.cos(a), np.sin(a), 0]))\n            for a in np.linspace(0, 2*PI, 8, endpoint=False)\n        ])\n        lightbulb = VGroup(lightbulb_circle, lightbulb_rays)\n        self.place_at_grid(lightbulb, \"D6\")\n        \n        # Neuron at D3\n        neuron = Circle(radius=0.3, color=BLUE, fill_opacity=0.1)\n        neuron_label = Text(\"Metal Texture\", font_size=16, color=BLUE).next_to(neuron, DOWN, buff=0.1)\n        neuron_group = VGroup(neuron, neuron_label)\n        self.place_at_grid(neuron_group, \"D3\")\n        \n        connection = Line(self.grid[\"D3\"], self.grid[\"D6\"], color=GRAY)\n        \n        # Red glow pulse\n        glow = Dot(color=\"#FF0000\", radius=0.15)\n        glow.move_to(self.grid[\"D6\"])\n        \n        self.add(lightbulb, neuron_group, connection)\n        self.play(FadeIn(glow))\n        self.play(glow.animate.move_to(self.grid[\"D3\"]), run_time=1.5)\n        self.play(Flash(self.grid[\"D3\"], color=\"#FF0000\", flash_radius=0.5), FadeOut(glow))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # The connection for 'Metal Texture' flashes red (#FF0000) to indicate high blame.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(\"#FF0000\")\n        \n        knob = VGroup(\n            Circle(radius=0.15, color=WHITE, fill_opacity=0.5),\n            Line(ORIGIN, UP*0.15, color=RED)\n        )\n        # Using D4 as midpoint.\n        self.place_at_grid(knob, \"D4\")\n        \n        self.play(Create(knob))\n        self.play(connection.animate.set_color(\"#FF0000\"), knob.animate.set_color(\"#FF0000\"))\n        self.play(Indicate(connection, color=\"#FF0000\"), Indicate(knob, color=\"#FF0000\"))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Interlocked gears (#D3D3D3) rotate. One gear's movement affects the next in sequence.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(\"#D3D3D3\")\n        \n        def create_gear(radius=0.35, teeth=8, color=\"#D3D3D3\"):\n            gear = VGroup(Circle(radius=radius, color=color))\n            for i in range(teeth):\n                tooth = Rectangle(width=0.12, height=0.12, color=color, fill_opacity=1)\n                angle = i * (2 * PI / teeth)\n                tooth.move_to(radius * np.array([np.cos(angle), np.sin(angle), 0]))\n                tooth.rotate(angle)\n                gear.add(tooth)\n            return gear\n\n        gear1 = create_gear()\n        gear2 = create_gear()\n        gear3 = create_gear()\n        \n        self.place_at_grid(gear1, \"B2\")\n        self.place_at_grid(gear2, \"B3\")\n        self.place_at_grid(gear3, \"B4\")\n        \n        self.play(FadeIn(gear1), FadeIn(gear2), FadeIn(gear3))\n        \n        # Persistent rotation via updaters\n        gear1.add_updater(lambda m, dt: m.rotate(dt * PI/2))\n        gear2.add_updater(lambda m, dt: m.rotate(-dt * PI/2))\n        gear3.add_updater(lambda m, dt: m.rotate(dt * PI/2))\n        \n        self.wait(3)\n        # Remove updaters after rotation session to keep performance\n        gear1.clear_updaters()\n        gear2.clear_updaters()\n        gear3.clear_updaters()\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 4 ===\n        # Backward arrows (#FF4500) carry 'correction' values to each knob.\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(\"#FF4500\")\n        \n        arrow1 = Arrow(start=self.grid[\"D6\"], end=self.grid[\"D4\"], color=\"#FF4500\", buff=0.1)\n        arrow2 = Arrow(start=self.grid[\"D4\"], end=self.grid[\"D3\"], color=\"#FF4500\", buff=0.1)\n        \n        self.play(GrowArrow(arrow1))\n        self.play(GrowArrow(arrow2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # Numbers like -0.5 and +0.2 (#FFFFFF) appear next to the connection lines.\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(\"#FFFFFF\")\n        \n        val1 = Text(\"-0.5\", font_size=18, color=WHITE)\n        val2 = Text(\"+0.2\", font_size=18, color=WHITE)\n        \n        # Place near the arrows\n        self.place_at_grid(val1, \"C4\", scale_factor=1.0)\n        self.place_at_grid(val2, \"C3\", scale_factor=1.0)\n        \n        self.play(Write(val1), Write(val2))\n        self.wait(2)\n\n        # Final cleanup\n        self.lecture[4].set_color(WHITE)\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5GradientDescentScene(TeachingScene):\n    def construct(self):\n        title = \"The Adjustment: Nudging the Knobs\"\n        lines = [\n            \"We nudge the knobs based on the blame.\",\n            \"Each weight is adjusted by a small step.\",\n            \"The learning rate controls how far we move.\",\n            \"Small steps prevent overshooting the bottom.\",\n            \"Moving down the slope reduces the total error.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # --- Object Initialization ---\n        \n        # Knobs: Floppy Ear and Metal\n        knob_floppy_circle = Circle(radius=0.4, color=WHITE)\n        knob_floppy_indicator = Line(ORIGIN, 0.4 * UP, color=WHITE)\n        knob_floppy = VGroup(knob_floppy_circle, knob_floppy_indicator)\n        self.place_at_grid(knob_floppy, 'B2')\n        knob_floppy_label = Text(\"Floppy Ear\", font_size=16).next_to(knob_floppy, UP, buff=0.2)\n        \n        knob_metal_circle = Circle(radius=0.4, color=WHITE)\n        knob_metal_indicator = Line(ORIGIN, 0.4 * UP, color=WHITE)\n        knob_metal = VGroup(knob_metal_circle, knob_metal_indicator)\n        self.place_at_grid(knob_metal, 'B5')\n        knob_metal_label = Text(\"Metal\", font_size=16).next_to(knob_metal, UP, buff=0.2)\n\n        # Gradient Arrows (Yellow)\n        arrow_floppy = Arrow(\n            start=self.grid['B2'], \n            end=self.grid['B2'] + 0.6 * RIGHT, \n            color=\"#FFFF00\", \n            buff=0, \n            stroke_width=4,\n            max_tip_length_to_length_ratio=0.3\n        )\n        arrow_metal = Arrow(\n            start=self.grid['B5'], \n            end=self.grid['B5'] + 0.6 * LEFT, \n            color=\"#FFFF00\", \n            buff=0,\n            stroke_width=4,\n            max_tip_length_to_length_ratio=0.3\n        )\n\n        # Learning Rate Slider\n        slider_line = Line(self.grid['D2'], self.grid['D5'], color=WHITE)\n        slider_dot = Dot(color=\"#00FF00\").move_to(self.grid['D4']) \n        slider_label = Text(\"Learning Rate\", font_size=16, color=\"#00FF00\").next_to(slider_line, UP, buff=0.2)\n        slider = VGroup(slider_line, slider_dot, slider_label)\n\n        # Landscape Curve\n        landscape_center = self.grid['F3'] + 0.5 * RIGHT\n        landscape_curve = ParametricFunction(\n            lambda t: np.array([t, 0.4 * (t - 0)**2 - 0.5, 0]),\n            t_range=[-1.5, 1.5],\n            color=BLUE\n        ).move_to(landscape_center)\n        \n        # Pixel character\n        pixel = Dot(color=\"#00FF00\", radius=0.1)\n        pixel.move_to(landscape_curve.point_from_proportion(0.1))\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(\"#FFFF00\"))\n        self.play(\n            FadeIn(knob_floppy), FadeIn(knob_floppy_label),\n            FadeIn(knob_metal), FadeIn(knob_metal_label)\n        )\n        self.play(GrowArrow(arrow_floppy), GrowArrow(arrow_metal))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(\"#FFFF00\"))\n        self.play(\n            arrow_floppy.animate.scale(0.8),\n            arrow_metal.animate.scale(0.8)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(\"#00FF00\"))\n        self.play(FadeIn(slider))\n        self.play(\n            slider_dot.animate.move_to(self.grid['D2']),\n            arrow_floppy.animate.scale(0.4),\n            arrow_metal.animate.scale(0.4),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        self.play(self.lecture[3].animate.set_color(\"#00FF00\"))\n        self.play(Create(landscape_curve), FadeIn(pixel))\n        self.play(\n            knob_floppy_indicator.animate.set_color(\"#00FF00\"),\n            knob_metal_indicator.animate.set_color(\"#FF0000\"),\n            Rotate(knob_floppy, angle=-PI/3, about_point=self.grid['B2']),\n            Rotate(knob_metal, angle=PI/3, about_point=self.grid['B5']),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        self.play(self.lecture[4].animate.set_color(\"#00FF00\"))\n        self.play(\n            MoveAlongPath(pixel, landscape_curve, rate_func=lambda t: 0.1 + t * 0.38),\n            run_time=2.5,\n            rate_func=linear\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6IterationScene(TeachingScene):\n    def construct(self):\n        title = \"The Training Loop: Practice Makes Perfect\"\n        lines = [\n            \"Pixel repeats this process thousands of times.\",\n            \"With every example, the knobs become more precise.\",\n            \"Soon, Pixel identifies objects with high accuracy.\"\n        ]\n        self.setup_layout(title, lines)\n\n        # Colors\n        COLOR_HIGHLIGHT = \"#FFFF00\"\n        COLOR_ARROW = \"#FFFFFF\"\n        COLOR_SUCCESS = \"#00FF00\"\n        \n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(COLOR_HIGHLIGHT)\n        \n        # Define cycle labels\n        forward_lbl = Text(\"Forward\", font_size=24, color=WHITE)\n        loss_lbl = Text(\"Loss\", font_size=24, color=WHITE)\n        backprop_lbl = Text(\"Backprop\", font_size=24, color=WHITE)\n        update_lbl = Text(\"Update\", font_size=24, color=WHITE)\n\n        self.place_at_grid(forward_lbl, \"A3\")\n        self.place_at_grid(loss_lbl, \"C6\")\n        self.place_at_grid(backprop_lbl, \"F3\")\n        self.place_at_grid(update_lbl, \"C1\")\n\n        # Create curved arrows for the cycle\n        arrow1 = CurvedArrow(forward_lbl.get_right(), loss_lbl.get_top(), color=COLOR_ARROW)\n        arrow2 = CurvedArrow(loss_lbl.get_bottom(), backprop_lbl.get_right(), color=COLOR_ARROW)\n        arrow3 = CurvedArrow(backprop_lbl.get_left(), update_lbl.get_bottom(), color=COLOR_ARROW)\n        arrow4 = CurvedArrow(update_lbl.get_top(), forward_lbl.get_left(), color=COLOR_ARROW)\n\n        cycle_group = VGroup(forward_lbl, loss_lbl, backprop_lbl, update_lbl, arrow1, arrow2, arrow3, arrow4)\n        \n        self.play(Create(cycle_group))\n        \n        # Rotate a highlight indicator around the cycle to show \"repeats\"\n        dot = Dot(color=COLOR_HIGHLIGHT).move_to(forward_lbl.get_center())\n        self.play(Indicate(forward_lbl))\n        self.play(MoveAlongPath(dot, arrow1), run_time=0.5)\n        self.play(Indicate(loss_lbl))\n        self.play(MoveAlongPath(dot, arrow2), run_time=0.5)\n        self.play(Indicate(backprop_lbl))\n        self.play(MoveAlongPath(dot, arrow3), run_time=0.5)\n        self.play(Indicate(update_lbl))\n        self.play(MoveAlongPath(dot, arrow4), run_time=0.5)\n        self.remove(dot)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            self.lecture[0].animate.set_color(WHITE),\n            self.lecture[1].animate.set_color(COLOR_HIGHLIGHT)\n        )\n\n        # Represent \"Pixel\" in the center\n        pixel_body = RoundedRectangle(corner_radius=0.1, height=1.5, width=1.5, color=WHITE)\n        self.place_in_area(pixel_body, \"C3\", \"D4\")\n        pixel_label = Text(\"Pixel\", font_size=20).next_to(pixel_body, DOWN, buff=0.1)\n        \n        # \"Knobs\" on Pixel\n        knob1 = Circle(radius=0.1, color=WHITE).move_to(pixel_body.get_center() + LEFT*0.3 + UP*0.3)\n        knob2 = Circle(radius=0.1, color=WHITE).move_to(pixel_body.get_center() + RIGHT*0.3 + UP*0.3)\n        knob3 = Circle(radius=0.1, color=WHITE).move_to(pixel_body.get_center() + LEFT*0.3 + DOWN*0.3)\n        knob4 = Circle(radius=0.1, color=WHITE).move_to(pixel_body.get_center() + RIGHT*0.3 + DOWN*0.3)\n        \n        knobs = VGroup(knob1, knob2, knob3, knob4)\n        \n        # Animation for flashing examples\n        example_labels = [\"DOG\", \"TOASTER\", \"DOG\", \"CAR\", \"TOASTER\", \"BIRD\"]\n        current_example = Text(\"\", font_size=36, color=WHITE)\n        self.place_at_grid(current_example, \"B4\")\n\n        self.play(FadeIn(pixel_body, pixel_label, knobs), FadeOut(cycle_group))\n        \n        # Twitching and flashing\n        for label_text in example_labels:\n            new_text = Text(label_text, font_size=36, color=WHITE)\n            self.place_at_grid(new_text, \"B4\")\n            \n            # Knobs \"twitch\" - slight random offsets\n            twitch_anims = [k.animate.shift(np.random.uniform(-0.05, 0.05, 3)) for k in knobs]\n            \n            self.play(\n                Transform(current_example, new_text),\n                *twitch_anims,\n                run_time=0.3\n            )\n        \n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            self.lecture[1].animate.set_color(WHITE),\n            self.lecture[2].animate.set_color(COLOR_HIGHLIGHT)\n        )\n\n        # Final identification\n        final_dog_example = Text(\"DOG\", font_size=40, color=WHITE)\n        self.place_at_grid(final_dog_example, \"B4\")\n        \n        # Stop twitching (return to center) and show success\n        self.play(\n            Transform(current_example, final_dog_example),\n            knob1.animate.move_to(pixel_body.get_center() + LEFT*0.3 + UP*0.3),\n            knob2.animate.move_to(pixel_body.get_center() + RIGHT*0.3 + UP*0.3),\n            knob3.animate.move_to(pixel_body.get_center() + LEFT*0.3 + DOWN*0.3),\n            knob4.animate.move_to(pixel_body.get_center() + RIGHT*0.3 + DOWN*0.3),\n        )\n        \n        accuracy_text = Text(\"99% Accuracy\", font_size=24, color=COLOR_SUCCESS)\n        self.place_at_grid(accuracy_text, \"E4\")\n        \n        self.play(\n            current_example.animate.set_color(COLOR_SUCCESS),\n            FadeIn(accuracy_text),\n            Flash(current_example, color=COLOR_SUCCESS)\n        )\n        \n        self.wait(2)\n"
+  ],
+  "outline": {
+    "topic": "Neural Network Learning and Intuitive Backpropagation",
+    "target_audience": "University students or beginners in Artificial Intelligence",
+    "sections": [
+      {
+        "id": "section_1_the_goal",
+        "title": "The Learning Goal: Pixel the Robot's Task",
+        "content": "Introduce the concept of a neural network as a machine that makes predictions. Establish the goal: minimizing the 'Loss' (the difference between the prediction and reality). Visuals should show a character making a guess and receiving a score.",
+        "example": "Pixel the Robot sees a blurry image of a 'Dog' but predicts 'Toaster' with 80% confidence. The 'Loss' is the disappointment score showing how wrong Pixel is."
+      },
+      {
+        "id": "section_2_prerequisites",
+        "title": "Prerequisite: The Anatomy of a Decision",
+        "content": "Briefly explain how a single neuron works. Inputs are multiplied by 'Weights' (importance) and added to a 'Bias' (tendency). Graphically represent weights as adjustable knobs on a control panel that determine the brightness of a lightbulb (the output).",
+        "example": "To identify a dog, 'floppy ears' (Input) might have a high Weight (knob turned up), while 'metallic texture' has a low weight."
+      },
+      {
+        "id": "section_3_loss_landscape",
+        "title": "The Loss Landscape: Walking in the Fog",
+        "content": "Represent the total error of the network as a hilly terrain (the Loss Function). The height of the hill is the error. Learning is the process of finding the lowest point (the valley). Introduce the gradient as the direction of the steepest slope.",
+        "example": "Imagine Pixel standing on a mountain in thick fog. He can't see the bottom, but he can feel the slope under his feet to decide which way is 'down'."
+      },
+      {
+        "id": "section_4_backpropagation_logic",
+        "title": "Backpropagation: Tracing the Blame",
+        "content": "The core concept: Sending the error signal backward through the network. We look at the final error and ask, 'Which knob (weight) is most responsible for this mistake?' This is the 'Chain Rule' visualized as a series of connected gear shifts.",
+        "example": "If the 'Toaster' output was too high, we follow the wire back to the previous layer. We find the 'Shiny Metal' neuron was too active, so we signal its connected weights to turn down."
+      },
+      {
+        "id": "section_5_gradient_descent",
+        "title": "The Adjustment: Nudging the Knobs",
+        "content": "Show the mathematical update rule visually. Once we know the 'blame' (gradient), we turn the knobs by a small amount (the Learning Rate). Emphasize that we don't jump to the bottom; we take small, calculated steps to avoid overshooting.",
+        "example": "Animation: A small vector arrow appears on each knob. The 'Floppy Ear' knob turns clockwise (+), and the 'Metal Texture' knob turns counter-clockwise (-)."
+      },
+      {
+        "id": "section_6_iteration",
+        "title": "The Training Loop: Practice Makes Perfect",
+        "content": "Summarize the cycle: Forward pass (guess) -> Calculate Loss (error) -> Backpropagation (blame) -> Gradient Descent (update). Explain that through thousands of examples, the network 'learns' the optimal configuration of all its knobs.",
+        "example": "Pixel looks at 10,000 photos. After each one, the knobs twitch slightly. By the end, Pixel sees a Golden Retriever and confidently shouts 'Dog!' with 99% accuracy."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1_the_goal",
+      "title": "The Learning Goal: Pixel the Robot's Task",
+      "lecture_lines": [
+        "Meet Pixel, a robot learning to see.",
+        "Pixel's guesses are compared to the truth.",
+        "The error, or loss, shows how wrong he is."
+      ],
+      "animations": [
+        "A blurry dog image appears on the left (#FFFFFF). Pixel (#00FF00) appears on the right with a thought bubble showing a toaster (#C0C0C0).",
+        "Text 'Toaster' (#FF0000) appears above Pixel. Text 'Dog' (#00FF00) appears above the image.",
+        "A bar graph labeled 'Loss' (#FFD700) rises to 80% height. Pixel looks sad (#FF0000)."
+      ]
+    },
+    {
+      "id": "section_2_prerequisites",
+      "title": "Prerequisite: The Anatomy of a Decision",
+      "lecture_lines": [
+        "Networks use weights as adjustable control knobs.",
+        "High weights mean an input is very important.",
+        "A bias sets the baseline for every decision."
+      ],
+      "animations": [
+        "Circles representing 'Floppy Ears' and 'Metal Texture' (#FFFFFF) flow arrows toward a central neuron (#00FFFF).",
+        "Knobs (#A9A9A9) appear on the arrows. The 'Floppy Ears' knob turns to a high setting (#FFFF00).",
+        "A 'Bias' slider (#FFA500) moves, and the neuron's output bulb (#FFFFFF) glows brighter."
+      ]
+    },
+    {
+      "id": "section_3_loss_landscape",
+      "title": "The Loss Landscape: Walking in the Fog",
+      "lecture_lines": [
+        "Imagine the total error as a hilly landscape.",
+        "The height at any point is the loss.",
+        "Learning is finding the lowest valley.",
+        "We feel the slope to find the way down.",
+        "This slope is called the gradient."
+      ],
+      "animations": [
+        "A 2D wavy line representing the loss landscape (#FFFFFF) appears through semi-transparent fog (#808080).",
+        "A vertical arrow labeled 'Loss Height' (#FF0000) follows the curve's peaks and valleys.",
+        "Pixel (#00FF00) stands on a steep part of the curve. He tilts to match the incline.",
+        "A bright arrow (#FFFF00) appears at Pixel's feet, pointing directly up the slope.",
+        "A star (#00FF00) marks the lowest point of the curve. The fog clears slightly."
+      ]
+    },
+    {
+      "id": "section_4_backpropagation_logic",
+      "title": "Backpropagation: Tracing the Blame",
+      "lecture_lines": [
+        "To improve, we send error signals backward.",
+        "We ask which knobs caused the final mistake.",
+        "The chain rule connects every layer's influence.",
+        "Each connection gets a share of the blame.",
+        "This blame guides the direction of change."
+      ],
+      "animations": [
+        "A red glow (#FF0000) starts at the output lightbulb and pulses back toward the neuron.",
+        "The connection for 'Metal Texture' flashes red (#FF0000) to indicate high blame.",
+        "Interlocked gears (#D3D3D3) rotate. One gear's movement affects the next in sequence.",
+        "Backward arrows (#FF4500) carry 'correction' values to each knob.",
+        "Numbers like -0.5 and +0.2 (#FFFFFF) appear next to the connection lines."
+      ]
+    },
+    {
+      "id": "section_5_gradient_descent",
+      "title": "The Adjustment: Nudging the Knobs",
+      "lecture_lines": [
+        "We nudge the knobs based on the blame.",
+        "Each weight is adjusted by a small step.",
+        "The learning rate controls how far we move.",
+        "Small steps prevent overshooting the bottom.",
+        "Moving down the slope reduces the total error."
+      ],
+      "animations": [
+        "Small vector arrows (#FFFF00) appear on the surface of each knob.",
+        "A slider labeled 'Learning Rate' (#00FF00) moves to a low value. The arrows shrink.",
+        "The 'Floppy Ear' knob rotates clockwise (#00FF00). The 'Metal' knob rotates counter-clockwise (#FF0000).",
+        "On the landscape, Pixel (#00FF00) slides a small distance toward the valley.",
+        "The movement stops precisely before the slope starts rising again."
+      ]
+    },
+    {
+      "id": "section_6_iteration",
+      "title": "The Training Loop: Practice Makes Perfect",
+      "lecture_lines": [
+        "Pixel repeats this process thousands of times.",
+        "With every example, the knobs become more precise.",
+        "Soon, Pixel identifies objects with high accuracy."
+      ],
+      "animations": [
+        "A circular arrow (#FFFFFF) connects Forward, Loss, Backprop, and Update labels.",
+        "Images of dogs [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/dog.svg] and toasters [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/toaster.svg] (#FFFFFF) flash rapidly in front of Pixel.",
+        "The knobs stop twitching. Pixel sees a dog [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/dog.svg] and the 'Dog' text glows green (#00FF00)."
+      ]
+    }
+  ],
+  "turns_run": 1,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1_the_goal] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1_the_goal",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1_the_goal] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1_the_goal",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animations based on the section outline and example. Ready for review."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1_the_goal] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1_the_goal",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_1_the_goal based on the storyboard and script. Implemented Pixel the Robot, dog image, prediction texts, and a loss bar graph using the required 6x6 grid system and color matching."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2_prerequisites] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2_prerequisites",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2_prerequisites] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2_prerequisites",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animations based on the section outline and example. Ready for review."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2_prerequisites] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2_prerequisites",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_2_prerequisites following the storyboard and constraints. Used grid system for positioning and implemented animations for weights (knobs) and bias (slider)."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3_loss_landscape] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3_loss_landscape",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for Section 3 (Key Section)."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3_loss_landscape] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3_loss_landscape",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animations (key section) based on the section outline and example. Ready for review."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3_loss_landscape] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3_loss_landscape",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_3_loss_landscape following the storyboard and grid constraints. Implemented the loss landscape as a curve with fog, a dynamic loss height arrow, a Pixel character that tilts with the slope, and a gradient arrow pointing up the hill. Used persistent mobjects with updaters for smooth animation within performance budgets."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4_backpropagation_logic] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4_backpropagation_logic",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for Section 4 (Key Section)."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4_backpropagation_logic] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4_backpropagation_logic",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animations (key section) based on the section outline and example. Ready for review."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4_backpropagation_logic] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4_backpropagation_logic",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated and stored Manim code for Section 4: Backpropagation Logic. Implemented 6x6 grid positioning, red pulse from output to neuron, flashing connection/knob, rotating gears using updaters, and backward arrows with values. Followed TeachingScene constraints and color matching."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5_gradient_descent] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5_gradient_descent",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for Section 5 (Key Section)."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5_gradient_descent] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5_gradient_descent",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 5 animations (key section) based on the section outline and example. Ready for review."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5_gradient_descent] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5_gradient_descent",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented the Gradient Descent section with knobs, a learning rate slider, and a pixel character moving on a landscape. Followed the 6x6 grid system and performance constraints."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6_iteration] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6_iteration",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6_iteration] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6_iteration",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Drafted 3 animations based on the section outline and example. Ready for review."
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6_iteration] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_6_iteration",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented Section6IterationScene with the requested training loop cycle and Pixel's knob-tuning animation. Used the 6x6 grid system for positioning."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6_iteration] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Images of dogs [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/dog.svg] and toasters [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/toaster.svg] (#FFFFFF) flash rapidly in front of Pixel.', \"The knobs stop twitching. Pixel sees a dog [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/dog.svg] and the 'Dog' text glows green (#00FF00).\"]",
+      "isActive": true,
+      "section_id": "section_6_iteration",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1_the_goal": "Coder1",
+    "section_2_prerequisites": "Coder2",
+    "section_3_loss_landscape": "Coder3",
+    "section_4_backpropagation_logic": "Coder4",
+    "section_5_gradient_descent": "Coder5",
+    "section_6_iteration": "Coder6"
+  },
+  "section_id_to_index": {
+    "section_1_the_goal": 0,
+    "section_2_prerequisites": 1,
+    "section_3_loss_landscape": 2,
+    "section_4_backpropagation_logic": 3,
+    "section_5_gradient_descent": 4,
+    "section_6_iteration": 5
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260814_074927/2-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_1_the_goal/480p15/Section1TheGoalScene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260814_074927/2-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_2_prerequisites/480p15/Section2PrerequisitesScene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260814_074927/2-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_3_loss_landscape/480p15/Section3LossLandscapeScene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260814_074927/2-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_4_backpropagation_logic/480p15/Section4BackpropagationLogicScene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260814_074927/2-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_5_gradient_descent/480p15/Section5GradientDescentScene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260814_074927/2-Neural_Network_Learning_and_Intuitive_Backpropagation/media/videos/section_6_iteration/480p15/Section6IterationScene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260814_074927/2-Neural_Network_Learning_and_Intuitive_Backpropagation",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 268980,
+      "completion_tokens": 38324,
+      "total_tokens": 353882,
+      "call_count": 25
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 278,
+        "completion_tokens": 864,
+        "total_tokens": 1700,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 20669,
+        "completion_tokens": 1059,
+        "total_tokens": 22878,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 28631,
+        "completion_tokens": 1388,
+        "total_tokens": 32211,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 19511,
+        "completion_tokens": 688,
+        "total_tokens": 21494,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 19071,
+        "completion_tokens": 4924,
+        "total_tokens": 25290,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 20971,
+        "completion_tokens": 4659,
+        "total_tokens": 29177,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 21390,
+        "completion_tokens": 5265,
+        "total_tokens": 30890,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 35240,
+        "completion_tokens": 2628,
+        "total_tokens": 44877,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 34533,
+        "completion_tokens": 4224,
+        "total_tokens": 45620,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 42919,
+        "completion_tokens": 5111,
+        "total_tokens": 52790,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4341,
+        "completion_tokens": 586,
+        "total_tokens": 15891,
+        "call_count": 12
+      },
+      "scope_refine:section_3_loss_landscape": {
+        "prompt_tokens": 6985,
+        "completion_tokens": 2369,
+        "total_tokens": 10361,
+        "call_count": 1
+      },
+      "scope_refine:section_4_backpropagation_logic": {
+        "prompt_tokens": 5563,
+        "completion_tokens": 2278,
+        "total_tokens": 8212,
+        "call_count": 1
+      },
+      "scope_refine:section_6_iteration": {
+        "prompt_tokens": 8878,
+        "completion_tokens": 2281,
+        "total_tokens": 12491,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 268980,
+        "completion_tokens": 38324,
+        "total_tokens": 353882,
+        "call_count": 25
+      }
+    }
+  }
+}

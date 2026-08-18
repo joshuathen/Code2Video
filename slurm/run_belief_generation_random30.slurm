@@ -22,6 +22,7 @@ PYTHON_BIN="${PYTHON_BIN:-/software/projects/pawsey1357/jthen/venvs/code2video-m
 BELIEF_EMBEDDING_MODEL="${BELIEF_EMBEDDING_MODEL:-/software/projects/pawsey1357/jthen/models/bge-small-en-v1.5}"
 BELIEF_OUTPUT_DIR="${BELIEF_OUTPUT_DIR:-$PIPELINE_DIR/belief_three_stage}"
 START_STAGE="${START_STAGE:-${1:-}}"
+RESUME_DISCOVERY="${RESUME_DISCOVERY:-0}"
 
 if [ "$START_STAGE" != "discovery" ] && [ "$START_STAGE" != "consolidation" ] && [ "$START_STAGE" != "evidence" ]; then
   echo "Pass an explicit stage: sbatch $0 discovery|consolidation|evidence" >&2
@@ -59,7 +60,11 @@ CMD=(
   --start-stage "$START_STAGE"
 )
 if [ "$START_STAGE" = "discovery" ]; then
-  CMD+=(--fresh)
+  if [ "$RESUME_DISCOVERY" = "1" ]; then
+    CMD+=(--resume-discovery)
+  else
+    CMD+=(--fresh)
+  fi
 fi
 
 echo "Starting three-stage 30-topic belief pipeline at $(date)"
@@ -71,7 +76,11 @@ echo "Output directory: $BELIEF_OUTPUT_DIR"
 echo "Starting stage: $START_STAGE"
 echo "Stages: candidate discovery -> global consolidation -> retrospective evidence"
 if [ "$START_STAGE" = "discovery" ]; then
-  echo "Belief library mode: fresh (prior three-stage outputs will be replaced)"
+  if [ "$RESUME_DISCOVERY" = "1" ]; then
+    echo "Belief library mode: resume discovery from the last completed topic"
+  else
+    echo "Belief library mode: fresh (prior three-stage outputs will be replaced)"
+  fi
 elif [ "$START_STAGE" = "consolidation" ]; then
   echo "Belief library mode: resume from completed candidate checkpoint"
 else

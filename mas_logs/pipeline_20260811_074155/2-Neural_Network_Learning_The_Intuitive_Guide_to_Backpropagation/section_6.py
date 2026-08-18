@@ -56,7 +56,8 @@ class Section6Scene(TeachingScene):
 
         # === Persistent Objects Initialization ===
         
-        # 1. Loss Plot & Ball
+        # 1. Loss Plot & Ball Asset
+        # [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ball.svg]
         axes = Axes(
             x_range=[-2, 2, 1],
             y_range=[0, 4, 1],
@@ -67,11 +68,14 @@ class Section6Scene(TeachingScene):
         )
         parabola = axes.plot(lambda x: x**2, x_range=[-2, 2], color=BLUE_A)
         ball_pos = ValueTracker(1.5)
-        ball = Dot(color=RED, radius=0.12)
+        
+        # Load asset and style it
+        ball = SVGMobject("/scratch/pawsey1357/jthen/Code2Video/assets/icon/ball.svg").scale(0.15).set_color(RED)
         ball.add_updater(lambda d: d.move_to(axes.c2p(ball_pos.get_value(), ball_pos.get_value()**2)))
         
         loss_plot = VGroup(axes, parabola, ball)
-        self.place_in_area(loss_plot, "B2", "D5", scale_factor=0.9)
+        # Issue 39: Move loss_plot to A2-C5
+        self.place_in_area(loss_plot, "A2", "C5", scale_factor=0.9)
 
         # 2. Dials (Knobs)
         dial_tracker = ValueTracker(0) # Rotation angle in radians
@@ -100,7 +104,15 @@ class Section6Scene(TeachingScene):
         lr_val = MathTex(r"\eta = 0.1", font_size=22, color=GREEN_A)
         lr_arrow = Arrow(LEFT, RIGHT, color="#00FF00", buff=0, stroke_width=3).scale(0.4)
         lr_group = VGroup(lr_text, lr_val, lr_arrow).arrange(RIGHT, buff=0.2)
-        self.place_at_grid(lr_group, "F3", scale_factor=1.0)
+        # Issue 41: Move lr_group to F2-F5
+        self.place_in_area(lr_group, "F2", "F5", scale_factor=1.0)
+
+        # 4. Blame indicator (Gradient arrow)
+        blame_label = Text("Blame", font_size=16, color=RED_B)
+        blame_arrow = Arrow(UP, DOWN, color=RED_B, buff=0).scale(0.5)
+        blame_group = VGroup(blame_label, blame_arrow).arrange(DOWN, buff=0.1)
+        # Issue 40: Move blame_group to D5
+        self.place_at_grid(blame_group, "D5", scale_factor=1.0)
 
         # === Animation for Lecture Line 1 ===
         # "Gradient descent uses the blame to adjust the knobs."
@@ -112,12 +124,6 @@ class Section6Scene(TeachingScene):
         # "We nudge weights in the opposite direction of error."
         self.lecture[0].set_color(WHITE)
         self.lecture[1].set_color(YELLOW)
-        
-        # 'Blame' indicator (Gradient arrow)
-        blame_label = Text("Blame", font_size=16, color=RED_B)
-        blame_arrow = Arrow(UP, DOWN, color=RED_B, buff=0).scale(0.5)
-        blame_group = VGroup(blame_label, blame_arrow).arrange(DOWN, buff=0.1)
-        self.place_at_grid(blame_group, "D6", scale_factor=1.0)
         
         self.play(FadeIn(blame_group))
         self.play(
@@ -133,6 +139,7 @@ class Section6Scene(TeachingScene):
         self.lecture[1].set_color(WHITE)
         self.lecture[2].set_color(YELLOW)
         
+        # [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ball.svg] used here
         self.play(Create(axes), Create(parabola), FadeIn(ball))
         self.play(
             ball_pos.animate.set_value(0.6), 

@@ -45,6 +45,7 @@ class TeachingScene(Scene):
 
 class Section5Scene(TeachingScene):
     def construct(self):
+        # Setup title and lecture lines from storyboard
         title_text = "Backpropagation: The Blame Game"
         lecture_lines = [
             "Backpropagation traces the error back to its source.",
@@ -60,16 +61,22 @@ class Section5Scene(TeachingScene):
         COLOR_KNOB = "#00BFFF"
         COLOR_INPUT = "#32CD32"
 
-        # Elements
+        # Assets
+        # [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg]
+        robot = SVGMobject("/scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg")
+        robot.set_color(WHITE)
+        self.place_at_grid(robot, "B6", scale_factor=0.6)
+
+        # Network Elements
         input1 = Circle(radius=0.3, color=COLOR_INPUT, fill_opacity=0.5)
         input2 = Circle(radius=0.3, color=COLOR_INPUT, fill_opacity=0.5)
-        label_i1 = Text("Input A", font_size=18)
-        label_i2 = Text("Input B", font_size=18)
+        label_i1 = Text("Temp Input", font_size=16)
+        label_i2 = Text("Size Input", font_size=16)
         
         knob1 = Circle(radius=0.4, color=COLOR_KNOB, fill_opacity=0.3)
         knob2 = Circle(radius=0.4, color=COLOR_KNOB, fill_opacity=0.3)
-        label_k1 = Text("Temp", font_size=18)
-        label_k2 = Text("Size", font_size=18)
+        label_k1 = Text("Temp Dial", font_size=16)
+        label_k2 = Text("Size Dial", font_size=16)
         
         # Dials for knobs
         dial1 = Line(ORIGIN, UP * 0.35, color=WHITE, stroke_width=4)
@@ -86,13 +93,13 @@ class Section5Scene(TeachingScene):
         self.place_at_grid(output, "D6")
         
         # Relative positioning for labels/dials
-        label_i1.next_to(input1, LEFT, buff=0.2)
-        label_i2.next_to(input2, LEFT, buff=0.2)
-        label_k1.next_to(knob1, UP, buff=0.2)
-        label_k2.next_to(knob2, UP, buff=0.2)
+        label_i1.next_to(input1, DOWN, buff=0.1)
+        label_i2.next_to(input2, DOWN, buff=0.1)
+        label_k1.next_to(knob1, UP, buff=0.1)
+        label_k2.next_to(knob2, UP, buff=0.1)
         dial1.move_to(knob1.get_center())
         dial2.move_to(knob2.get_center())
-        label_out.next_to(output, RIGHT, buff=0.2)
+        label_out.next_to(output, UP, buff=0.1)
 
         # Connections
         line1 = Line(input1.get_right(), knob1.get_left(), color=GRAY, stroke_width=2)
@@ -104,7 +111,7 @@ class Section5Scene(TeachingScene):
             input1, input2, knob1, knob2, output, 
             line1, line2, line3, line4, 
             label_i1, label_i2, label_k1, label_k2, label_out,
-            dial1, dial2
+            dial1, dial2, robot
         )
         self.add(network_group)
 
@@ -135,8 +142,10 @@ class Section5Scene(TeachingScene):
         
         blame1 = Text("80%", font_size=20, color=COLOR_ERROR)
         blame2 = Text("20%", font_size=20, color=COLOR_ERROR)
-        self.place_at_grid(blame1, "C4")
-        self.place_at_grid(blame2, "E4")
+        
+        # Resolving Issue 38: Fix overcrowding of 'blame' labels
+        self.place_at_grid(blame1, "C5", scale_factor=0.8)
+        self.place_at_grid(blame2, "E5", scale_factor=0.8)
         
         self.play(
             knob1.animate.set_stroke(COLOR_ERROR, width=8),
@@ -151,7 +160,8 @@ class Section5Scene(TeachingScene):
         self.play(self.lecture[1].animate.set_color(WHITE), self.lecture[2].animate.set_color(YELLOW))
         
         grad_label = Text("Gradient (∇)", font_size=24, color=COLOR_ERROR).set_weight(BOLD)
-        self.place_at_grid(grad_label, "B3")
+        # Resolving Issue 37: Fix vertical crowding of grad_label
+        self.place_at_grid(grad_label, "B3", scale_factor=0.7)
         
         self.play(FadeIn(grad_label, shift=UP))
         self.wait(1)
@@ -162,7 +172,8 @@ class Section5Scene(TeachingScene):
         
         # Using MathTex for chain rule
         chain_rule = MathTex(r"\frac{\partial L}{\partial w} = \frac{\partial L}{\partial a} \cdot \frac{\partial a}{\partial w}", font_size=24, color=WHITE)
-        self.place_at_grid(chain_rule, "A3")
+        # Resolving Issue 36: Fix the horizontal width of the chain rule formula
+        self.place_in_area(chain_rule, 'A3', 'A5', scale_factor=0.6)
         
         # Red backward arrows
         arr1 = Arrow(output.get_left(), knob1.get_right(), color=COLOR_ERROR, buff=0.1, stroke_width=4)
@@ -177,7 +188,9 @@ class Section5Scene(TeachingScene):
         self.play(self.lecture[3].animate.set_color(WHITE), self.lecture[4].animate.set_color(YELLOW))
         
         # Drastic adjustment of the 'high blame' knob
+        # Robot "looking" at the knobs (simulated by a slight tilt or highlight)
         self.play(
+            robot.animate.scale(1.1).set_color(YELLOW),
             Rotate(dial1, angle=-PI/2, about_point=knob1.get_center()),
             knob1.animate.set_fill(COLOR_ERROR, opacity=0.6),
             blame1.animate.scale(1.2),
@@ -186,5 +199,5 @@ class Section5Scene(TeachingScene):
         self.wait(2)
 
         # Final color reset
-        self.play(self.lecture[4].animate.set_color(WHITE))
+        self.play(self.lecture[4].animate.set_color(WHITE), robot.animate.set_color(WHITE).scale(1/1.1))
         self.wait(1)

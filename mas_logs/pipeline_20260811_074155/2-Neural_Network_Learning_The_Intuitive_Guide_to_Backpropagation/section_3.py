@@ -56,14 +56,14 @@ class Section3Scene(TeachingScene):
         # "The forward pass is the network's first guess."
         self.lecture[0].set_color(WHITE)
         
-        # Neuron
+        # Neuron (Issue 32: place at C4)
         neuron = Circle(radius=0.4, color=WHITE, stroke_width=4)
-        self.place_at_grid(neuron, 'C3')
+        self.place_at_grid(neuron, 'C4')
         neuron_label = Text("Neuron", font_size=18, color=WHITE).next_to(neuron, DOWN, buff=0.1)
         
-        # Input locations
-        input1_point = self.grid['B1']
-        input2_point = self.grid['D1']
+        # Input locations (Issue 33: start points at B2 and D2)
+        input1_point = self.grid['B2']
+        input2_point = self.grid['D2']
         
         # Connections
         arrow1 = Arrow(start=input1_point, end=neuron.get_left(), buff=0.1, color=WHITE)
@@ -86,17 +86,19 @@ class Section3Scene(TeachingScene):
         self.lecture[0].set_color(GRAY)
         self.lecture[1].set_color(BLUE_C)
         
+        # (Issue 33: place at B2)
         temp_input = VGroup(
             RoundedRectangle(corner_radius=0.1, height=0.6, width=1.4, color=BLUE_C),
             Text("Temp", font_size=16, color=BLUE_C)
         )
-        self.place_at_grid(temp_input, 'B1')
+        self.place_at_grid(temp_input, 'B2')
         
+        # (Issue 33: place at D2)
         size_input = VGroup(
             RoundedRectangle(corner_radius=0.1, height=0.6, width=1.4, color=BLUE_C),
             Text("Size", font_size=16, color=BLUE_C)
         )
-        self.place_at_grid(size_input, 'D1')
+        self.place_at_grid(size_input, 'D2')
         
         self.play(FadeIn(temp_input), FadeIn(size_input))
         self.wait(1)
@@ -106,19 +108,19 @@ class Section3Scene(TeachingScene):
         self.lecture[1].set_color(GRAY)
         self.lecture[2].set_color(ORANGE)
         
-        # Dials for Weights
+        # Dials for Weights (Issue 33: place at B3 and D3)
         weight1_dial = VGroup(
             Circle(radius=0.25, color=ORANGE, stroke_width=3),
             Line(ORIGIN, UP * 0.25, color=ORANGE, stroke_width=4)
         )
-        self.place_at_grid(weight1_dial, 'B2')
+        self.place_at_grid(weight1_dial, 'B3')
         w1_label = Text("Weight 1", font_size=14, color=ORANGE).next_to(weight1_dial, UP, buff=0.1)
         
         weight2_dial = VGroup(
             Circle(radius=0.25, color=ORANGE, stroke_width=3),
             Line(ORIGIN, UP * 0.25, color=ORANGE, stroke_width=4)
         )
-        self.place_at_grid(weight2_dial, 'D2')
+        self.place_at_grid(weight2_dial, 'D3')
         w2_label = Text("Weight 2", font_size=14, color=ORANGE).next_to(weight2_dial, UP, buff=0.1)
         
         # Data dots moving through weights
@@ -147,15 +149,29 @@ class Section3Scene(TeachingScene):
         self.lecture[2].set_color(GRAY)
         self.lecture[3].set_color(YELLOW)
         
+        # (Issue 32: place at C3)
         bias_label = Text("+ Bias", font_size=18, color=PINK)
-        self.place_at_grid(bias_label, 'C2')
+        self.place_at_grid(bias_label, 'C3')
         
-        # Prediction Box
-        prediction_box = VGroup(
-            Rectangle(height=0.8, width=2.4, color=YELLOW, stroke_width=4),
-            Text("Prediction: 20 min", font_size=18, color=YELLOW)
+        # Prediction Box + Cake Icon (Issue 23 & Issue 34)
+        # Issue 23: [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cake.svg]
+        cake_icon = SVGMobject("/scratch/pawsey1357/jthen/Code2Video/assets/icon/cake.svg").scale(0.3)
+        prediction_text = Text("Prediction: 20 min", font_size=18, color=YELLOW)
+        
+        # Arrange icon and text
+        prediction_content = VGroup(cake_icon, prediction_text).arrange(RIGHT, buff=0.2)
+        
+        prediction_box_rect = Rectangle(
+            height=prediction_content.height + 0.3, 
+            width=prediction_content.width + 0.4, 
+            color=YELLOW, 
+            stroke_width=4
         )
-        self.place_at_grid(prediction_box, 'C5')
+        
+        prediction_box = VGroup(prediction_box_rect, prediction_content)
+        
+        # (Issue 34: place in area C5-C6)
+        self.place_in_area(prediction_box, 'C5', 'C6', scale_factor=0.8)
         
         # Arrow to prediction
         arrow_to_pred = Arrow(start=neuron.get_right(), end=prediction_box.get_left(), color=WHITE, buff=0.1)

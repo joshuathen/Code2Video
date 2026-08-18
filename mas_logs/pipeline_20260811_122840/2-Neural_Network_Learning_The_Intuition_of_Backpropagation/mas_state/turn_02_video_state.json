@@ -1,0 +1,521 @@
+{
+  "topic": "Neural Network Learning: The Intuition of Backpropagation",
+  "target_audience": "University students (STEM background) or tech-curious beginners",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"The Analogy: How We Learn from Mistakes\", [\n            \"Learning is adjusting settings to reduce error.\", \n            \"Loss functions provide a score for our error.\", \n            \"Think of an archer adjusting their aim.\"\n        ])\n        \n        # Assets\n        target = Circle(radius=1.0, color=WHITE)\n        bullseye = Dot(color=YELLOW)\n        arrow = Line(start=LEFT*2, end=RIGHT*1, color=WHITE).add_tip()\n        loss_label = MathTex(r\"Loss\", color=RED).scale(0.8)\n        \n        self.place_at_grid(target, \"C3\")\n        self.place_at_grid(bullseye, \"C3\")\n        self.place_at_grid(arrow, \"C1\")\n        \n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(\"#FFD700\"))\n        self.play(FadeIn(target), FadeIn(bullseye))\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(\"#FF4500\"))\n        # Show arrow hitting high\n        arrow_high = arrow.copy().move_to(self.grid[\"B3\"])\n        loss_line = DashedLine(start=bullseye.get_center(), end=arrow_high.get_end(), color=RED)\n        self.play(Create(arrow_high))\n        self.play(Create(loss_line), Write(loss_label.next_to(loss_line, RIGHT)))\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(\"#00BFFF\"))\n        # Adjusting aim\n        self.play(FadeOut(arrow_high), FadeOut(loss_line), FadeOut(loss_label))\n        arrow_fixed = arrow.copy().move_to(self.grid[\"C3\"])\n        self.play(Create(arrow_fixed), run_time=1.5)\n        self.play(arrow_fixed.animate.set_color(\"#32CD32\"))\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"Prerequisite: The Computational Graph\", [\n            \"Neural networks are computational graphs of flow.\",\n            \"Nodes process data; edges represent weights.\",\n            \"Adjust weights to change the final output.\"\n        ])\n        \n        # Define the nodes and edges\n        nodes = VGroup(*[Circle(radius=0.3, color=BLUE, fill_opacity=0.5) for _ in range(6)])\n        labels = VGroup(*[Text(str(i+1), font_size=18) for i in range(6)])\n        for n, l in zip(nodes, labels):\n            l.move_to(n.get_center())\n            \n        # Positioning nodes as a simple 3-layer network\n        self.place_at_grid(nodes[0], 'B2')\n        self.place_at_grid(nodes[1], 'D2')\n        self.place_at_grid(nodes[2], 'B4')\n        self.place_at_grid(nodes[3], 'D4')\n        self.place_at_grid(nodes[4], 'B6')\n        self.place_at_grid(nodes[5], 'D6')\n        for n, l in zip(nodes, labels):\n            l.move_to(n.get_center())\n        \n        edges = VGroup()\n        for i in [0, 2, 4]:\n            for j in [1, 3, 5]:\n                edges.add(Line(nodes[i].get_right(), nodes[j].get_left(), color=GRAY))\n\n        # === Animation for Lecture Line 1 ===\n        self.play(FadeIn(nodes), FadeIn(edges), FadeIn(labels))\n        self.lecture[0].set_color(BLUE)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[0].animate.set_color(WHITE), self.lecture[1].animate.set_color(\"#8A2BE2\"))\n        \n        # Animate forward flow\n        flow_path = VGroup()\n        for e in edges:\n            flow = Line(e.get_start(), e.get_end(), color=\"#8A2BE2\", stroke_width=4)\n            flow_path.add(flow)\n        \n        self.play(Create(flow_path), run_time=2)\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[1].animate.set_color(WHITE), self.lecture[2].animate.set_color(YELLOW))\n        \n        # Highlight adjusting an edge/node\n        self.play(Indicate(edges[0], color=YELLOW), run_time=1.5)\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"The Gradient: The Direction of Correction\", [\n            \"The gradient is a compass for correction.\",\n            \"It senses sensitivity to weight changes.\",\n            \"We walk opposite the slope to descend.\"\n        ])\n\n        # === Animation for Lecture Line 1 ===\n        # Show Error landscape (conceptualized as a 3D surface projected/simplified)\n        axes = ThreeDAxes(x_range=[-2, 2], y_range=[-2, 2], z_range=[0, 2], x_length=4, y_length=4, z_length=2)\n        surface = axes.plot_surface(\n            lambda u, v: 0.5 * (u**2 + v**2),\n            u_range=[-2, 2], v_range=[-2, 2],\n            fill_opacity=0.6, color=BLUE\n        )\n        landscape = VGroup(axes, surface).rotate(PI/4, axis=RIGHT)\n        self.place_at_grid(landscape, 'D3', scale_factor=0.6)\n        label = Text(\"Loss Landscape\", font_size=20, color=WHITE)\n        self.place_at_grid(label, 'A3', scale_factor=0.7)\n        self.play(FadeIn(landscape), Write(label))\n        self.lecture[0].set_color(\"#FFD700\")\n\n        # === Animation for Lecture Line 2 ===\n        # Point and vector\n        point = Dot(color=\"#FF6347\")\n        point_pos = axes.c2p(1.5, 1.5, 0.5 * (1.5**2 + 1.5**2))\n        point.move_to(point_pos)\n        \n        # Gradient vector: partials of 0.5(x^2 + y^2) -> x, y\n        grad = Vector(0.5 * RIGHT + 0.5 * UP, color=\"#FF6347\")\n        grad.move_to(point.get_center())\n        \n        self.add(point, grad)\n        self.lecture[1].set_color(\"#FF6347\")\n        self.play(Create(point), GrowArrow(grad))\n\n        # === Animation for Lecture Line 3 ===\n        # Animate descent\n        self.lecture[2].set_color(\"#00CED1\")\n        target_pos = axes.c2p(0, 0, 0)\n        self.play(\n            point.animate.move_to(target_pos),\n            grad.animate.move_to(target_pos)\n        )\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"Backpropagation: The Credit Assignment Problem\", [\n            \"Backpropagation calculates credit for error.\",\n            \"We traverse backward using the chain rule.\",\n            \"Each weight is updated by its contribution.\"\n        ])\n\n        # Nodes\n        node_out = Circle(radius=0.4, color=WHITE, fill_opacity=0.5)\n        node_mid = Circle(radius=0.4, color=WHITE, fill_opacity=0.5)\n        node_in = Circle(radius=0.4, color=WHITE, fill_opacity=0.5)\n        \n        self.place_at_grid(node_out, 'B5')\n        self.place_at_grid(node_mid, 'C3')\n        self.place_at_grid(node_in, 'D1')\n        \n        lines = VGroup(\n            Line(node_in.get_right(), node_mid.get_left()),\n            Line(node_mid.get_right(), node_out.get_left())\n        )\n        self.add(lines, node_in, node_mid, node_out)\n\n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(\"#FF4500\"))\n        error_label = Text(\"Error\", font_size=20, color=\"#FF4500\")\n        error_label.next_to(node_out, UP)\n        self.play(Create(error_label), node_out.animate.set_fill(\"#FF4500\", opacity=0.8))\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(\"#FFD700\"))\n        \n        arrow_back1 = Arrow(start=node_out.get_left(), end=node_mid.get_right(), color=\"#FFD700\")\n        arrow_back2 = Arrow(start=node_mid.get_left(), end=node_in.get_right(), color=\"#FFD700\")\n        \n        self.play(GrowArrow(arrow_back1))\n        self.play(GrowArrow(arrow_back2))\n\n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(\"#FFD700\"))\n        self.play(\n            node_mid.animate.set_fill(\"#FFD700\", opacity=0.8),\n            node_in.animate.set_fill(\"#FFD700\", opacity=0.8)\n        )\n        self.wait(1)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"The learning loop is a four-step cycle.\",\n            \"Forward pass, loss, backprop, then update.\",\n            \"Iterative adjustment creates intelligent behavior.\"\n        ]\n        self.setup_layout(\"The Loop: Iterative Optimization\", lecture_lines)\n        \n        # Setup circular layout objects\n        labels = [\"Forward\", \"Loss\", \"Backprop\", \"Update\"]\n        colors = [BLUE, RED, YELLOW, GREEN]\n        nodes = VGroup()\n        for i, label in enumerate(labels):\n            circle = Circle(radius=0.5, color=colors[i])\n            text = Text(label, font_size=16).move_to(circle.get_center())\n            nodes.add(VGroup(circle, text))\n        \n        # Place in circular formation\n        nodes.arrange_in_grid(2, 2, buff=0.8)\n        self.place_in_area(nodes, 'B2', 'E5', scale_factor=1.0)\n        \n        # Arrows\n        arrows = VGroup()\n        for i in range(4):\n            start = nodes[i].get_center()\n            end = nodes[(i + 1) % 4].get_center()\n            arrow = Arrow(start, end, buff=0.6, color=WHITE)\n            arrows.add(arrow)\n\n        # === Animation for Lecture Line 1 ===\n        self.play(FadeIn(nodes))\n        self.lecture[0].set_color(BLUE)\n\n        # === Animation for Lecture Line 2 ===\n        self.play(Create(arrows), run_time=2)\n        self.play(Rotating(arrows, radians=PI/2, about_point=nodes.get_center(), run_time=2))\n        self.lecture[1].set_color(BLUE)\n\n        # === Animation for Lecture Line 3 ===\n        # Show convergence\n        converging_dots = VGroup(*[Dot(color=GREEN, radius=0.05) for _ in range(20)])\n        converging_dots.move_to(nodes.get_center())\n        self.play(FadeIn(converging_dots))\n        self.play(converging_dots.animate.scale(0.5).set_opacity(0.3), run_time=2)\n        self.lecture[2].set_color(GREEN)\n"
+  ],
+  "outline": {
+    "topic": "Neural Network Learning: The Intuition of Backpropagation",
+    "target_audience": "University students (STEM background) or tech-curious beginners",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Analogy: How We Learn from Mistakes",
+        "content": "Establish the intuition: Learning is the process of adjusting internal 'settings' to reduce the gap between prediction and reality. Introduce the concept of a 'Loss Function' as a scoreboard for error.",
+        "example": "An archer shooting at a target. If the arrow hits too high, the archer adjusts their aim (weights) downward for the next shot to minimize the distance to the bullseye (loss)."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Computational Graph",
+        "content": "Visualize the neural network as a flow of information. Nodes represent operations; edges represent weights. Emphasize that every output is a function of the previous layers' inputs.",
+        "example": "A chain of dominoes. If you tilt the first one, it triggers a sequence. To change the final result, you must adjust the position of specific dominoes in the chain."
+      },
+      {
+        "id": "section_3",
+        "title": "The Gradient: The Direction of Correction",
+        "content": "Explain that the 'gradient' acts like a compass. It tells us how much a tiny change in a specific weight will increase or decrease the final error. We use partial derivatives to see the sensitivity.",
+        "example": "Standing on a foggy mountain (Error landscape). You cannot see the bottom, but you can feel the slope under your feet. The gradient points in the steepest upward direction; you walk in the opposite direction."
+      },
+      {
+        "id": "section_4",
+        "title": "Backpropagation: The Credit Assignment Problem",
+        "content": "The core mechanism. We start at the error (the output) and work backward, applying the Chain Rule. We distribute the 'blame' for the error back to each weight based on its contribution.",
+        "example": "A cooking line in a restaurant. If a dish tastes too salty, the head chef (Loss) tells the saucier, who tells the prep cook who measured the salt. Each person gets a 'blame' score proportional to their impact on the final taste."
+      },
+      {
+        "id": "section_5",
+        "title": "The Loop: Iterative Optimization",
+        "content": "Summarize the full cycle: Forward Pass (predict) -> Loss Calculation (measure) -> Backpropagation (calculate gradients) -> Update (adjust weights). This creates an iterative cycle towards intelligence.",
+        "example": "A robot learning to recognize a cat: After 1,000 images, the weight adjustments make the robot's internal features 'fire' specifically when it sees whiskers or pointed ears, effectively 'learning' the concept of a cat."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Analogy: How We Learn from Mistakes",
+      "lecture_lines": [
+        "Learning is adjusting settings to reduce error.",
+        "Loss functions provide a score for our error.",
+        "Think of an archer adjusting their aim."
+      ],
+      "animations": [
+        "Display an [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/archer.svg] aiming a [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bow.svg] at a [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/target.svg]. [Color: #FFD700]",
+        "Show an [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/arrow.svg] hitting above the bullseye of the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/target.svg]. [Color: #FF4500]",
+        "Highlight the distance between [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/arrow.svg] and bullseye. [Label: 'Loss']",
+        "Show the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/archer.svg] adjusting aim downwards. [Color: #00BFFF]",
+        "Repeat the shot with the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/arrow.svg] successfully hitting the center of the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/target.svg]. [Color: #32CD32]"
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Computational Graph",
+      "lecture_lines": [
+        "Neural networks are computational graphs of flow.",
+        "Nodes process data; edges represent weights.",
+        "Adjust weights to change the final output."
+      ],
+      "animations": [
+        "Display a sequence of nodes [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/node.svg] and edges [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/edge.svg]. [Label: 'Network']",
+        "Trace forward flow of information through nodes [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/node.svg]. [Color: #8A2BE2]",
+        "Show changing one input value propagating changes through edges [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/edge.svg]. [Effect: Fade]"
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Gradient: The Direction of Correction",
+      "lecture_lines": [
+        "The gradient is a compass for correction.",
+        "It senses sensitivity to weight changes.",
+        "We walk opposite the slope to descend."
+      ],
+      "animations": [
+        "Show a topographic map representing Error. [Label: 'Loss Landscape'] [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/compass.svg]",
+        "Place a point on the slope with a vector arrow. [Color: #FF6347]",
+        "Animate the point moving opposite to the gradient vector. [Effect: Smooth Movement]"
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Backpropagation: The Credit Assignment Problem",
+      "lecture_lines": [
+        "Backpropagation calculates credit for error.",
+        "We traverse backward using the chain rule.",
+        "Each weight is updated by its contribution."
+      ],
+      "animations": [
+        "Display output error [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/node.svg] node at the end. [Color: #FF4500]",
+        "Animate flow arrows moving backward through [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/node.svg] nodes. [Effect: Flow]",
+        "Update each [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/node.svg] node's weight based on backward flow. [Color: #FFD700]"
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "The Loop: Iterative Optimization",
+      "lecture_lines": [
+        "The learning loop is a four-step cycle.",
+        "Forward pass, loss, backprop, then update.",
+        "Iterative adjustment creates intelligent behavior."
+      ],
+      "animations": [
+        "Represent the four steps in a circular layout surrounding the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg]. [Color: #FFFFFF]",
+        "Animate clockwise flow through the four steps. [Effect: Rotation]",
+        "Show weight adjustments converging over repetitions toward the center [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg]. [Color: #32CD32]"
+      ]
+    }
+  ],
+  "turns_run": 1,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added concise lecture lines for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations already present in storyboard."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for the archer analogy, following grid layout and instructions."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations already present in storyboard."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated and implemented Section 2 logic, including a 3-layer neural network visualization consistent with the requirements."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added concise lecture lines for Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations already present in storyboard."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated and implemented the Manim code for section 3 representing the Loss Landscape, gradient vector, and descent."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added concise lecture lines for Section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations already present in storyboard."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated the required Manim animation code using the requested grid layout and lecture lines."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added concise lecture lines for Section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations already present in storyboard."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Section 5 animation: Circular layout illustrating the learning loop, with sequential highlighting and an abstract convergence visual."
+    },
+    {
+      "id": 16,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Lecture lines defined. Please provide animation steps for: 1. Learning is adjusting settings to reduce error. 2. Loss functions provide a score for our error. 3. Think of an archer adjusting their aim.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations already present in storyboard."
+    },
+    {
+      "id": 17,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Lecture lines defined. Please provide animation steps for: 1. Neural networks are computational graphs of flow. 2. Nodes process data; edges represent weights. 3. Adjust weights to change the final output.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations already present in storyboard."
+    },
+    {
+      "id": 18,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Lecture lines defined. Please provide animation steps for: 1. The gradient is a compass for correction. 2. It senses sensitivity to weight changes. 3. We walk opposite the slope to descend.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations already present in storyboard."
+    },
+    {
+      "id": 19,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Lecture lines defined. Please provide animation steps for: 1. Backpropagation calculates credit for error. 2. We traverse backward using the chain rule. 3. Each weight is updated by its contribution.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations already present in storyboard."
+    },
+    {
+      "id": 20,
+      "fromAgent": "ScriptWriter",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Lecture lines defined. Please provide animation steps for: 1. The learning loop is a four-step cycle. 2. Forward pass, loss, backprop, then update. 3. Iterative adjustment creates intelligent behavior.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": "Animations already present in storyboard."
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Display an [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/archer.svg] aiming a [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bow.svg] at a [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/target.svg]. [Color: #FFD700]', 'Show an [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/arrow.svg] hitting above the bullseye of the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/target.svg]. [Color: #FF4500]', \"Highlight the distance between [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/arrow.svg] and bullseye. [Label: 'Loss']\", 'Show the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/archer.svg] adjusting aim downwards. [Color: #00BFFF]', 'Repeat the shot with the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/arrow.svg] successfully hitting the center of the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/target.svg]. [Color: #32CD32]']",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 22,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Display a sequence of nodes [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/node.svg] and edges [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/edge.svg]. [Label: 'Network']\", 'Trace forward flow of information through nodes [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/node.svg]. [Color: #8A2BE2]', 'Show changing one input value propagating changes through edges [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/edge.svg]. [Effect: Fade]']",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Show a topographic map representing Error. [Label: 'Loss Landscape'] [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/compass.svg]\"]",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Display output error [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/node.svg] node at the end. [Color: #FF4500]', 'Animate flow arrows moving backward through [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/node.svg] nodes. [Effect: Flow]', \"Update each [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/node.svg] node's weight based on backward flow. [Color: #FFD700]\"]",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Represent the four steps in a circular layout surrounding the [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg]. [Color: #FFFFFF]', 'Show weight adjustments converging over repetitions toward the center [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg]. [Color: #32CD32]']",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_122840/2-Neural_Network_Learning_The_Intuition_of_Backpropagation/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_122840/2-Neural_Network_Learning_The_Intuition_of_Backpropagation/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_122840/2-Neural_Network_Learning_The_Intuition_of_Backpropagation/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_122840/2-Neural_Network_Learning_The_Intuition_of_Backpropagation/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_122840/2-Neural_Network_Learning_The_Intuition_of_Backpropagation/media/videos/section_5/480p15/Section5Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_122840/2-Neural_Network_Learning_The_Intuition_of_Backpropagation",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 159365,
+      "completion_tokens": 11005,
+      "total_tokens": 170370,
+      "call_count": 19
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 278,
+        "completion_tokens": 676,
+        "total_tokens": 954,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 18051,
+        "completion_tokens": 1146,
+        "total_tokens": 19197,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 21715,
+        "completion_tokens": 785,
+        "total_tokens": 22500,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 21931,
+        "completion_tokens": 712,
+        "total_tokens": 22643,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 18699,
+        "completion_tokens": 1340,
+        "total_tokens": 20039,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 18636,
+        "completion_tokens": 1338,
+        "total_tokens": 19974,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 18622,
+        "completion_tokens": 1256,
+        "total_tokens": 19878,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 18726,
+        "completion_tokens": 1421,
+        "total_tokens": 20147,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 19342,
+        "completion_tokens": 1250,
+        "total_tokens": 20592,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 3365,
+        "completion_tokens": 1081,
+        "total_tokens": 4446,
+        "call_count": 10
+      }
+    },
+    "by_model": {
+      "gemini-3.1-flash-lite": {
+        "prompt_tokens": 159365,
+        "completion_tokens": 11005,
+        "total_tokens": 170370,
+        "call_count": 19
+      }
+    }
+  }
+}

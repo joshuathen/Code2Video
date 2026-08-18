@@ -172,6 +172,14 @@ def main() -> int:
         help="Parallel workers used inside each TQ evaluation stage.",
     )
     parser.add_argument(
+        "--use-interactions",
+        action="store_true",
+        help=(
+            "Use the MAS interactions-based video request path. Enable this "
+            "when reproducing evaluation from a MAS pipeline run."
+        ),
+    )
+    parser.add_argument(
         "--output",
         default=None,
         help="Optional path for combined JSON output. Defaults to <video_stem>_eval.json next to the video.",
@@ -200,6 +208,7 @@ def main() -> int:
             questions_json=questions_json,
             tq_concept=args.tq_concept,
             per_question_workers=args.per_question_workers,
+            use_interactions=args.use_interactions,
         )
     except Exception as exc:
         print(f"Evaluation setup failed: {exc}", file=sys.stderr)

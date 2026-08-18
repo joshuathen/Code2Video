@@ -62,6 +62,16 @@ ORCHESTRATOR_MAX_REMOTE_CALLS = 60
 CODER_MAX_REMOTE_CALLS = 30
 DEFAULT_AGENT_MAX_REMOTE_CALLS = 20
 
+# Keep ordinary MAS-agent prompts belief-free. Reusable beliefs are injected
+# only by ``CoderRuntime`` after a concrete render/runtime failure, where the
+# error-specific effect is easier to localise and audit.
+BELIEF_INJECTION_DISABLED_ROLES = frozenset({
+    ORCHESTRATOR,
+    CODER,
+    ANIMATION_PLANNER,
+    SCRIPT_WRITER,
+})
+
 TOOL_CALL_BATCHING_GUIDANCE = """Tool-call batching:
 - When multiple tool calls are independent and all of their arguments are already known, emit them together in the same response. The runtime will execute them as one batch.
 - Do not batch a call that depends on the result of another call. Wait for the prerequisite result, then issue the dependent call.
@@ -257,6 +267,19 @@ def _normalize_role_label(label: Optional[str]) -> Optional[str]:
     return normalized or None
 
 
+def _belief_injection_enabled_for_role(agent_role: Optional[str]) -> bool:
+    """Whether an ordinary MAS-agent prompt may receive beliefs.
+
+    This does not gate the separate just-in-time ``CoderRuntime`` selector,
+    which remains enabled when prompt belief injection is configured.
+    """
+    # Historical-comparison escape hatch: reproduce earlier broad prompt
+    # injection without changing the runtime-only default policy.
+    if os.getenv("ENABLE_BROAD_BELIEF_INJECTION", "0") == "1":
+        return True
+    return _normalize_role_label(agent_role) not in BELIEF_INJECTION_DISABLED_ROLES
+
+
 def _belief_sort_key(payload: Dict[str, Any]) -> Tuple[float, float, float, str]:
     return (
         -float(payload.get("priority", payload.get("confidence", 0.0)) or 0.0),
@@ -391,6 +414,8 @@ def _format_beliefs_for_prompt(
     allowed_timings: Optional[set[str]] = None,
     allowed_belief_types: Optional[set[str]] = None,
 ) -> str:
+    if not _belief_injection_enabled_for_role(agent_role):
+        return ""
     # Retained in the signature for CLI/config compatibility. General beliefs
     # no longer exist; every belief is selected from an explicit role scope.
     del top_general_k
@@ -3779,6 +3804,11 @@ class MASVideoRunner:
         section_ids: List[str],
         timing: str,
     ) -> str:
+        # Keep ScriptWriter and AnimationPlanner prompts belief-free even when
+        # contextual selection is enabled.  Returning before selector.select()
+        # also prevents misleading selection-log entries for disabled roles.
+        if not _belief_injection_enabled_for_role(agent_role):
+            return ""
         selector = self.contextual_belief_selector
         if selector is None:
             return _format_beliefs_for_prompt(

@@ -56,20 +56,33 @@ class Section7Scene(TeachingScene):
         # Animate a circular 'Loop' arrow (#00FF00) spinning around the entire network.
         self.lecture[0].set_color(YELLOW)
         
-        # Network placeholder nodes
-        n1 = Circle(radius=0.2, color=BLUE, fill_opacity=0.8)
-        n2 = Circle(radius=0.2, color=BLUE, fill_opacity=0.8)
-        n3 = Circle(radius=0.2, color=BLUE, fill_opacity=0.8)
-        network = VGroup(n1, n2, n3).arrange(RIGHT, buff=0.5)
-        self.place_in_area(network, "B2", "B4", scale_factor=0.8)
+        # Network placeholder nodes and connections
+        i1 = Circle(radius=0.15, color=BLUE, fill_opacity=0.8)
+        i2 = Circle(radius=0.15, color=BLUE, fill_opacity=0.8)
+        h1 = Circle(radius=0.15, color=BLUE, fill_opacity=0.8)
+        o1 = Circle(radius=0.15, color=BLUE, fill_opacity=0.8)
+        
+        input_layer = VGroup(i1, i2).arrange(DOWN, buff=0.3)
+        hidden_layer = VGroup(h1).move_to(RIGHT * 0.8)
+        output_layer = VGroup(o1).move_to(RIGHT * 1.6)
+        
+        connections = VGroup(
+            Line(i1.get_right(), h1.get_left(), stroke_width=2),
+            Line(i2.get_right(), h1.get_left(), stroke_width=2),
+            Line(h1.get_right(), o1.get_left(), stroke_width=2)
+        ).set_color(GREY)
+        
+        network = VGroup(input_layer, hidden_layer, output_layer, connections)
+        # Fix for Issue 43: Reposition network to avoid cramping
+        self.place_in_area(network, 'B3', 'C5', scale_factor=0.8)
         
         # Loop arrow spinning around the network
-        loop_circle = Arc(radius=1.0, start_angle=0, angle=TAU*0.9, color="#00FF00")
+        loop_circle = Arc(radius=1.2, start_angle=0, angle=TAU*0.8, color="#00FF00")
         loop_circle.add_tip()
         loop_circle.move_to(network.get_center())
         
         self.play(FadeIn(network), Create(loop_circle))
-        self.play(Rotate(loop_circle, angle=2*TAU, about_point=network.get_center(), run_time=3, rate_func=linear))
+        self.play(Rotate(loop_circle, angle=TAU, about_point=network.get_center(), run_time=2, rate_func=linear))
         
         # === Animation for Lecture Line 2 ===
         # Display an 'Epoch' counter rapidly incrementing from 1 to 1000.
@@ -77,15 +90,17 @@ class Section7Scene(TeachingScene):
         self.lecture[1].set_color(YELLOW)
         
         epoch_label = Text("Epoch:", font_size=24).set_color(WHITE)
-        self.place_at_grid(epoch_label, "A2", scale_factor=0.8)
+        # Fix for Issue 42: Move epoch_label to A3 to avoid crowding
+        self.place_at_grid(epoch_label, 'A3', scale_factor=0.8)
         
         epoch_val = ValueTracker(1)
-        # Using Integer as it's more efficient for counters
         epoch_num = Integer(1).set_color(WHITE)
+        epoch_num.scale(0.8)
         epoch_num.next_to(epoch_label, RIGHT, buff=0.2)
         epoch_num.add_updater(lambda d: d.set_value(int(epoch_val.get_value())))
         
         self.add(epoch_label, epoch_num)
+        self.play(Write(epoch_label), FadeIn(epoch_num))
         
         # === Animation for Lecture Line 3 ===
         # Show a line graph where the 'Error' curve drops sharply and flattens near zero.
@@ -104,9 +119,10 @@ class Section7Scene(TeachingScene):
         y_lbl = Text("Error", font_size=16).rotate(90*DEGREES).next_to(axes.y_axis, LEFT, buff=0.1)
         
         graph_group = VGroup(axes, x_lbl, y_lbl)
-        self.place_in_area(graph_group, "D2", "F5", scale_factor=0.9)
+        # Fix for Issue 44: Reposition graph_group to avoid clutter
+        self.place_in_area(graph_group, 'D3', 'F6', scale_factor=0.9)
         
-        # Exponential decay curve
+        # Exponential decay curve for the error
         error_curve = axes.plot(lambda x: 0.9 * np.exp(-x/150), x_range=[0, 1000], color=RED)
         
         self.play(FadeIn(graph_group))

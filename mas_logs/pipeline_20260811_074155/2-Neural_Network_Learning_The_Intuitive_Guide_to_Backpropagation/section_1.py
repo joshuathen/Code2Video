@@ -67,19 +67,13 @@ class Section1Scene(TeachingScene):
         self.lecture[0].set_color(WHITE)
         self.lecture[1].set_color("#00FFFF")
         
-        # Robo-Chef Mobject (Stylized using basic shapes as no assets provided)
-        body = Circle(radius=0.4, color="#00FFFF", fill_opacity=0.5)
-        eye_l = Dot(radius=0.05, color=WHITE).shift(LEFT*0.1 + UP*0.1)
-        eye_r = Dot(radius=0.05, color=WHITE).shift(RIGHT*0.1 + UP*0.1)
-        antenna = Line(UP*0.4, UP*0.6, color="#00FFFF")
-        robo_chef = VGroup(body, eye_l, eye_r, antenna)
-        self.place_at_grid(robo_chef, "C2")
+        # Robo-Chef Asset Integration (Issue 22) and Row Change (Issue 27)
+        robo_chef = SVGMobject("/scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg", color="#00FFFF")
+        self.place_at_grid(robo_chef, "B2", scale_factor=0.6)
         
-        # Cake Mobject (Stylized)
-        cake_base = RoundedRectangle(height=0.5, width=0.7, corner_radius=0.1, color="#D2B48C", fill_opacity=1)
-        icing = Line(LEFT*0.3, RIGHT*0.3, color=WHITE).shift(UP*0.2)
-        cake = VGroup(cake_base, icing)
-        self.place_at_grid(cake, "C5")
+        # Cake Asset Integration (Issue 22) and Row Change (Issue 27)
+        cake = SVGMobject("/scratch/pawsey1357/jthen/Code2Video/assets/icon/cake.svg")
+        self.place_at_grid(cake, "B5", scale_factor=0.6)
         
         self.play(FadeIn(robo_chef), FadeIn(cake))
         self.wait(1)
@@ -89,7 +83,7 @@ class Section1Scene(TeachingScene):
         self.lecture[1].set_color(WHITE)
         self.lecture[2].set_color("#00FF00")
         
-        # Slider setup
+        # Slider setup moved to row D (Issue 28)
         slider_line = NumberLine(
             x_range=[0, 60, 10], 
             length=4, 
@@ -97,7 +91,7 @@ class Section1Scene(TeachingScene):
             font_size=18, 
             color=WHITE
         )
-        self.place_in_area(slider_line, "E2", "E5")
+        self.place_in_area(slider_line, "D2", "D5")
         
         # Target mark (30 mins)
         target_label = Text("Target: 30", font_size=16, color="#00FF00")
@@ -108,9 +102,12 @@ class Section1Scene(TeachingScene):
         # Guess handle (Starts at 50 mins)
         guess_val = ValueTracker(50)
         handle = Triangle(color=RED, fill_opacity=1).scale(0.15).rotate(PI)
-        handle.add_updater(lambda m: m.move_to(slider_line.n2p(guess_val.get_value()) + UP*0.3))
         
+        # Persistent mobject for label
         guess_label = Text("Guess", font_size=16, color=RED)
+        
+        # Use add_updater instead of always_redraw for performance
+        handle.add_updater(lambda m: m.move_to(slider_line.n2p(guess_val.get_value()) + UP*0.3))
         guess_label.add_updater(lambda m: m.next_to(handle, UP, buff=0.1))
         
         self.play(Create(slider_line), FadeIn(target_group))
@@ -118,16 +115,20 @@ class Section1Scene(TeachingScene):
         self.wait(1)
         
         # Error Flash and Adjustment
+        # Create a background flash rectangle that covers the right side grid area
         flash_rect = Rectangle(
-            width=6, height=4, 
+            width=5.5, height=5.5, 
             fill_color="#330000", 
-            fill_opacity=0.6, 
+            fill_opacity=0, 
             stroke_width=0
-        ).move_to(self.grid["D3"])
+        ).move_to(self.grid["C4"]) # Centered roughly in the grid area
         
-        self.add_foreground_mobjects(self.title, self.lecture) # Ensure text is visible over flash
+        # Ensure text is visible over flash
+        self.add(flash_rect)
+        self.title.set_z_index(10)
+        self.lecture.set_z_index(10)
         
-        self.play(FadeIn(flash_rect))
+        self.play(flash_rect.animate.set_fill(opacity=0.6), run_time=0.2)
         self.play(flash_rect.animate.set_fill(opacity=0), run_time=0.5)
         self.play(guess_val.animate.set_value(30), run_time=2)
         

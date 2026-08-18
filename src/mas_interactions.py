@@ -11,8 +11,11 @@ import inspect
 import json
 import mimetypes
 import os
+import shutil
+import tempfile
 import types
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from threading import Lock
@@ -325,22 +328,48 @@ def _mime_type(path: Path) -> str:
     return guessed or "application/octet-stream"
 
 
+@contextmanager
+def _ascii_upload_path(path: Path):
+    """Yield an ASCII-only local path for SDK multipart uploads.
+
+    The Google file-upload client encodes the local filename into an ASCII
+    multipart header. A valid local path such as ``video_π.mp4`` therefore
+    fails before any HTTP request is made. Keep the original file untouched
+    and expose a temporary ASCII-named hard link (or copy when linking across
+    filesystems is unavailable) solely for the upload call.
+    """
+    try:
+        str(path).encode("ascii")
+    except UnicodeEncodeError:
+        with tempfile.TemporaryDirectory(prefix="code2video-upload-") as directory:
+            suffix = path.suffix if path.suffix.isascii() else ""
+            upload_path = Path(directory) / f"media{suffix}"
+            try:
+                os.link(str(path), str(upload_path))
+            except OSError:
+                shutil.copy2(str(path), str(upload_path))
+            yield upload_path
+    else:
+        yield path
+
+
 def _uploaded_media_block(client: Any, path: Path, media_type: str) -> Dict[str, Any]:
     stat = path.stat()
     key = (str(path.resolve()), stat.st_mtime_ns, stat.st_size)
     with _FILE_CACHE_LOCK:
         uploaded = _FILE_CACHE.get(key)
     if uploaded is None:
-        uploaded = client.files.upload(file=str(path))
-        while True:
-            state = _get(uploaded, "state")
-            state_name = str(_get(state, "name", state) or "").upper()
-            if state_name in ("", "ACTIVE"):
-                break
-            if state_name == "FAILED":
-                raise RuntimeError(f"Gemini file processing failed for {path}.")
-            time.sleep(2)
-            uploaded = client.files.get(name=_get(uploaded, "name"))
+        with _ascii_upload_path(path) as upload_path:
+            uploaded = client.files.upload(file=str(upload_path))
+            while True:
+                state = _get(uploaded, "state")
+                state_name = str(_get(state, "name", state) or "").upper()
+                if state_name in ("", "ACTIVE"):
+                    break
+                if state_name == "FAILED":
+                    raise RuntimeError(f"Gemini file processing failed for {path}.")
+                time.sleep(2)
+                uploaded = client.files.get(name=_get(uploaded, "name"))
         with _FILE_CACHE_LOCK:
             _FILE_CACHE[key] = uploaded
     return {

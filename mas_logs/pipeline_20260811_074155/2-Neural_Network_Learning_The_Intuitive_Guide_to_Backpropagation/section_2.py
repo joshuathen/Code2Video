@@ -53,17 +53,18 @@ class Section2Scene(TeachingScene):
 
         # === Animation for Lecture Line 1 ===
         # Display labels 'Temperature' (#FFD700) and 'Size' (#ADFF2F) with numerical inputs.
+        # Resolving Issue 29 and 30 regarding spacing and overlaps.
         self.lecture[0].set_color("#FFD700")
         
         temp_label = Text("Temperature", font_size=24, color="#FFD700")
         temp_value = Text("72°", font_size=32, color="#FFD700")
-        self.place_at_grid(temp_label, "B2")
-        self.place_at_grid(temp_value, "B3")
+        self.place_in_area(temp_label, "B2", "B3", scale_factor=0.8)
+        self.place_at_grid(temp_value, "B4", scale_factor=0.8)
         
         size_label = Text("Size", font_size=24, color="#ADFF2F")
         size_value = Text("10", font_size=32, color="#ADFF2F")
-        self.place_at_grid(size_label, "D2")
-        self.place_at_grid(size_value, "D3")
+        self.place_in_area(size_label, "D2", "D3", scale_factor=0.8)
+        self.place_at_grid(size_value, "D4", scale_factor=0.8)
         
         self.play(
             FadeIn(temp_label), FadeIn(temp_value),
@@ -79,13 +80,13 @@ class Section2Scene(TeachingScene):
         
         weight_color = "#00BFFF"
         
-        # Dial 1
+        # Dial 1 (Connected to Temperature)
         dial1_circle = Circle(radius=0.4, color=weight_color)
         dial1_pointer = Line(dial1_circle.get_center(), dial1_circle.get_top(), color=weight_color)
         dial1 = VGroup(dial1_circle, dial1_pointer)
         self.place_at_grid(dial1, "B5")
         
-        # Dial 2
+        # Dial 2 (Connected to Size)
         dial2_circle = Circle(radius=0.4, color=weight_color)
         dial2_pointer = Line(dial2_circle.get_center(), dial2_circle.get_top(), color=weight_color)
         dial2 = VGroup(dial2_circle, dial2_pointer)
@@ -94,10 +95,15 @@ class Section2Scene(TeachingScene):
         weights_label = Text("Weights", font_size=24, color=weight_color)
         self.place_at_grid(weights_label, "C5")
         
+        # Arrows indicating flow from values to weights
+        arrow1 = Arrow(temp_value.get_right(), dial1.get_left(), buff=0.1, color=WHITE)
+        arrow2 = Arrow(size_value.get_right(), dial2.get_left(), buff=0.1, color=WHITE)
+        
         self.play(
             Create(dial1_circle), Create(dial2_circle),
             Create(dial1_pointer), Create(dial2_pointer),
             Write(weights_label),
+            GrowArrow(arrow1), GrowArrow(arrow2),
             run_time=1
         )
         
@@ -110,6 +116,7 @@ class Section2Scene(TeachingScene):
 
         # === Animation for Lecture Line 3 ===
         # Show a 'Bias' slider (#FF69B4) moving horizontally to set the starting point.
+        # Resolving Issue 31: Aligning bias label with the slider.
         self.lecture[1].set_color(WHITE)
         self.lecture[2].set_color("#FF69B4")
         
@@ -121,7 +128,7 @@ class Section2Scene(TeachingScene):
         self.place_in_area(bias_slider, "F2", "F5")
         
         bias_label = Text("Bias", font_size=24, color=bias_color)
-        self.place_at_grid(bias_label, "E4") # Positioned relative to the area
+        self.place_in_area(bias_label, "E3", "E4", scale_factor=0.8)
         
         self.play(
             Create(slider_line),

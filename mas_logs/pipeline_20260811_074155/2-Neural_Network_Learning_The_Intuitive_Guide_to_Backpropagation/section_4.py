@@ -60,14 +60,12 @@ class Section4Scene(TeachingScene):
 
         # === Animation for Lecture Line 1 ===
         # Draw a white parabolic curve (Loss Curve) across the center.
-        # Defined as y = 0.4x^2 to fit the area nicely
-        loss_curve = FunctionGraph(
-            lambda x: 0.4 * x**2,
-            x_range=[-2.2, 2.2],
-            color=WHITE
-        )
-        # Position in a central-right area
-        self.place_in_area(loss_curve, "B2", "E6", scale_factor=0.9)
+        # Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/valley.svg
+        loss_curve = SVGMobject("/scratch/pawsey1357/jthen/Code2Video/assets/icon/valley.svg")
+        loss_curve.set_color(WHITE)
+        
+        # Position in a central-right area: Adjusted per Issue 35 to B2-F6 for more room
+        self.place_in_area(loss_curve, "B2", "F6", scale_factor=0.8)
         
         self.play(
             Create(loss_curve),
@@ -83,16 +81,16 @@ class Section4Scene(TeachingScene):
         reality_pt = loss_curve.get_bottom()
         
         # A point on the high slope (Guess)
-        # proportion 0.15 puts it high on the left branch
-        guess_pt = loss_curve.point_from_proportion(0.15)
+        # Using a point on the upper left branch of the SVG
+        guess_pt = loss_curve.get_corner(UL) + RIGHT * 0.4 + DOWN * 0.2
         
         # Create a vertical line for the loss gap
-        # From the guess point down to the x-coordinate of the reality level
+        # From the guess point down to the vertical level of reality_pt
         loss_target = np.array([guess_pt[0], reality_pt[1], 0])
         loss_line = Line(guess_pt, loss_target, color="#FF4500", stroke_width=6)
         
         # Labels for the components
-        # Relative positioning for labels within 1 grid unit (approx 1.0 units)
+        # Positioned within 1 grid unit (grid unit is approx 1.0)
         loss_label = Text("Loss", font_size=20, color="#FF4500").next_to(loss_line, LEFT, buff=0.15)
         guess_label = Text("Guess", font_size=18, color=WHITE).next_to(guess_pt, UP, buff=0.2)
         reality_label = Text("Reality", font_size=18, color=WHITE).next_to(reality_pt, DOWN, buff=0.2)
@@ -108,9 +106,11 @@ class Section4Scene(TeachingScene):
         self.wait(1)
 
         # === Animation for Lecture Line 3 ===
-        # Place a red ball (#FF0000) on the high slope of the curve.
+        # Place a red ball (#FF0000) [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ball.svg] on the high slope of the curve.
         
-        red_ball = Dot(radius=0.15, color="#FF0000")
+        red_ball = SVGMobject("/scratch/pawsey1357/jthen/Code2Video/assets/icon/ball.svg")
+        red_ball.set_color("#FF0000")
+        red_ball.scale(0.15)
         red_ball.move_to(guess_pt)
         
         self.play(
@@ -120,9 +120,10 @@ class Section4Scene(TeachingScene):
         )
         
         # Small roll animation to emphasize the valley shape
+        # Rolling towards the bottom of the valley
         self.play(
-            red_ball.animate.move_to(loss_curve.point_from_proportion(0.2)),
-            run_time=1,
+            red_ball.animate.move_to(reality_pt + UP * 0.15),
+            run_time=1.5,
             rate_func=bezier([0, 0, 1, 1])
         )
         

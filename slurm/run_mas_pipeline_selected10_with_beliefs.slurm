@@ -204,6 +204,7 @@ echo "Evaluation model: $EVAL_MODEL"
 echo "Max topics: $MAX_TOPICS"
 echo "Topic parallel workers: $TOPIC_PARALLEL_WORKERS"
 echo "Inject beliefs into prompts: $INJECT_BELIEFS_INTO_PROMPTS"
+echo "Broad non-runtime belief injection: ${ENABLE_BROAD_BELIEF_INJECTION:-0}"
 if [ -n "$BELIEF_LIBRARY_PATH" ]; then
   echo "Belief library override: $BELIEF_LIBRARY_PATH"
 else

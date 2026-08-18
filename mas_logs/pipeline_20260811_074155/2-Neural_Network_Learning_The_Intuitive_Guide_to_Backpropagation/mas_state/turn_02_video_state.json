@@ -1,0 +1,602 @@
+{
+  "topic": "Neural Network Learning: The Intuitive Guide to Backpropagation",
+  "target_audience": "Introductory Data Science students or tech-savvy hobbyists",
+  "code": [
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        # Setup the layout with title and lecture lines\n        title_text = \"The Big Picture: Learning via Trial and Error\"\n        lecture_lines = [\n            \"Neural networks learn by minimizing prediction errors.\",\n            \"Meet Robo-Chef, our robot learning to bake cakes.\",\n            \"It starts with guesses and adjusts through feedback.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n        \n        # === Animation for Lecture Line 1 ===\n        # Line: \"Neural networks learn by minimizing prediction errors.\"\n        self.lecture[0].set_color(YELLOW)\n        error_formula = MathTex(r\"\\text{Error} = |\\text{Guess} - \\text{Reality}|\", font_size=36, color=YELLOW)\n        self.place_in_area(error_formula, \"A2\", \"A5\")\n        self.play(Write(error_formula))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Line: \"Meet Robo-Chef, our robot learning to bake cakes.\"\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(\"#00FFFF\")\n        \n        # Robo-Chef Mobject (Stylized using basic shapes as no assets provided)\n        body = Circle(radius=0.4, color=\"#00FFFF\", fill_opacity=0.5)\n        eye_l = Dot(radius=0.05, color=WHITE).shift(LEFT*0.1 + UP*0.1)\n        eye_r = Dot(radius=0.05, color=WHITE).shift(RIGHT*0.1 + UP*0.1)\n        antenna = Line(UP*0.4, UP*0.6, color=\"#00FFFF\")\n        robo_chef = VGroup(body, eye_l, eye_r, antenna)\n        self.place_at_grid(robo_chef, \"C2\")\n        \n        # Cake Mobject (Stylized)\n        cake_base = RoundedRectangle(height=0.5, width=0.7, corner_radius=0.1, color=\"#D2B48C\", fill_opacity=1)\n        icing = Line(LEFT*0.3, RIGHT*0.3, color=WHITE).shift(UP*0.2)\n        cake = VGroup(cake_base, icing)\n        self.place_at_grid(cake, \"C5\")\n        \n        self.play(FadeIn(robo_chef), FadeIn(cake))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Line: \"It starts with guesses and adjusts through feedback.\"\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(\"#00FF00\")\n        \n        # Slider setup\n        slider_line = NumberLine(\n            x_range=[0, 60, 10], \n            length=4, \n            include_numbers=True, \n            font_size=18, \n            color=WHITE\n        )\n        self.place_in_area(slider_line, \"E2\", \"E5\")\n        \n        # Target mark (30 mins)\n        target_label = Text(\"Target: 30\", font_size=16, color=\"#00FF00\")\n        target_arrow = Arrow(DOWN, UP, color=\"#00FF00\", buff=0.1).scale(0.3)\n        target_pos = slider_line.n2p(30)\n        target_group = VGroup(target_label, target_arrow).next_to(target_pos, DOWN, buff=0.1)\n        \n        # Guess handle (Starts at 50 mins)\n        guess_val = ValueTracker(50)\n        handle = Triangle(color=RED, fill_opacity=1).scale(0.15).rotate(PI)\n        handle.add_updater(lambda m: m.move_to(slider_line.n2p(guess_val.get_value()) + UP*0.3))\n        \n        guess_label = Text(\"Guess\", font_size=16, color=RED)\n        guess_label.add_updater(lambda m: m.next_to(handle, UP, buff=0.1))\n        \n        self.play(Create(slider_line), FadeIn(target_group))\n        self.play(FadeIn(handle), FadeIn(guess_label))\n        self.wait(1)\n        \n        # Error Flash and Adjustment\n        flash_rect = Rectangle(\n            width=6, height=4, \n            fill_color=\"#330000\", \n            fill_opacity=0.6, \n            stroke_width=0\n        ).move_to(self.grid[\"D3\"])\n        \n        self.add_foreground_mobjects(self.title, self.lecture) # Ensure text is visible over flash\n        \n        self.play(FadeIn(flash_rect))\n        self.play(flash_rect.animate.set_fill(opacity=0), run_time=0.5)\n        self.play(guess_val.animate.set_value(30), run_time=2)\n        \n        self.remove(flash_rect)\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"Prerequisite: Weights & Biases\", [\n            \"Neurons use \\\"knobs\\\" called weights to process data.\",\n            \"Each knob determines an input's influence on results.\",\n            \"A bias sets the starting point for every decision.\"\n        ])\n\n        # === Animation for Lecture Line 1 ===\n        # Display labels 'Temperature' (#FFD700) and 'Size' (#ADFF2F) with numerical inputs.\n        self.lecture[0].set_color(\"#FFD700\")\n        \n        temp_label = Text(\"Temperature\", font_size=24, color=\"#FFD700\")\n        temp_value = Text(\"72°\", font_size=32, color=\"#FFD700\")\n        self.place_at_grid(temp_label, \"B2\")\n        self.place_at_grid(temp_value, \"B3\")\n        \n        size_label = Text(\"Size\", font_size=24, color=\"#ADFF2F\")\n        size_value = Text(\"10\", font_size=32, color=\"#ADFF2F\")\n        self.place_at_grid(size_label, \"D2\")\n        self.place_at_grid(size_value, \"D3\")\n        \n        self.play(\n            FadeIn(temp_label), FadeIn(temp_value),\n            FadeIn(size_label), FadeIn(size_value),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Show two dial icons labeled 'Weights' (#00BFFF) that rotate to show adjustment.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(\"#00BFFF\")\n        \n        weight_color = \"#00BFFF\"\n        \n        # Dial 1\n        dial1_circle = Circle(radius=0.4, color=weight_color)\n        dial1_pointer = Line(dial1_circle.get_center(), dial1_circle.get_top(), color=weight_color)\n        dial1 = VGroup(dial1_circle, dial1_pointer)\n        self.place_at_grid(dial1, \"B5\")\n        \n        # Dial 2\n        dial2_circle = Circle(radius=0.4, color=weight_color)\n        dial2_pointer = Line(dial2_circle.get_center(), dial2_circle.get_top(), color=weight_color)\n        dial2 = VGroup(dial2_circle, dial2_pointer)\n        self.place_at_grid(dial2, \"D5\")\n        \n        weights_label = Text(\"Weights\", font_size=24, color=weight_color)\n        self.place_at_grid(weights_label, \"C5\")\n        \n        self.play(\n            Create(dial1_circle), Create(dial2_circle),\n            Create(dial1_pointer), Create(dial2_pointer),\n            Write(weights_label),\n            run_time=1\n        )\n        \n        self.play(\n            Rotate(dial1_pointer, angle=-PI/2, about_point=dial1_circle.get_center()),\n            Rotate(dial2_pointer, angle=PI/3, about_point=dial2_circle.get_center()),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Show a 'Bias' slider (#FF69B4) moving horizontally to set the starting point.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(\"#FF69B4\")\n        \n        bias_color = \"#FF69B4\"\n        \n        slider_line = Line(LEFT, RIGHT, color=bias_color).scale(1.5)\n        slider_knob = Dot(color=bias_color).move_to(slider_line.get_left())\n        bias_slider = VGroup(slider_line, slider_knob)\n        self.place_in_area(bias_slider, \"F2\", \"F5\")\n        \n        bias_label = Text(\"Bias\", font_size=24, color=bias_color)\n        self.place_at_grid(bias_label, \"E4\") # Positioned relative to the area\n        \n        self.play(\n            Create(slider_line),\n            FadeIn(slider_knob),\n            Write(bias_label),\n            run_time=1\n        )\n        \n        self.play(\n            slider_knob.animate.move_to(slider_line.get_center()),\n            run_time=1.5\n        )\n        self.play(\n            slider_knob.animate.move_to(slider_line.get_right()),\n            run_time=1.5\n        )\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"The Forward Pass: Making a Guess\", [\n            \"The forward pass is the network's first guess.\",\n            \"It takes cake temperature and size as inputs.\",\n            \"Weights multiply these inputs to calculate their importance.\",\n            \"Adding the bias produces a final time prediction.\",\n            \"Robo-Chef now has a guess for the baking time.\"\n        ])\n        \n        # === Animation for Lecture Line 1 ===\n        # \"The forward pass is the network's first guess.\"\n        self.lecture[0].set_color(WHITE)\n        \n        # Neuron\n        neuron = Circle(radius=0.4, color=WHITE, stroke_width=4)\n        self.place_at_grid(neuron, 'C3')\n        neuron_label = Text(\"Neuron\", font_size=18, color=WHITE).next_to(neuron, DOWN, buff=0.1)\n        \n        # Input locations\n        input1_point = self.grid['B1']\n        input2_point = self.grid['D1']\n        \n        # Connections\n        arrow1 = Arrow(start=input1_point, end=neuron.get_left(), buff=0.1, color=WHITE)\n        arrow2 = Arrow(start=input2_point, end=neuron.get_left(), buff=0.1, color=WHITE)\n        \n        self.play(Create(neuron), Write(neuron_label))\n        self.play(GrowArrow(arrow1), GrowArrow(arrow2))\n        \n        # Pulse arrows\n        self.play(\n            arrow1.animate.set_stroke(width=10),\n            arrow2.animate.set_stroke(width=10),\n            rate_func=there_and_back,\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"It takes cake temperature and size as inputs.\"\n        self.lecture[0].set_color(GRAY)\n        self.lecture[1].set_color(BLUE_C)\n        \n        temp_input = VGroup(\n            RoundedRectangle(corner_radius=0.1, height=0.6, width=1.4, color=BLUE_C),\n            Text(\"Temp\", font_size=16, color=BLUE_C)\n        )\n        self.place_at_grid(temp_input, 'B1')\n        \n        size_input = VGroup(\n            RoundedRectangle(corner_radius=0.1, height=0.6, width=1.4, color=BLUE_C),\n            Text(\"Size\", font_size=16, color=BLUE_C)\n        )\n        self.place_at_grid(size_input, 'D1')\n        \n        self.play(FadeIn(temp_input), FadeIn(size_input))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"Weights multiply these inputs to calculate their importance.\"\n        self.lecture[1].set_color(GRAY)\n        self.lecture[2].set_color(ORANGE)\n        \n        # Dials for Weights\n        weight1_dial = VGroup(\n            Circle(radius=0.25, color=ORANGE, stroke_width=3),\n            Line(ORIGIN, UP * 0.25, color=ORANGE, stroke_width=4)\n        )\n        self.place_at_grid(weight1_dial, 'B2')\n        w1_label = Text(\"Weight 1\", font_size=14, color=ORANGE).next_to(weight1_dial, UP, buff=0.1)\n        \n        weight2_dial = VGroup(\n            Circle(radius=0.25, color=ORANGE, stroke_width=3),\n            Line(ORIGIN, UP * 0.25, color=ORANGE, stroke_width=4)\n        )\n        self.place_at_grid(weight2_dial, 'D2')\n        w2_label = Text(\"Weight 2\", font_size=14, color=ORANGE).next_to(weight2_dial, UP, buff=0.1)\n        \n        # Data dots moving through weights\n        dot1 = Dot(point=input1_point, color=YELLOW, radius=0.08)\n        dot2 = Dot(point=input2_point, color=YELLOW, radius=0.08)\n        \n        self.play(\n            FadeIn(weight1_dial), FadeIn(weight2_dial),\n            Write(w1_label), Write(w2_label)\n        )\n        \n        # Animate dials rotating while dots pass\n        self.play(\n            Rotate(weight1_dial[1], angle=TAU*2, about_point=weight1_dial[0].get_center()),\n            Rotate(weight2_dial[1], angle=-TAU*2, about_point=weight2_dial[0].get_center()),\n            dot1.animate.move_to(neuron.get_center()),\n            dot2.animate.move_to(neuron.get_center()),\n            run_time=3,\n            rate_func=linear\n        )\n        self.remove(dot1, dot2)\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # \"Adding the bias produces a final time prediction.\"\n        self.lecture[2].set_color(GRAY)\n        self.lecture[3].set_color(YELLOW)\n        \n        bias_label = Text(\"+ Bias\", font_size=18, color=PINK)\n        self.place_at_grid(bias_label, 'C2')\n        \n        # Prediction Box\n        prediction_box = VGroup(\n            Rectangle(height=0.8, width=2.4, color=YELLOW, stroke_width=4),\n            Text(\"Prediction: 20 min\", font_size=18, color=YELLOW)\n        )\n        self.place_at_grid(prediction_box, 'C5')\n        \n        # Arrow to prediction\n        arrow_to_pred = Arrow(start=neuron.get_right(), end=prediction_box.get_left(), color=WHITE, buff=0.1)\n        \n        self.play(Write(bias_label))\n        self.play(GrowArrow(arrow_to_pred))\n        self.play(FadeIn(prediction_box, shift=RIGHT))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # \"Robo-Chef now has a guess for the baking time.\"\n        self.lecture[3].set_color(GRAY)\n        self.lecture[4].set_color(YELLOW)\n        \n        # Highlight prediction box\n        self.play(\n            prediction_box.animate.scale(1.1).set_color(WHITE),\n            rate_func=there_and_back,\n            run_time=1\n        )\n        self.wait(2)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        # TEACHING CONTENT\n        title_text = \"The Loss Function: Measuring the 'Ouch'\"\n        lecture_lines = [\n            \"Loss measures the gap between prediction and reality.\",\n            \"A large gap means a high error or \\\"ouch.\\\"\",\n            \"We visualize this loss as a deep valley.\"\n        ]\n        \n        self.setup_layout(title_text, lecture_lines)\n        \n        # Initial state: all lecture lines are greyed out\n        self.lecture.set_color(GRAY)\n\n        # === Animation for Lecture Line 1 ===\n        # Draw a white parabolic curve (Loss Curve) across the center.\n        # Defined as y = 0.4x^2 to fit the area nicely\n        loss_curve = FunctionGraph(\n            lambda x: 0.4 * x**2,\n            x_range=[-2.2, 2.2],\n            color=WHITE\n        )\n        # Position in a central-right area\n        self.place_in_area(loss_curve, \"B2\", \"E6\", scale_factor=0.9)\n        \n        self.play(\n            Create(loss_curve),\n            self.lecture[0].animate.set_color(WHITE),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Show a vertical line between 'Guess' and 'Reality' labeled 'Loss' (#FF4500).\n        \n        # Bottom of the parabola (Reality)\n        reality_pt = loss_curve.get_bottom()\n        \n        # A point on the high slope (Guess)\n        # proportion 0.15 puts it high on the left branch\n        guess_pt = loss_curve.point_from_proportion(0.15)\n        \n        # Create a vertical line for the loss gap\n        # From the guess point down to the x-coordinate of the reality level\n        loss_target = np.array([guess_pt[0], reality_pt[1], 0])\n        loss_line = Line(guess_pt, loss_target, color=\"#FF4500\", stroke_width=6)\n        \n        # Labels for the components\n        # Relative positioning for labels within 1 grid unit (approx 1.0 units)\n        loss_label = Text(\"Loss\", font_size=20, color=\"#FF4500\").next_to(loss_line, LEFT, buff=0.15)\n        guess_label = Text(\"Guess\", font_size=18, color=WHITE).next_to(guess_pt, UP, buff=0.2)\n        reality_label = Text(\"Reality\", font_size=18, color=WHITE).next_to(reality_pt, DOWN, buff=0.2)\n        \n        self.play(\n            Create(loss_line),\n            Write(loss_label),\n            Write(guess_label),\n            Write(reality_label),\n            self.lecture[1].animate.set_color(\"#FF4500\"),\n            run_time=2\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Place a red ball (#FF0000) on the high slope of the curve.\n        \n        red_ball = Dot(radius=0.15, color=\"#FF0000\")\n        red_ball.move_to(guess_pt)\n        \n        self.play(\n            FadeIn(red_ball),\n            self.lecture[2].animate.set_color(\"#FF0000\"),\n            run_time=1.5\n        )\n        \n        # Small roll animation to emphasize the valley shape\n        self.play(\n            red_ball.animate.move_to(loss_curve.point_from_proportion(0.2)),\n            run_time=1,\n            rate_func=bezier([0, 0, 1, 1])\n        )\n        \n        self.wait(3)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        title_text = \"Backpropagation: The Blame Game\"\n        lecture_lines = [\n            \"Backpropagation traces the error back to its source.\",\n            \"We calculate which knob contributed most to the mistake.\",\n            \"This \\\"blame\\\" is mathematically known as the gradient.\",\n            \"We move backward through the layers using the chain rule.\",\n            \"The robot finds exactly which settings were wrong.\"\n        ]\n        self.setup_layout(title_text, lecture_lines)\n        \n        # Colors\n        COLOR_ERROR = \"#FF0000\"\n        COLOR_KNOB = \"#00BFFF\"\n        COLOR_INPUT = \"#32CD32\"\n\n        # Elements\n        input1 = Circle(radius=0.3, color=COLOR_INPUT, fill_opacity=0.5)\n        input2 = Circle(radius=0.3, color=COLOR_INPUT, fill_opacity=0.5)\n        label_i1 = Text(\"Input A\", font_size=18)\n        label_i2 = Text(\"Input B\", font_size=18)\n        \n        knob1 = Circle(radius=0.4, color=COLOR_KNOB, fill_opacity=0.3)\n        knob2 = Circle(radius=0.4, color=COLOR_KNOB, fill_opacity=0.3)\n        label_k1 = Text(\"Temp\", font_size=18)\n        label_k2 = Text(\"Size\", font_size=18)\n        \n        # Dials for knobs\n        dial1 = Line(ORIGIN, UP * 0.35, color=WHITE, stroke_width=4)\n        dial2 = Line(ORIGIN, UP * 0.35, color=WHITE, stroke_width=4)\n        \n        output = Circle(radius=0.3, color=WHITE, fill_opacity=0.5)\n        label_out = Text(\"Error\", font_size=18)\n\n        # Initial Positioning via grid\n        self.place_at_grid(input1, \"C1\")\n        self.place_at_grid(input2, \"E1\")\n        self.place_at_grid(knob1, \"C3\")\n        self.place_at_grid(knob2, \"E3\")\n        self.place_at_grid(output, \"D6\")\n        \n        # Relative positioning for labels/dials\n        label_i1.next_to(input1, LEFT, buff=0.2)\n        label_i2.next_to(input2, LEFT, buff=0.2)\n        label_k1.next_to(knob1, UP, buff=0.2)\n        label_k2.next_to(knob2, UP, buff=0.2)\n        dial1.move_to(knob1.get_center())\n        dial2.move_to(knob2.get_center())\n        label_out.next_to(output, RIGHT, buff=0.2)\n\n        # Connections\n        line1 = Line(input1.get_right(), knob1.get_left(), color=GRAY, stroke_width=2)\n        line2 = Line(input2.get_right(), knob2.get_left(), color=GRAY, stroke_width=2)\n        line3 = Line(knob1.get_right(), output.get_left(), color=GRAY, stroke_width=2)\n        line4 = Line(knob2.get_right(), output.get_left(), color=GRAY, stroke_width=2)\n\n        network_group = VGroup(\n            input1, input2, knob1, knob2, output, \n            line1, line2, line3, line4, \n            label_i1, label_i2, label_k1, label_k2, label_out,\n            dial1, dial2\n        )\n        self.add(network_group)\n\n        # === Animation for Lecture Line 1 ===\n        # \"Backpropagation traces the error back to its source.\"\n        self.play(self.lecture[0].animate.set_color(YELLOW))\n        \n        pulse1 = Dot(output.get_center(), color=COLOR_ERROR, radius=0.15)\n        pulse2 = Dot(output.get_center(), color=COLOR_ERROR, radius=0.15)\n        \n        self.play(FadeIn(pulse1), FadeIn(pulse2))\n        self.play(\n            pulse1.animate.move_to(knob1.get_center()),\n            pulse2.animate.move_to(knob2.get_center()),\n            run_time=1, rate_func=linear\n        )\n        self.play(\n            pulse1.animate.move_to(input1.get_center()),\n            pulse2.animate.move_to(input2.get_center()),\n            run_time=1, rate_func=linear\n        )\n        self.play(FadeOut(pulse1), FadeOut(pulse2))\n        self.wait(0.5)\n\n        # === Animation for Lecture Line 2 ===\n        # \"We calculate which knob contributed most to the mistake.\"\n        self.play(self.lecture[0].animate.set_color(WHITE), self.lecture[1].animate.set_color(YELLOW))\n        \n        blame1 = Text(\"80%\", font_size=20, color=COLOR_ERROR)\n        blame2 = Text(\"20%\", font_size=20, color=COLOR_ERROR)\n        self.place_at_grid(blame1, \"C4\")\n        self.place_at_grid(blame2, \"E4\")\n        \n        self.play(\n            knob1.animate.set_stroke(COLOR_ERROR, width=8),\n            knob2.animate.set_stroke(COLOR_ERROR, width=3),\n            Write(blame1),\n            Write(blame2)\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"This \\\"blame\\\" is mathematically known as the gradient.\"\n        self.play(self.lecture[1].animate.set_color(WHITE), self.lecture[2].animate.set_color(YELLOW))\n        \n        grad_label = Text(\"Gradient (∇)\", font_size=24, color=COLOR_ERROR).set_weight(BOLD)\n        self.place_at_grid(grad_label, \"B3\")\n        \n        self.play(FadeIn(grad_label, shift=UP))\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # \"We move backward through the layers using the chain rule.\"\n        self.play(self.lecture[2].animate.set_color(WHITE), self.lecture[3].animate.set_color(YELLOW))\n        \n        # Using MathTex for chain rule\n        chain_rule = MathTex(r\"\\frac{\\partial L}{\\partial w} = \\frac{\\partial L}{\\partial a} \\cdot \\frac{\\partial a}{\\partial w}\", font_size=24, color=WHITE)\n        self.place_at_grid(chain_rule, \"A3\")\n        \n        # Red backward arrows\n        arr1 = Arrow(output.get_left(), knob1.get_right(), color=COLOR_ERROR, buff=0.1, stroke_width=4)\n        arr2 = Arrow(knob1.get_left(), input1.get_right(), color=COLOR_ERROR, buff=0.1, stroke_width=4)\n        \n        self.play(Write(chain_rule))\n        self.play(Create(arr1), Create(arr2))\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # \"The robot finds exactly which settings were wrong.\"\n        self.play(self.lecture[3].animate.set_color(WHITE), self.lecture[4].animate.set_color(YELLOW))\n        \n        # Drastic adjustment of the 'high blame' knob\n        self.play(\n            Rotate(dial1, angle=-PI/2, about_point=knob1.get_center()),\n            knob1.animate.set_fill(COLOR_ERROR, opacity=0.6),\n            blame1.animate.scale(1.2),\n            run_time=1.5\n        )\n        self.wait(2)\n\n        # Final color reset\n        self.play(self.lecture[4].animate.set_color(WHITE))\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section6Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"Gradient descent uses the blame to adjust the knobs.\",\n            \"We nudge weights in the opposite direction of error.\",\n            \"Imagine a ball rolling down toward the lowest loss.\",\n            \"A small learning rate ensures we don't overcorrect.\",\n            \"Each tiny adjustment brings us closer to perfection.\"\n        ]\n        self.setup_layout(\"Gradient Descent: Turning the Knobs\", lecture_lines)\n\n        # === Persistent Objects Initialization ===\n        \n        # 1. Loss Plot & Ball\n        axes = Axes(\n            x_range=[-2, 2, 1],\n            y_range=[0, 4, 1],\n            x_length=3.5,\n            y_length=2.5,\n            axis_config={\"include_tip\": False, \"color\": BLUE_B, \"stroke_width\": 2},\n            tips=False\n        )\n        parabola = axes.plot(lambda x: x**2, x_range=[-2, 2], color=BLUE_A)\n        ball_pos = ValueTracker(1.5)\n        ball = Dot(color=RED, radius=0.12)\n        ball.add_updater(lambda d: d.move_to(axes.c2p(ball_pos.get_value(), ball_pos.get_value()**2)))\n        \n        loss_plot = VGroup(axes, parabola, ball)\n        self.place_in_area(loss_plot, \"B2\", \"D5\", scale_factor=0.9)\n\n        # 2. Dials (Knobs)\n        dial_tracker = ValueTracker(0) # Rotation angle in radians\n        \n        def create_dial(label_text):\n            circle = Circle(radius=0.35, color=WHITE, stroke_width=3)\n            # Tick mark inside the dial - persistent object\n            tick = Line(ORIGIN, [0, 0.35, 0], color=YELLOW, stroke_width=4)\n            # Reference dot at center\n            center_dot = Dot(radius=0.04, color=GRAY)\n            dial_body = VGroup(circle, tick, center_dot)\n            \n            # The rotation logic\n            tick.add_updater(lambda t: t.set_angle(PI/2 - dial_tracker.get_value()))\n            \n            label = Text(label_text, font_size=18, color=WHITE).next_to(circle, DOWN, buff=0.15)\n            return VGroup(dial_body, label)\n\n        dial1 = create_dial(\"Weight 1\")\n        dial2 = create_dial(\"Weight 2\")\n        dials = VGroup(dial1, dial2).arrange(RIGHT, buff=0.8)\n        self.place_in_area(dials, \"E2\", \"E5\", scale_factor=1.0)\n\n        # 3. Learning Rate\n        lr_text = Text(\"Learning Rate\", font_size=18, color=GREEN_A)\n        lr_val = MathTex(r\"\\eta = 0.1\", font_size=22, color=GREEN_A)\n        lr_arrow = Arrow(LEFT, RIGHT, color=\"#00FF00\", buff=0, stroke_width=3).scale(0.4)\n        lr_group = VGroup(lr_text, lr_val, lr_arrow).arrange(RIGHT, buff=0.2)\n        self.place_at_grid(lr_group, \"F3\", scale_factor=1.0)\n\n        # === Animation for Lecture Line 1 ===\n        # \"Gradient descent uses the blame to adjust the knobs.\"\n        self.lecture[0].set_color(YELLOW)\n        self.play(FadeIn(dials), run_time=1)\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # \"We nudge weights in the opposite direction of error.\"\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        # 'Blame' indicator (Gradient arrow)\n        blame_label = Text(\"Blame\", font_size=16, color=RED_B)\n        blame_arrow = Arrow(UP, DOWN, color=RED_B, buff=0).scale(0.5)\n        blame_group = VGroup(blame_label, blame_arrow).arrange(DOWN, buff=0.1)\n        self.place_at_grid(blame_group, \"D6\", scale_factor=1.0)\n        \n        self.play(FadeIn(blame_group))\n        self.play(\n            dial_tracker.animate.set_value(0.6), \n            run_time=1.5,\n            rate_func=smooth\n        )\n        self.play(FadeOut(blame_group))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # \"Imagine a ball rolling down toward the lowest loss.\"\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        self.play(Create(axes), Create(parabola), FadeIn(ball))\n        self.play(\n            ball_pos.animate.set_value(0.6), \n            dial_tracker.animate.set_value(1.2),\n            run_time=2, \n            rate_func=bezier([0,0,1,1])\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 4 ===\n        # \"A small learning rate ensures we don't overcorrect.\"\n        self.lecture[2].set_color(WHITE)\n        self.lecture[3].set_color(YELLOW)\n        \n        self.play(FadeIn(lr_group))\n        # Small step\n        self.play(\n            ball_pos.animate.set_value(0.3), \n            dial_tracker.animate.set_value(1.5),\n            run_time=1.5\n        )\n        self.wait(1)\n\n        # === Animation for Lecture Line 5 ===\n        # \"Each tiny adjustment brings us closer to perfection.\"\n        self.lecture[3].set_color(WHITE)\n        self.lecture[4].set_color(YELLOW)\n        \n        # Final descent\n        self.play(\n            ball_pos.animate.set_value(0), \n            dial_tracker.animate.set_value(1.8),\n            run_time=2\n        )\n        self.wait(3)\n        self.lecture[4].set_color(WHITE)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section7Scene(TeachingScene):\n    def construct(self):\n        lecture_lines = [\n            \"Learning requires repeating this cycle thousands of times.\",\n            \"Every cake baked makes the robot's guesses better.\",\n            \"Soon, Robo-Chef predicts the perfect time every time.\"\n        ]\n        self.setup_layout(\"The Feedback Loop: Mastery through Repetition\", lecture_lines)\n        \n        # === Animation for Lecture Line 1 ===\n        # Animate a circular 'Loop' arrow (#00FF00) spinning around the entire network.\n        self.lecture[0].set_color(YELLOW)\n        \n        # Network placeholder nodes\n        n1 = Circle(radius=0.2, color=BLUE, fill_opacity=0.8)\n        n2 = Circle(radius=0.2, color=BLUE, fill_opacity=0.8)\n        n3 = Circle(radius=0.2, color=BLUE, fill_opacity=0.8)\n        network = VGroup(n1, n2, n3).arrange(RIGHT, buff=0.5)\n        self.place_in_area(network, \"B2\", \"B4\", scale_factor=0.8)\n        \n        # Loop arrow spinning around the network\n        loop_circle = Arc(radius=1.0, start_angle=0, angle=TAU*0.9, color=\"#00FF00\")\n        loop_circle.add_tip()\n        loop_circle.move_to(network.get_center())\n        \n        self.play(FadeIn(network), Create(loop_circle))\n        self.play(Rotate(loop_circle, angle=2*TAU, about_point=network.get_center(), run_time=3, rate_func=linear))\n        \n        # === Animation for Lecture Line 2 ===\n        # Display an 'Epoch' counter rapidly incrementing from 1 to 1000.\n        self.lecture[0].set_color(WHITE)\n        self.lecture[1].set_color(YELLOW)\n        \n        epoch_label = Text(\"Epoch:\", font_size=24).set_color(WHITE)\n        self.place_at_grid(epoch_label, \"A2\", scale_factor=0.8)\n        \n        epoch_val = ValueTracker(1)\n        # Using Integer as it's more efficient for counters\n        epoch_num = Integer(1).set_color(WHITE)\n        epoch_num.next_to(epoch_label, RIGHT, buff=0.2)\n        epoch_num.add_updater(lambda d: d.set_value(int(epoch_val.get_value())))\n        \n        self.add(epoch_label, epoch_num)\n        \n        # === Animation for Lecture Line 3 ===\n        # Show a line graph where the 'Error' curve drops sharply and flattens near zero.\n        self.lecture[1].set_color(WHITE)\n        self.lecture[2].set_color(YELLOW)\n        \n        axes = Axes(\n            x_range=[0, 1000, 200],\n            y_range=[0, 1, 0.2],\n            x_length=3.5,\n            y_length=2.0,\n            axis_config={\"include_tip\": False, \"font_size\": 18, \"color\": WHITE}\n        )\n        \n        x_lbl = Text(\"Epoch\", font_size=16).next_to(axes.x_axis, DOWN, buff=0.1)\n        y_lbl = Text(\"Error\", font_size=16).rotate(90*DEGREES).next_to(axes.y_axis, LEFT, buff=0.1)\n        \n        graph_group = VGroup(axes, x_lbl, y_lbl)\n        self.place_in_area(graph_group, \"D2\", \"F5\", scale_factor=0.9)\n        \n        # Exponential decay curve\n        error_curve = axes.plot(lambda x: 0.9 * np.exp(-x/150), x_range=[0, 1000], color=RED)\n        \n        self.play(FadeIn(graph_group))\n        \n        # Simultaneous update: Counter, Curve, and Spinning Loop\n        self.play(\n            epoch_val.animate.set_value(1000),\n            Create(error_curve),\n            Rotate(loop_circle, angle=4*TAU, about_point=network.get_center(), run_time=5, rate_func=linear),\n            run_time=5\n        )\n        \n        self.wait(2)\n"
+  ],
+  "outline": {
+    "topic": "Neural Network Learning: The Intuitive Guide to Backpropagation",
+    "target_audience": "Introductory Data Science students or tech-savvy hobbyists",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Big Picture: Learning via Trial and Error",
+        "content": "Introduce the goal of a neural network: to minimize the difference between its guess and reality. Frame learning as an iterative game of 'getting warmer.'",
+        "example": "Meet 'Robo-Chef,' a robot trying to predict the perfect baking time for a cake. It starts with a random guess (e.g., 50 minutes), realizes the cake is burnt (error), and needs to adjust its internal settings."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Anatomy of a Decision (Weights & Biases)",
+        "content": "Explain that a neuron is just a mathematical 'knob' (Weight) and a 'starting point' (Bias). Visualize the neuron as a slider that determines how much influence an input has on the final output.",
+        "example": "Visualizing two inputs for the cake: 'Temperature' and 'Size.' The robot has a knob for each. If 'Temperature' is high, the 'Weight' knob tells the robot to react more strongly to it."
+      },
+      {
+        "id": "section_3",
+        "title": "The Forward Pass: Making a Guess",
+        "content": "Walk through the data flow: Input × Weight + Bias = Prediction. Use a simple flowchart to show information moving from left to right through the network layers.",
+        "example": "The robot sees a 'Large Cake' at '400 degrees.' It multiplies these by its current 'knob' settings to predict '20 minutes.' This is the 'Forward Pass.'"
+      },
+      {
+        "id": "section_4",
+        "title": "The Loss Function: Measuring the 'Ouch'",
+        "content": "Define 'Loss' as the mathematical distance between the prediction and the actual target. Use a graph showing a valley (the Loss Landscape) where the bottom represents perfection.",
+        "example": "The cake actually needed 35 minutes. The robot predicted 20. The 'Loss' is the 15-minute gap. In the animation, a red warning light flashes brighter as the gap increases."
+      },
+      {
+        "id": "section_5",
+        "title": "Backpropagation: The Blame Game",
+        "content": "Introduce the core concept: Backpropagation is calculating how much each 'knob' contributed to the error. Use the 'Chain Rule' intuition—working backward from the output to the input to assign 'blame' (gradients).",
+        "example": "The robot looks at its result. It realizes the 'Temperature Knob' was too high, contributing 80% of the error, while the 'Size Knob' only contributed 20%. It traces the error back through its wires."
+      },
+      {
+        "id": "section_6",
+        "title": "Gradient Descent: Turning the Knobs",
+        "content": "Explain how the network uses the 'blame' (gradients) to nudge weights in the opposite direction of the error. Visualize a ball rolling down a hill toward the lowest point of the loss valley.",
+        "example": "The robot slightly turns the 'Temperature Knob' left (decreasing it) and the 'Size Knob' slightly right. It doesn't spin them wildly; it takes a small 'Learning Rate' step."
+      },
+      {
+        "id": "section_7",
+        "title": "The Feedback Loop: Mastery through Repetition",
+        "content": "Summarize that 'Learning' is just the Forward Pass and Backpropagation repeating thousands of times until the error is near zero.",
+        "example": "Show a montage of Robo-Chef baking 1,000 cakes. With every burnt or raw cake, it performs backpropagation. Finally, it predicts the time perfectly for any cake size or temperature."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Big Picture: Learning via Trial and Error",
+      "lecture_lines": [
+        "Neural networks learn by minimizing prediction errors.",
+        "Meet Robo-Chef, our robot learning to bake cakes.",
+        "It starts with guesses and adjusts through feedback."
+      ],
+      "animations": [
+        "Fade in 'Robo-Chef' icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg] (#00FFFF) and a 'Cake' icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cake.svg] on screen.",
+        "Show a slider moving to '50 mins' (Guess) while '30 mins' (Target) is marked in #00FF00.",
+        "Flash background red (#330000) and shift the slider handle from '50' toward '30'."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Anatomy of a Decision (Weights & Biases)",
+      "lecture_lines": [
+        "Neurons use \"knobs\" called weights to process data.",
+        "Each knob determines an input's influence on results.",
+        "A bias sets the starting point for every decision."
+      ],
+      "animations": [
+        "Display labels 'Temperature' (#FFD700) and 'Size' (#ADFF2F) with numerical inputs.",
+        "Show two dial icons labeled 'Weights' (#00BFFF) that rotate to show adjustment.",
+        "Show a 'Bias' slider (#FF69B4) moving horizontally to set the starting point."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "The Forward Pass: Making a Guess",
+      "lecture_lines": [
+        "The forward pass is the network's first guess.",
+        "It takes cake temperature and size as inputs.",
+        "Weights multiply these inputs to calculate their importance.",
+        "Adding the bias produces a final time prediction.",
+        "Robo-Chef now has a guess for the baking time."
+      ],
+      "animations": [
+        "Draw arrows pulsing from 'Inputs' to a central 'Neuron' circle (#FFFFFF).",
+        "Animate 'Weights' dials rotating as data 'passes' through them.",
+        "Pop up a box labeled 'Prediction: 20 min' (#FFFF00) alongside a cake icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cake.svg] at the end of the flow."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "The Loss Function: Measuring the 'Ouch'",
+      "lecture_lines": [
+        "Loss measures the gap between prediction and reality.",
+        "A large gap means a high error or \"ouch.\"",
+        "We visualize this loss as a deep valley."
+      ],
+      "animations": [
+        "Draw a white parabolic curve (Loss Curve) across the center [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/valley.svg].",
+        "Place a red ball (#FF0000) [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ball.svg] on the high slope of the curve.",
+        "Show a vertical line between 'Guess' and 'Reality' labeled 'Loss' (#FF4500)."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Backpropagation: The Blame Game",
+      "lecture_lines": [
+        "Backpropagation traces the error back to its source.",
+        "We calculate which knob contributed most to the mistake.",
+        "This \"blame\" is mathematically known as the gradient.",
+        "We move backward through the layers using the chain rule.",
+        "The robot finds exactly which settings were wrong."
+      ],
+      "animations": [
+        "Show a robot [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg] observing red error pulses (#FF0000) traveling backward from output to inputs.",
+        "The 'Weights' dials glow red and display 'Blame' percentages (80%, 20%).",
+        "Trace the path of the gradient backward through the network diagram."
+      ]
+    },
+    {
+      "id": "section_6",
+      "title": "Gradient Descent: Turning the Knobs",
+      "lecture_lines": [
+        "Gradient descent uses the blame to adjust the knobs.",
+        "We nudge weights in the opposite direction of error.",
+        "Imagine a ball rolling down toward the lowest loss.",
+        "A small learning rate ensures we don't overcorrect.",
+        "Each tiny adjustment brings us closer to perfection."
+      ],
+      "animations": [
+        "Animate the red ball [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ball.svg] on the parabola rolling down toward the minimum.",
+        "Show the 'Weights' dials rotating slightly in the direction indicated by the 'Blame'.",
+        "Display a 'Learning Rate' label with a small green vector arrow (#00FF00)."
+      ]
+    },
+    {
+      "id": "section_7",
+      "title": "The Feedback Loop: Mastery through Repetition",
+      "lecture_lines": [
+        "Learning requires repeating this cycle thousands of times.",
+        "Every cake baked makes the robot's guesses better.",
+        "Soon, Robo-Chef predicts the perfect time every time."
+      ],
+      "animations": [
+        "Animate a circular 'Loop' arrow (#00FF00) spinning around the entire network.",
+        "Display an 'Epoch' counter rapidly incrementing from 1 to 1000.",
+        "Show a line graph where the 'Error' curve drops sharply and flattens near zero."
+      ]
+    }
+  ],
+  "turns_run": 1,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated initial Manim code for Section 1, including Robo-Chef icons, slider animation, and error feedback logic. Adhered to grid system and lecture color constraints."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_2 following the storyboard and grid requirements. Implemented three animation stages for Weights (dials) and Bias (slider) with corresponding lecture line highlighting."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for Section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for Section 3 (The Forward Pass) following the storyboard. Implemented 6x6 grid placement, pulsing arrows for data flow, rotating dials for weights, and a prediction box highlight. Applied color transitions to lecture lines as per instructions."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented Manim code for section_4 following the storyboard and grid requirements. Added a parabolic Loss Curve, a vertical loss gap line with labels (Guess, Reality, Loss), and a red ball representing the current error state on the curve slope. Highlights lecture lines with matching colors."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for Section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_5 following the storyboard and grid requirements. Included backward error pulses, blame percentages (80%/20%), gradient label, chain rule formula, and knob adjustment animations."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_6] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 5 concise lecture lines for Section 6."
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_6] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_6",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[section_6] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Manim code for section_6. Implemented weight dials with updaters, a rolling ball on a parabola using ValueTracker, and a learning rate indicator. All animations are synchronized with the lecture lines and placed using the 6x6 grid system."
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_7] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Added 3 concise lecture lines for Section 7."
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_7] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": false,
+      "section_id": "section_7",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 21,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder7",
+      "description": "[section_7] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_7",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated Section7Scene with network placeholder, spinning loop arrow, epoch counter (1-1000), and an error decay graph. Compliant with 6x6 grid and performance constraints."
+    },
+    {
+      "id": 22,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Fade in 'Robo-Chef' icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg] (#00FFFF) and a 'Cake' icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cake.svg] on screen.\"]",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Pop up a box labeled 'Prediction: 20 min' (#FFFF00) alongside a cake icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cake.svg] at the end of the flow.\"]",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Draw a white parabolic curve (Loss Curve) across the center [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/valley.svg].', 'Place a red ball (#FF0000) [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ball.svg] on the high slope of the curve.']",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show a robot [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/robot.svg] observing red error pulses (#FF0000) traveling backward from output to inputs.']",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder6",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_6] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Animate the red ball [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/ball.svg] on the parabola rolling down toward the minimum.']",
+      "isActive": true,
+      "section_id": "section_6",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5",
+    "section_6": "Coder6",
+    "section_7": "Coder7"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4,
+    "section_6": 5,
+    "section_7": 6
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_074155/2-Neural_Network_Learning_The_Intuitive_Guide_to_Backpropagation/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_074155/2-Neural_Network_Learning_The_Intuitive_Guide_to_Backpropagation/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_074155/2-Neural_Network_Learning_The_Intuitive_Guide_to_Backpropagation/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_074155/2-Neural_Network_Learning_The_Intuitive_Guide_to_Backpropagation/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_074155/2-Neural_Network_Learning_The_Intuitive_Guide_to_Backpropagation/media/videos/section_5/480p15/Section5Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_074155/2-Neural_Network_Learning_The_Intuitive_Guide_to_Backpropagation/media/videos/section_6/480p15/Section6Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_074155/2-Neural_Network_Learning_The_Intuitive_Guide_to_Backpropagation/media/videos/section_7/480p15/Section7Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260811_074155/2-Neural_Network_Learning_The_Intuitive_Guide_to_Backpropagation",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 270664,
+      "completion_tokens": 33373,
+      "total_tokens": 361382,
+      "call_count": 25
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 278,
+        "completion_tokens": 921,
+        "total_tokens": 1835,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 15487,
+        "completion_tokens": 1092,
+        "total_tokens": 18548,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 23939,
+        "completion_tokens": 1094,
+        "total_tokens": 27838,
+        "call_count": 1
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 19273,
+        "completion_tokens": 589,
+        "total_tokens": 20597,
+        "call_count": 1
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 25352,
+        "completion_tokens": 2269,
+        "total_tokens": 29427,
+        "call_count": 1
+      },
+      "agent:Coder7": {
+        "prompt_tokens": 32212,
+        "completion_tokens": 3774,
+        "total_tokens": 41395,
+        "call_count": 1
+      },
+      "agent:Coder6": {
+        "prompt_tokens": 33651,
+        "completion_tokens": 4572,
+        "total_tokens": 44404,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 22887,
+        "completion_tokens": 4896,
+        "total_tokens": 35365,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 21561,
+        "completion_tokens": 5759,
+        "total_tokens": 34070,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 34961,
+        "completion_tokens": 3255,
+        "total_tokens": 45977,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 36247,
+        "completion_tokens": 4132,
+        "total_tokens": 47469,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 4816,
+        "completion_tokens": 1020,
+        "total_tokens": 14457,
+        "call_count": 14
+      }
+    },
+    "by_model": {
+      "gemini-3-flash-preview": {
+        "prompt_tokens": 270664,
+        "completion_tokens": 33373,
+        "total_tokens": 361382,
+        "call_count": 25
+      }
+    }
+  }
+}

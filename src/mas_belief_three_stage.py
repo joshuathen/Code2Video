@@ -45,6 +45,7 @@ from mas_belief_reflection import (
     apply_assessments,
     cfg,
     save_evidence,
+    save_library,
     summarise_run,
 )
 
@@ -1095,6 +1096,14 @@ def main() -> int:
     parser.add_argument("--belief-embedding-model", default=None)
     parser.add_argument("--fresh", action="store_true")
     parser.add_argument(
+        "--resume-discovery",
+        action="store_true",
+        help=(
+            "Resume candidate discovery from the last completed topic recorded in "
+            "belief_pipeline_progress.json, preserving belief_candidates.json."
+        ),
+    )
+    parser.add_argument(
         "--start-stage",
         choices=["discovery", "consolidation", "evidence"],
         default="discovery",
@@ -1132,6 +1141,10 @@ def main() -> int:
             "--fresh cannot be combined with a resumed start stage because it "
             "would delete the checkpoint being resumed"
         )
+    if args.resume_discovery and args.start_stage != "discovery":
+        raise ValueError("--resume-discovery requires --start-stage discovery")
+    if args.resume_discovery and args.fresh:
+        raise ValueError("--resume-discovery cannot be combined with --fresh")
     if args.fresh:
         for path in paths.values():
             if path.exists():
@@ -1190,9 +1203,48 @@ def main() -> int:
         else:
             candidates = []
     else:
-        candidates = []
-        print(f"[belief-3stage][discovery] Starting {len(runs)} topics", flush=True)
-        for index, run in enumerate(runs, start=1):
+        discovery_start = 0
+        if args.resume_discovery:
+            if not paths["candidates"].exists() or not paths["progress"].exists():
+                raise FileNotFoundError(
+                    "Cannot resume discovery without both belief_candidates.json "
+                    "and belief_pipeline_progress.json"
+                )
+            candidate_payload = json.loads(
+                paths["candidates"].read_text(encoding="utf-8")
+            )
+            progress_payload = json.loads(
+                paths["progress"].read_text(encoding="utf-8")
+            )
+            if progress_payload.get("stage") != "discovery":
+                raise ValueError(
+                    "Cannot resume discovery because the progress checkpoint is for "
+                    f"stage {progress_payload.get('stage')!r}"
+                )
+            discovery_start = int(progress_payload.get("completed", 0) or 0)
+            if discovery_start < 0 or discovery_start >= len(runs):
+                raise ValueError(
+                    f"Invalid discovery checkpoint: completed={discovery_start}, "
+                    f"topics={len(runs)}"
+                )
+            candidates = list(candidate_payload.get("candidates") or [])
+            discovery_rejections = list(
+                candidate_payload.get("rejected_observations") or []
+            )
+            if not candidates:
+                raise ValueError("Discovery checkpoint contains no candidates")
+            print(
+                f"[belief-3stage][resume] Loaded {len(candidates)} candidates after "
+                f"{discovery_start}/{len(runs)} topics; retrying topic "
+                f"{discovery_start + 1}",
+                flush=True,
+            )
+        else:
+            candidates = []
+            print(f"[belief-3stage][discovery] Starting {len(runs)} topics", flush=True)
+        for index, run in enumerate(
+            runs[discovery_start:], start=discovery_start + 1
+        ):
             started = time.perf_counter()
             context = _build_reflection_context(run, _state_for_run(Path(run.run_dir)), {})
             parsed, usage, attempts = _structured_call(
@@ -1202,6 +1254,7 @@ def main() -> int:
                 label=f"discovery_{index:02d}",
                 raw_output_dir=output_dir,
                 max_output_tokens=12000,
+                max_attempts=4,
             )
             counts = _apply_discovery_decisions(
                 candidates,

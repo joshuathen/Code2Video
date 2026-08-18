@@ -97,6 +97,47 @@ class BeliefBBNTests(unittest.TestCase):
         self.assertEqual([item["belief_id"] for item in selected], ["DIRECT"])
         self.assertEqual(selected[0]["usefulness"], selected[0]["p_applicable"])
 
+    def test_fix_selection_accepts_best_moderate_semantic_match(self):
+        beliefs = [
+            {
+                "belief_id": "BEST",
+                "instruction": "Use the most relevant repair.",
+                "scope": {
+                    "roles": ["Coder"],
+                    "stages": ["fix"],
+                    "problem_description": "repair undefined animation constant",
+                },
+                "alpha": 2,
+                "beta": 2,
+                "status": "active",
+            },
+            {
+                "belief_id": "RUNNER_UP",
+                "instruction": "Use a related repair.",
+                "scope": {
+                    "roles": ["Coder"],
+                    "stages": ["fix"],
+                    "problem_description": "repair invalid animation value",
+                },
+                "alpha": 2,
+                "beta": 2,
+                "status": "active",
+            },
+        ]
+        selector = BeliefSelector(
+            beliefs,
+            similarity_fn=lambda _query, description: (
+                0.68
+                if description == "repair undefined animation constant"
+                else 0.66
+            ),
+        )
+        selected = selector.select(
+            BeliefSituation("T", "Coder", "fix", "runtime failure"),
+            top_k=1,
+        )
+        self.assertEqual([item["belief_id"] for item in selected], ["BEST"])
+
     def test_effectiveness_floor_is_inclusive_and_filters_below_neutral(self):
         beliefs = [
             {
