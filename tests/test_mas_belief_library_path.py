@@ -28,6 +28,20 @@ class BeliefLibraryPathResolutionTests(unittest.TestCase):
             self.assertTrue(_belief_injection_enabled_for_role("ScriptWriter"))
             self.assertTrue(_belief_injection_enabled_for_role("AnimationPlanner"))
 
+    def test_coder_wide_injection_only_enables_ordinary_coder_prompts(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "ENABLE_BROAD_BELIEF_INJECTION": "0",
+                "ENABLE_CODER_WIDE_BELIEF_INJECTION": "1",
+            },
+        ):
+            self.assertTrue(_belief_injection_enabled_for_role("Coder"))
+            self.assertTrue(_belief_injection_enabled_for_role("Coder6"))
+            self.assertFalse(_belief_injection_enabled_for_role("Orchestrator"))
+            self.assertFalse(_belief_injection_enabled_for_role("ScriptWriter"))
+            self.assertFalse(_belief_injection_enabled_for_role("AnimationPlanner"))
+
     def test_omitted_path_does_not_auto_discover_beliefs(self):
         self.assertIsNone(_resolve_belief_library_path(None))
         self.assertIsNone(_resolve_belief_library_path(""))

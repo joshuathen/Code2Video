@@ -277,6 +277,11 @@ def _belief_injection_enabled_for_role(agent_role: Optional[str]) -> bool:
     # injection without changing the runtime-only default policy.
     if os.getenv("ENABLE_BROAD_BELIEF_INJECTION", "0") == "1":
         return True
+    # Controlled scope comparison: allow ordinary Coder generation/refinement
+    # prompts to receive beliefs while leaving the other MAS roles belief-free.
+    # The separate just-in-time CoderRuntime selector remains active.
+    if os.getenv("ENABLE_CODER_WIDE_BELIEF_INJECTION", "0") == "1":
+        return _normalize_role_label(agent_role) == CODER
     return _normalize_role_label(agent_role) not in BELIEF_INJECTION_DISABLED_ROLES
 
 

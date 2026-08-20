@@ -1,0 +1,928 @@
+{
+  "topic": "How Multilayer Perceptrons (MLP) Store Facts in Transformers",
+  "target_audience": "University students with a basic background in linear algebra and neural networks.",
+  "code": [
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section1Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"The Analogy: The Brain vs. The Bookshelf\", [\n            \"Transformers use Attention and MLP layers.\",\n            \"Attention is the index for information.\",\n            \"MLPs store internal knowledge facts.\"\n        ])\n        \n        bookshelf = SVGMobject(path=\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/bookshelf.svg\") if False else VGroup(\n            Rectangle(width=2, height=3, color=WHITE),\n            Line(np.array([-1, 0, 0]), np.array([1, 0, 0]), color=WHITE),\n            Line(np.array([-1, -1, 0]), np.array([1, -1, 0]), color=WHITE)\n        )\n        brain = SVGMobject(path=\"/scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg\") if False else Circle(radius=1, color=WHITE)\n        \n        self.place_at_grid(bookshelf, 'B5', scale_factor=0.8)\n        self.place_at_grid(brain, 'B2', scale_factor=0.8)\n        \n        connection = Line(brain.get_right(), bookshelf.get_left(), color=YELLOW)\n        connection.set_opacity(0)\n        self.add(bookshelf, brain, connection)\n\n        # === Animation for Lecture Line 1 ===\n        self.play(\n            bookshelf.animate.set_color(\"#FFFFFF\"),\n            brain.animate.set_color(\"#FF00FF\"),\n            self.lecture[0].animate.set_color(\"#888888\")\n        )\n\n        # === Animation for Lecture Line 2 ===\n        self.play(\n            connection.animate.set_opacity(1),\n            self.lecture[1].animate.set_color(\"#FFFF00\")\n        )\n\n        # === Animation for Lecture Line 3 ===\n        self.play(\n            Flash(brain, color=\"#FF00FF\", line_length=0.2, num_lines=12),\n            self.lecture[2].animate.set_color(\"#FF00FF\")\n        )\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section2Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"Prerequisite: The Concept of Key-Value Memories\", [\n            \"MLPs act as Key-Value memories.\",\n            \"Keys detect a specific concept.\",\n            \"Values store the associated fact.\"\n        ])\n        \n        # Define elements\n        key_label = Text(\"Key: Concept\", color=\"#00FFFF\")\n        value_label = Text(\"Value: Fact\", color=\"#00FF00\")\n        arrow = Arrow(start=ORIGIN, end=RIGHT*1.5, color=WHITE)\n        \n        # Place them\n        self.place_at_grid(key_label, 'B2', scale_factor=0.7)\n        self.place_at_grid(value_label, 'B5', scale_factor=0.7)\n        self.place_at_grid(arrow, 'B4', scale_factor=0.7)\n        \n        # === Animation for Lecture Line 1 ===\n        self.play(self.lecture[0].animate.set_color(\"#00FFFF\"))\n        self.play(Write(key_label), Write(value_label))\n\n        # === Animation for Lecture Line 2 ===\n        self.play(self.lecture[1].animate.set_color(\"#00FF00\"))\n        self.play(GrowArrow(arrow))\n        \n        # === Animation for Lecture Line 3 ===\n        self.play(self.lecture[2].animate.set_color(\"#FFFFFF\"))\n        self.play(Flash(arrow, color=WHITE, line_length=0.2, num_lines=8))\n        self.wait(1)\n",
+    "from manim import *\nimport numpy as np\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section3Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"Mechanism: The Projection and Activation Cycle\", [\n            \"Input vectors project into high-dimensional space.\",\n            \"Non-linear functions activate these neurons.\",\n            \"Facts exist as distinct vector directions.\",\n            \"Expansion helps isolate stored information.\",\n            \"Projection back completes the cycle.\"\n        ])\n        \n        # Elements\n        input_dot = Dot(color=\"#FF9900\")\n        grid_visual = VGroup(*[Line(self.grid[\"A1\"], self.grid[\"A6\"]), Line(self.grid[\"F1\"], self.grid[\"F6\"])])\n        activation_pulse = Circle(radius=0.3, color=\"#FFFF00\")\n        output_label = Text(\"Satoshi Nakamoto\", font_size=24, color=\"#00FF00\")\n\n        # === Animation for Lecture Line 1 ===\n        self.lecture[0].set_color(\"#FF9900\")\n        self.place_at_grid(input_dot, 'C3')\n        self.play(FadeIn(input_dot))\n        self.play(input_dot.animate.move_to(self.grid['C4']))\n\n        # === Animation for Lecture Line 2 ===\n        self.lecture[1].set_color(\"#00FFFF\")\n        self.play(Create(grid_visual))\n        self.play(input_dot.animate.set_color(\"#00FFFF\"))\n\n        # === Animation for Lecture Line 3 ===\n        self.lecture[2].set_color(\"#FFFF00\")\n        self.place_at_grid(activation_pulse, 'C4')\n        self.play(Flash(activation_pulse))\n\n        # === Animation for Lecture Line 4 ===\n        self.lecture[3].set_color(\"#FFFFFF\")\n        trail = TracedPath(input_dot.get_center, stroke_width=2, stroke_color=\"#FFFFFF\")\n        self.add(trail)\n        self.play(input_dot.animate.move_to(self.grid['D5']))\n\n        # === Animation for Lecture Line 5 ===\n        self.lecture[4].set_color(\"#00FF00\")\n        self.place_at_grid(output_label, 'E5')\n        self.play(Write(output_label))\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section4Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"Updating Knowledge: Fact Editing and Superposition\", \n                          [\"Multiple facts overlap in neural space.\", \n                           \"This phenomenon is called superposition.\", \n                           \"We update facts by re-weighting vectors.\"])\n        \n        # Grid visual\n        grid_group = VGroup()\n        for i in range(5):\n            for j in range(5):\n                rect = Square(side_length=0.7, fill_opacity=0.3, color=WHITE)\n                rect.move_to(self.grid[f\"{chr(65+i)}{j+1}\"])\n                grid_group.add(rect)\n        \n        # === Animation for Lecture Line 1 ===\n        self.play(FadeIn(grid_group))\n        self.play(self.lecture[0].animate.set_color(\"#FFFFFF\"))\n\n        # === Animation for Lecture Line 2 ===\n        target_cell = grid_group[12] # middle\n        self.play(target_cell.animate.set_color(\"#FF0000\").set_fill(opacity=0.8))\n        self.play(self.lecture[1].animate.set_color(\"#FF0000\"))\n\n        # === Animation for Lecture Line 3 ===\n        self.play(target_cell.animate.set_color(\"#00FF00\"))\n        self.play(self.lecture[2].animate.set_color(\"#00FF00\"))\n        self.wait(2)\n",
+    "from manim import *\n\nclass TeachingScene(Scene):\n    def setup_layout(self, title_text, lecture_lines):\n        # BASE\n        self.camera.background_color = \"#000000\"\n        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)\n        self.add(self.title)\n\n        # Left-side lecture content (bullets with \"-\")\n        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]\n        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)\n        self.lecture.to_edge(LEFT, buff=0.2)\n        self.add(self.lecture)\n\n        # Define fine-grained animation grid (4x4 grid on right side)\n        self.grid = {}\n        rows = [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]  # Top to bottom\n        cols = [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\"]  # Left to right\n\n        for i, row in enumerate(rows):\n            for j, col in enumerate(cols):\n                x = 0.5 + j * 1\n                y = 2.2 - i * 1\n                self.grid[f\"{row}{col}\"] = np.array([x, y, 0])\n\n    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):\n        mobject.scale(scale_factor)\n        mobject.move_to(self.grid[grid_pos])\n        return mobject\n\n    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):\n        tl_pos = self.grid[top_left]\n        br_pos = self.grid[bottom_right]\n        \n        # Calculate center of the area\n        center_x = (tl_pos[0] + br_pos[0]) / 2\n        center_y = (tl_pos[1] + br_pos[1]) / 2\n        center = np.array([center_x, center_y, 0])\n        \n        mobject.scale(scale_factor)\n        mobject.move_to(center)\n        return mobject\n\nclass Section5Scene(TeachingScene):\n    def construct(self):\n        self.setup_layout(\"Synthesis and Summary\", [\n            \"MLPs function as compressed distributed databases.\", \n            \"They do not search database tables.\", \n            \"They reconstruct facts from learned patterns.\"\n        ])\n        \n        # Elements\n        brain = Circle(radius=1.0, color=BLUE).set_fill(BLUE, opacity=0.3)\n        book = Rectangle(width=1.5, height=2.0, color=YELLOW)\n        database = VGroup(\n            *[Rectangle(width=1.0, height=0.3, color=WHITE) for _ in range(3)]\n        ).arrange(DOWN)\n        \n        # === Animation for Lecture Line 1 ===\n        # Summarize brain vs books concept #FFFFFF.\n        self.play(self.lecture[0].animate.set_color(\"#FFFFFF\"))\n        self.place_at_grid(brain, 'B2')\n        self.place_at_grid(book, 'B5')\n        self.play(Create(brain), Create(book))\n        self.wait(1)\n\n        # === Animation for Lecture Line 2 ===\n        # Review memory update process #00FFFF.\n        self.play(self.lecture[1].animate.set_color(\"#00FFFF\"))\n        self.place_at_grid(database, 'E3')\n        self.play(FadeIn(database))\n        self.play(Indicate(database, color=RED))\n        self.wait(1)\n\n        # === Animation for Lecture Line 3 ===\n        # Fade out all elements to #000000.\n        self.play(self.lecture[2].animate.set_color(\"#00FFFF\"))\n        reconstruction_text = Text(\"Pattern -> Fact\", font_size=36, color=GREEN)\n        self.place_at_grid(reconstruction_text, 'C3')\n        self.play(Write(reconstruction_text))\n        self.wait(1)\n        \n        # Fade out\n        self.play(\n            FadeOut(brain), FadeOut(book), FadeOut(database), FadeOut(reconstruction_text),\n            FadeOut(self.lecture), FadeOut(self.title)\n        )\n        self.wait(1)\n"
+  ],
+  "outline": {
+    "topic": "How Multilayer Perceptrons (MLP) Store Facts in Transformers",
+    "target_audience": "University students with a basic background in linear algebra and neural networks.",
+    "sections": [
+      {
+        "id": "section_1",
+        "title": "The Analogy: The Brain vs. The Bookshelf",
+        "content": "Briefly define the two main components of a Transformer: Attention (for context/relationships) and MLP layers (for internal knowledge). Use the analogy of a librarian: Attention is the 'index' that points to books, while MLPs are the 'stored information' inside the book's pages.",
+        "example": "Comparing a Transformer to a detective: Attention is the magnifying glass finding clues; the MLP is the detective's long-term memory of crime facts."
+      },
+      {
+        "id": "section_2",
+        "title": "Prerequisite: The Concept of Key-Value Memories",
+        "content": "Explain that an MLP behaves like a 'Key-Value' memory system. In the hidden layers, specific neurons act as 'Keys' (detecting a concept) and 'Values' (outputting the associated fact).",
+        "example": "Visualizing a neuron firing when it sees 'Capital of France' (Key) and outputting 'Paris' (Value)."
+      },
+      {
+        "id": "section_3",
+        "title": "Mechanism: The Projection and Activation Cycle",
+        "content": "Visualize the flow: An input vector is projected into a high-dimensional space (Expansion), activated by non-linear functions (ReLU/GELU), and projected back. Use a graphical representation of a 3D coordinate system to show how 'facts' are stored as distinct 'directions' in high-dimensional space.",
+        "example": "A 'Fact Vector' being stored: The input 'The creator of Bitcoin is...' aligns with a specific vector direction pointing towards 'Satoshi Nakamoto'."
+      },
+      {
+        "id": "section_4",
+        "title": "Updating Knowledge: Fact Editing and Superposition",
+        "content": "Discuss how multiple facts can overlap in the same neural space (Superposition). Explain that changing a fact involves 're-weighting' these specific high-dimensional vectors.",
+        "example": "Imagine a colorful map where 'Blue' represents facts about 'Cats' and 'Red' represents facts about 'Dogs'; the MLP is the space where these colors blend and intersect."
+      },
+      {
+        "id": "section_5",
+        "title": "Synthesis and Summary",
+        "content": "Summarize that MLPs are essentially compressed, distributed databases. They don't 'search' a database; they 'reconstruct' facts based on learned patterns stored in the network weights.",
+        "example": "A final visual of a Transformer 'reciting' a fact like a musician playing a memorized melody on a piano, rather than reading sheet music."
+      }
+    ]
+  },
+  "storyboard": [
+    {
+      "id": "section_1",
+      "title": "The Analogy: The Brain vs. The Bookshelf",
+      "lecture_lines": [
+        "Transformers use Attention and MLP layers.",
+        "Attention is the index for information.",
+        "MLPs store internal knowledge facts."
+      ],
+      "animations": [
+        "Display bookshelf icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bookshelf.svg] #FFFFFF and brain icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg] #FF00FF.",
+        "Show brain [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg] accessing bookshelf [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bookshelf.svg] with a glowing connection #FFFF00.",
+        "Flash brain icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg] #FF00FF to signify memory retrieval."
+      ]
+    },
+    {
+      "id": "section_2",
+      "title": "Prerequisite: The Concept of Key-Value Memories",
+      "lecture_lines": [
+        "MLPs act as Key-Value memories.",
+        "Keys detect a specific concept.",
+        "Values store the associated fact."
+      ],
+      "animations": [
+        "Write 'Key: Fact' in #00FFFF [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/key.svg] and 'Value: Data' in #00FF00 [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/database.svg].",
+        "Connect Key and Value with an arrow #FFFFFF.",
+        "Flash the connection arrow #FFFFFF to emphasize link."
+      ]
+    },
+    {
+      "id": "section_3",
+      "title": "Mechanism: The Projection and Activation Cycle",
+      "lecture_lines": [
+        "Input vectors project into high-dimensional space.",
+        "Non-linear functions activate these neurons.",
+        "Facts exist as distinct vector directions.",
+        "Expansion helps isolate stored information.",
+        "Projection back completes the cycle."
+      ],
+      "animations": [
+        "Show input vector as dot #FF9900 moving toward [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/grid.svg].",
+        "Animate [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/grid.svg] transformation #00FFFF to project vector.",
+        "Highlight resulting activation pattern with yellow pulse #FFFF00.",
+        "Move activation through layers with trail effect #FFFFFF.",
+        "Fade output result onto [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/grid.svg] screen in #00FF00."
+      ]
+    },
+    {
+      "id": "section_4",
+      "title": "Updating Knowledge: Fact Editing and Superposition",
+      "lecture_lines": [
+        "Multiple facts overlap in neural space.",
+        "This phenomenon is called superposition.",
+        "We update facts by re-weighting vectors."
+      ],
+      "animations": [
+        "Display weight matrix [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/matrix.svg] grid [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/grid.svg] #FFFFFF.",
+        "Highlight specific weight [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/weight.svg] cell [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cell.svg] #FF0000.",
+        "Modify color of cell [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cell.svg] to #00FF00 to show update."
+      ]
+    },
+    {
+      "id": "section_5",
+      "title": "Synthesis and Summary",
+      "lecture_lines": [
+        "MLPs function as compressed distributed databases.",
+        "They do not search database tables.",
+        "They reconstruct facts from learned patterns."
+      ],
+      "animations": [
+        "Summarize brain vs books concept using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg] and [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/books.svg] #FFFFFF.",
+        "Review memory update process using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg] #00FFFF.",
+        "Fade out all elements to #000000."
+      ]
+    }
+  ],
+  "turns_run": 2,
+  "issues": [
+    {
+      "id": 1,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_1] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_1",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Lecture lines added for section 1."
+    },
+    {
+      "id": 2,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_1] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Animation steps added based on section title and outline."
+    },
+    {
+      "id": 3,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[section_1] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Implemented Manim code for section 1 using the required TeachingScene structure, grid positioning, and animation steps."
+    },
+    {
+      "id": 4,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_2] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_2",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Lecture lines added for section 2."
+    },
+    {
+      "id": 5,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_2] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Animation steps added based on section title and outline."
+    },
+    {
+      "id": 6,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[section_2] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated and implemented Section 2 logic based on Key-Value memory concept."
+    },
+    {
+      "id": 7,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_3] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_3",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Lecture lines added for section 3."
+    },
+    {
+      "id": 8,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_3] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Animation steps added based on section title and outline."
+    },
+    {
+      "id": 9,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[section_3] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Code generated and implemented for Section 3 following the grid layout and lecture lines."
+    },
+    {
+      "id": 10,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_4] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_4",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Lecture lines added for section 4."
+    },
+    {
+      "id": 11,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_4] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Animation steps added based on section title and outline."
+    },
+    {
+      "id": 12,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[section_4] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Generated code for Section 4 following the layout requirements and animation steps."
+    },
+    {
+      "id": 13,
+      "fromAgent": "Orchestrator",
+      "toAgent": "ScriptWriter",
+      "description": "[section_5] Lecture lines are missing. Generate concise lecture lines aligned with this section's high-level content.",
+      "isActive": false,
+      "section_id": "section_5",
+      "resolved": true,
+      "under_review": false,
+      "resolution_note": "Lecture lines added for section 5."
+    },
+    {
+      "id": 14,
+      "fromAgent": "Orchestrator",
+      "toAgent": "AnimationPlanner",
+      "description": "[section_5] Animation steps are missing. Generate codable animation steps aligned one-to-one with lecture lines.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Animation steps added based on section title and outline."
+    },
+    {
+      "id": 15,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[section_5] Code is missing or outdated. Generate/repair runnable Manim code for this section.",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": true,
+      "resolution_note": "Code generated and applied to section_5."
+    },
+    {
+      "id": 16,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder1",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_1] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Display bookshelf icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bookshelf.svg] #FFFFFF and brain icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg] #FF00FF.', 'Show brain [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg] accessing bookshelf [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/bookshelf.svg] with a glowing connection #FFFF00.', 'Flash brain icon [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg] #FF00FF to signify memory retrieval.']",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 17,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder2",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_2] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: [\"Write 'Key: Fact' in #00FFFF [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/key.svg] and 'Value: Data' in #00FF00 [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/database.svg].\"]",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 18,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder3",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_3] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Show input vector as dot #FF9900 moving toward [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/grid.svg].', 'Animate [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/grid.svg] transformation #00FFFF to project vector.', 'Fade output result onto [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/grid.svg] screen in #00FF00.']",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 19,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder4",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_4] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Display weight matrix [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/matrix.svg] grid [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/grid.svg] #FFFFFF.', 'Highlight specific weight [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/weight.svg] cell [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cell.svg] #FF0000.', 'Modify color of cell [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/cell.svg] to #00FF00 to show update.']",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 20,
+      "fromAgent": "Orchestrator",
+      "toAgent": "Coder5",
+      "description": "[AUTO-ASSET-INTEGRATION] [section_5] The storyboard was enhanced with asset references at the end of turn 2. Update this section's Manim code so it uses every [Asset: ...] reference now present in the animation descriptions. Load and place the referenced files in the scene where the storyboard calls for them, while preserving the existing lecture-line alignment and layout constraints. Asset-tagged animations: ['Summarize brain vs books concept using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg] and [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/books.svg] #FFFFFF.', 'Review memory update process using [Asset: /scratch/pawsey1357/jthen/Code2Video/assets/icon/brain.svg] #00FFFF.']",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 21,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: Objects are horizontally compressed in the upper-right quadrant, creating wasted vertical space below. Fix: Line 60: self.place_in_area('bookshelf', 'B4', 'E6', scale_factor=1.2) (line=60, object=bookshelf)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 22,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: The brain object is too close to the horizontal line animation, creating visual clutter. Fix: Line 61: self.place_at_grid('brain', 'C2', scale_factor=1.0) (line=61, object=brain)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 23,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "[VideoCritic][section_1] Problem: Labels for the objects are absent or implied, causing ambiguity in the analogy. Fix: Line 62: self.place_at_grid('label_brain', 'C1', scale_factor=0.6); Line 63: self.place_at_grid('label_bookshelf', 'C5', scale_factor=0.6) (line=62, object=labels)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 24,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Labels are placed too far apart, causing a fragmented flow and poor utilization of the central grid area. Fix: Line 59: self.place_at_grid(key_label, 'C2', scale_factor=0.8); Line 60: self.place_at_grid(value_label, 'C5', scale_factor=0.8) (line=59, object=key_label, value_label)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 25,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: The arrow connecting the Key and Value elements is visually disconnected from the text labels due to wide grid separation. Fix: Line 61: self.place_at_grid(arrow, 'C3_C4', scale_factor=0.9) (line=61, object=arrow)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 26,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "[VideoCritic][section_2] Problem: Vertical alignment is inconsistent with the lecture notes on the left, creating an off-balance visual weight. Fix: Line 59: self.place_in_area(group, 'B2', 'B5', scale_factor=0.75) (line=59, object=key_value_group)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 27,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The input_dot at C3 is positioned too centrally, causing visual interference with the middle of the lecture text flow. Fix: Line 64: self.place_at_grid(input_dot, 'B3', scale_factor=0.6) (line=64, object=input_dot)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 28,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The activation_pulse at C4 causes rhythmic visual distraction and slight overlap with the mid-right area; requires shifting away from the text horizon. Fix: Line 75: self.place_at_grid(activation_pulse, 'B4', scale_factor=0.7) (line=75, object=activation_pulse)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 29,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "[VideoCritic][section_3] Problem: The output_label 'Satoshi Nakamoto' at E5 is too low and distant from the active animation flow, creating a disjointed layout. Fix: Line 86: self.place_in_area(output_label, 'C5', 'D6', scale_factor=0.8) (line=86, object=output_label)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 30,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The center-aligned 5x5 grid in the first scene overlaps with the right-side space, creating visual clutter and poor utilization. Fix: self.place_in_area(grid_group, 'B2', 'E5', scale_factor=0.6) (line=1, object=5x5_grid_group)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 31,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The 'Grid Visual' labels in the second scene are cluttered and lack grouping association with the grid points. Fix: self.place_at_grid(point_group, 'B2', scale_factor=0.7) (line=8, object=grid_points_A1_F6)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 32,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "[VideoCritic][section_4] Problem: The lecture text block is too close to the central animated elements, risking obstruction during complex animations. Fix: self.place_in_area(lecture_text, 'A1', 'C3', scale_factor=0.8) (line=3, object=lecture_lines)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 33,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: Brain and book assets are positioned too high, crowding the visual space near the title area. Fix: Line 63: self.place_at_grid(brain, 'D2', scale_factor=0.8); Line 64: self.place_at_grid(book, 'D5', scale_factor=0.8) (line=63, object=brain and book)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 34,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: Reconstruction text (reconstruction_text) overlaps with the database icon (database), hindering readability. Fix: Line 71: self.place_at_grid(database, 'F3', scale_factor=0.8); Line 80: self.place_at_grid(reconstruction_text, 'E3', scale_factor=0.7) (line=71, object=database and reconstruction_text)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 35,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "[VideoCritic][section_5] Problem: Poor grid utilization leaves the right side of the screen cluttered while the lower grid area is under-utilized. Fix: self.place_in_area(group_assets, 'C2', 'F5', scale_factor=0.9) (line=63, object=all assets)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 36,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder1",
+      "description": "The automatic video review identified layout issues:\n1. Objects are horizontally compressed in the upper-right quadrant.\n2. The brain object is too close to the horizontal line animation.\n3. Labels for objects are absent or implied, causing ambiguity.\nPlease implement the suggested fixes:\nLine 60: self.place_in_area('bookshelf', 'B4', 'E6', scale_factor=1.2)\nLine 61: self.place_at_grid('brain', 'C2', scale_factor=1.0)\nLine 62: self.place_at_grid('label_brain', 'C1', scale_factor=0.6)\nLine 63: self.place_at_grid('label_bookshelf', 'C5', scale_factor=0.6)",
+      "isActive": true,
+      "section_id": "section_1",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 37,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder2",
+      "description": "The automatic video review identified layout issues:\n1. Labels are placed too far apart.\n2. The arrow connecting Key and Value is visually disconnected.\n3. Vertical alignment is inconsistent with lecture notes.\nPlease implement the suggested fixes:\nLine 59: self.place_at_grid(key_label, 'C2', scale_factor=0.8); Line 60: self.place_at_grid(value_label, 'C5', scale_factor=0.8)\nLine 61: self.place_at_grid(arrow, 'C3_C4', scale_factor=0.9)\nLine 59: self.place_in_area(group, 'B2', 'B5', scale_factor=0.75)",
+      "isActive": true,
+      "section_id": "section_2",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 38,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder3",
+      "description": "The automatic video review identified layout issues:\n1. The input_dot is positioned too centrally.\n2. The activation_pulse causes rhythmic visual distraction.\n3. The output_label 'Satoshi Nakamoto' is too low and distant.\nPlease implement the suggested fixes:\nLine 64: self.place_at_grid(input_dot, 'B3', scale_factor=0.6)\nLine 75: self.place_at_grid(activation_pulse, 'B4', scale_factor=0.7)\nLine 86: self.place_in_area(output_label, 'C5', 'D6', scale_factor=0.8)",
+      "isActive": true,
+      "section_id": "section_3",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 39,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder4",
+      "description": "The automatic video review identified layout issues:\n1. The 5x5 grid overlaps with the right-side space.\n2. The 'Grid Visual' labels lack grouping association.\n3. The lecture text block is too close to the central animated elements.\nPlease implement the suggested fixes:\nLine 1: self.place_in_area(grid_group, 'B2', 'E5', scale_factor=0.6)\nLine 8: self.place_at_grid(point_group, 'B2', scale_factor=0.7)\nLine 3: self.place_in_area(lecture_text, 'A1', 'C3', scale_factor=0.8)",
+      "isActive": true,
+      "section_id": "section_4",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    },
+    {
+      "id": 40,
+      "fromAgent": "OrchestratorAgent",
+      "toAgent": "Coder5",
+      "description": "The automatic video review identified layout issues:\n1. Brain and book assets are positioned too high.\n2. Reconstruction text overlaps with the database icon.\n3. Poor grid utilization.\nPlease implement the suggested fixes:\nLine 63: self.place_at_grid(brain, 'D2', scale_factor=0.8); Line 64: self.place_at_grid(book, 'D5', scale_factor=0.8)\nLine 71: self.place_at_grid(database, 'F3', scale_factor=0.8); Line 80: self.place_at_grid(reconstruction_text, 'E3', scale_factor=0.7)\nLine 63: self.place_in_area(group_assets, 'C2', 'F5', scale_factor=0.9)",
+      "isActive": true,
+      "section_id": "section_5",
+      "resolved": false,
+      "under_review": false,
+      "resolution_note": ""
+    }
+  ],
+  "finalised": false,
+  "coder_assignments": {
+    "section_1": "Coder1",
+    "section_2": "Coder2",
+    "section_3": "Coder3",
+    "section_4": "Coder4",
+    "section_5": "Coder5"
+  },
+  "section_id_to_index": {
+    "section_1": 0,
+    "section_2": 1,
+    "section_3": 2,
+    "section_4": 3,
+    "section_5": 4
+  },
+  "rendered_video_path": [
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_1/480p15/Section1Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_2/480p15/Section2Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_3/480p15/Section3Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_4/480p15/Section4Scene.mp4",
+    "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_5/480p15/Section5Scene.mp4"
+  ],
+  "render_status": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "render_error": [
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "video_review": [
+    {
+      "status": "ok",
+      "section_id": "section_1",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_1/480p15/Section1Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_1/480p15/Section1Scene.mp4",
+        "video_size": 72724,
+        "video_mtime_ns": 1787026535000000000,
+        "code_sha1": "287d21ba4085635cbcdd42ba45d32fe90efc033c"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Objects are horizontally compressed in the upper-right quadrant, creating wasted vertical space below.",
+              "solution": "Line 60: self.place_in_area('bookshelf', 'B4', 'E6', scale_factor=1.2)",
+              "line_number": 60,
+              "object_affected": "bookshelf"
+            },
+            {
+              "problem": "The brain object is too close to the horizontal line animation, creating visual clutter.",
+              "solution": "Line 61: self.place_at_grid('brain', 'C2', scale_factor=1.0)",
+              "line_number": 61,
+              "object_affected": "brain"
+            },
+            {
+              "problem": "Labels for the objects are absent or implied, causing ambiguity in the analogy.",
+              "solution": "Line 62: self.place_at_grid('label_brain', 'C1', scale_factor=0.6); Line 63: self.place_at_grid('label_bookshelf', 'C5', scale_factor=0.6)",
+              "line_number": 62,
+              "object_affected": "labels"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        21,
+        22,
+        23
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_2",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_2/480p15/Section2Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_2/480p15/Section2Scene.mp4",
+        "video_size": 129079,
+        "video_mtime_ns": 1787026537000000000,
+        "code_sha1": "aedf0f7a2c2cd3fd079ec36a7306f821b10eaa04"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Labels are placed too far apart, causing a fragmented flow and poor utilization of the central grid area.",
+              "solution": "Line 59: self.place_at_grid(key_label, 'C2', scale_factor=0.8); Line 60: self.place_at_grid(value_label, 'C5', scale_factor=0.8)",
+              "line_number": 59,
+              "object_affected": "key_label, value_label"
+            },
+            {
+              "problem": "The arrow connecting the Key and Value elements is visually disconnected from the text labels due to wide grid separation.",
+              "solution": "Line 61: self.place_at_grid(arrow, 'C3_C4', scale_factor=0.9)",
+              "line_number": 61,
+              "object_affected": "arrow"
+            },
+            {
+              "problem": "Vertical alignment is inconsistent with the lecture notes on the left, creating an off-balance visual weight.",
+              "solution": "Line 59: self.place_in_area(group, 'B2', 'B5', scale_factor=0.75)",
+              "line_number": 59,
+              "object_affected": "key_value_group"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        24,
+        25,
+        26
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_3",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_3/480p15/Section3Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_3/480p15/Section3Scene.mp4",
+        "video_size": 185628,
+        "video_mtime_ns": 1787026541000000000,
+        "code_sha1": "7b8819dc93d844ad863fb8ab66926472077c8925"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The input_dot at C3 is positioned too centrally, causing visual interference with the middle of the lecture text flow.",
+              "solution": "Line 64: self.place_at_grid(input_dot, 'B3', scale_factor=0.6)",
+              "line_number": 64,
+              "object_affected": "input_dot"
+            },
+            {
+              "problem": "The activation_pulse at C4 causes rhythmic visual distraction and slight overlap with the mid-right area; requires shifting away from the text horizon.",
+              "solution": "Line 75: self.place_at_grid(activation_pulse, 'B4', scale_factor=0.7)",
+              "line_number": 75,
+              "object_affected": "activation_pulse"
+            },
+            {
+              "problem": "The output_label 'Satoshi Nakamoto' at E5 is too low and distant from the active animation flow, creating a disjointed layout.",
+              "solution": "Line 86: self.place_in_area(output_label, 'C5', 'D6', scale_factor=0.8)",
+              "line_number": 86,
+              "object_affected": "output_label"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        27,
+        28,
+        29
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_4",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_4/480p15/Section4Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_4/480p15/Section4Scene.mp4",
+        "video_size": 145957,
+        "video_mtime_ns": 1787026538000000000,
+        "code_sha1": "8bb593c70bc770033c52128ad2daa62621d75d2f"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "The center-aligned 5x5 grid in the first scene overlaps with the right-side space, creating visual clutter and poor utilization.",
+              "solution": "self.place_in_area(grid_group, 'B2', 'E5', scale_factor=0.6)",
+              "line_number": 1,
+              "object_affected": "5x5_grid_group"
+            },
+            {
+              "problem": "The 'Grid Visual' labels in the second scene are cluttered and lack grouping association with the grid points.",
+              "solution": "self.place_at_grid(point_group, 'B2', scale_factor=0.7)",
+              "line_number": 8,
+              "object_affected": "grid_points_A1_F6"
+            },
+            {
+              "problem": "The lecture text block is too close to the central animated elements, risking obstruction during complex animations.",
+              "solution": "self.place_in_area(lecture_text, 'A1', 'C3', scale_factor=0.8)",
+              "line_number": 3,
+              "object_affected": "lecture_lines"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        30,
+        31,
+        32
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    },
+    {
+      "status": "ok",
+      "section_id": "section_5",
+      "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_5/480p15/Section5Scene.mp4",
+      "review_fingerprint": {
+        "video_path": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers/media/videos/section_5/480p15/Section5Scene.mp4",
+        "video_size": 185643,
+        "video_mtime_ns": 1787026544000000000,
+        "code_sha1": "60159a2817f74f76618f40250b2fdd4bfea5fa6d"
+      },
+      "analysis": {
+        "layout": {
+          "has_issues": true,
+          "improvements": [
+            {
+              "problem": "Brain and book assets are positioned too high, crowding the visual space near the title area.",
+              "solution": "Line 63: self.place_at_grid(brain, 'D2', scale_factor=0.8); Line 64: self.place_at_grid(book, 'D5', scale_factor=0.8)",
+              "line_number": 63,
+              "object_affected": "brain and book"
+            },
+            {
+              "problem": "Reconstruction text (reconstruction_text) overlaps with the database icon (database), hindering readability.",
+              "solution": "Line 71: self.place_at_grid(database, 'F3', scale_factor=0.8); Line 80: self.place_at_grid(reconstruction_text, 'E3', scale_factor=0.7)",
+              "line_number": 71,
+              "object_affected": "database and reconstruction_text"
+            },
+            {
+              "problem": "Poor grid utilization leaves the right side of the screen cluttered while the lower grid area is under-utilized.",
+              "solution": "self.place_in_area(group_assets, 'C2', 'F5', scale_factor=0.9)",
+              "line_number": 63,
+              "object_affected": "all assets"
+            }
+          ]
+        }
+      },
+      "created_issue_ids": [
+        33,
+        34,
+        35
+      ],
+      "reopened_issue_ids": [],
+      "existing_issue_ids": []
+    }
+  ],
+  "run_output_dir": "/scratch/pawsey1357/jthen/Code2Video/mas_logs/pipeline_20260818_115204/11-How_Multilayer_Perceptrons_MLP_Store_Facts_in_Transformers",
+  "token_usage": {
+    "totals": {
+      "prompt_tokens": 169328,
+      "completion_tokens": 12741,
+      "total_tokens": 182069,
+      "call_count": 26
+    },
+    "by_source": {
+      "stage1:outline": {
+        "prompt_tokens": 280,
+        "completion_tokens": 667,
+        "total_tokens": 947,
+        "call_count": 1
+      },
+      "agent:ScriptWriter": {
+        "prompt_tokens": 10262,
+        "completion_tokens": 591,
+        "total_tokens": 10853,
+        "call_count": 1
+      },
+      "agent:AnimationPlanner": {
+        "prompt_tokens": 30194,
+        "completion_tokens": 1236,
+        "total_tokens": 31430,
+        "call_count": 2
+      },
+      "agent:OrchestratorAgent": {
+        "prompt_tokens": 30287,
+        "completion_tokens": 1467,
+        "total_tokens": 31754,
+        "call_count": 2
+      },
+      "agent:Coder2": {
+        "prompt_tokens": 11886,
+        "completion_tokens": 1152,
+        "total_tokens": 13038,
+        "call_count": 1
+      },
+      "agent:Coder4": {
+        "prompt_tokens": 17475,
+        "completion_tokens": 971,
+        "total_tokens": 18446,
+        "call_count": 1
+      },
+      "agent:Coder5": {
+        "prompt_tokens": 18103,
+        "completion_tokens": 1343,
+        "total_tokens": 19446,
+        "call_count": 1
+      },
+      "agent:Coder1": {
+        "prompt_tokens": 18208,
+        "completion_tokens": 1326,
+        "total_tokens": 19534,
+        "call_count": 1
+      },
+      "agent:Coder3": {
+        "prompt_tokens": 17247,
+        "completion_tokens": 1348,
+        "total_tokens": 18595,
+        "call_count": 1
+      },
+      "assets": {
+        "prompt_tokens": 3346,
+        "completion_tokens": 991,
+        "total_tokens": 4337,
+        "call_count": 10
+      },
+      "video_review:section_1": {
+        "prompt_tokens": 2178,
+        "completion_tokens": 314,
+        "total_tokens": 2492,
+        "call_count": 1
+      },
+      "video_review:section_2": {
+        "prompt_tokens": 2332,
+        "completion_tokens": 343,
+        "total_tokens": 2675,
+        "call_count": 1
+      },
+      "video_review:section_3": {
+        "prompt_tokens": 2538,
+        "completion_tokens": 327,
+        "total_tokens": 2865,
+        "call_count": 1
+      },
+      "video_review:section_4": {
+        "prompt_tokens": 2325,
+        "completion_tokens": 308,
+        "total_tokens": 2633,
+        "call_count": 1
+      },
+      "video_review:section_5": {
+        "prompt_tokens": 2667,
+        "completion_tokens": 357,
+        "total_tokens": 3024,
+        "call_count": 1
+      }
+    },
+    "by_model": {
+      "gemini-3.1-flash-lite": {
+        "prompt_tokens": 169328,
+        "completion_tokens": 12741,
+        "total_tokens": 182069,
+        "call_count": 26
+      }
+    }
+  }
+}
