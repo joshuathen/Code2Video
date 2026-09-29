@@ -41,3 +41,4 @@ class TeachingScene(Scene):
         mobject.move_to(center)
         return mobject
 """
+

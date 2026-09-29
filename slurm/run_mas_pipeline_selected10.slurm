@@ -9,15 +9,14 @@
 
 set -euo pipefail
 
-# Uncomment these if Kaya requires them for your jobs.
+# Uncomment these only if the Pawsey allocation requires explicit values.
 ##SBATCH --partition=YOUR_PARTITION
 ##SBATCH --account=YOUR_ACCOUNT
 
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-  REPO_ROOT="$SLURM_SUBMIT_DIR"
-else
-  SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-  REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+REPO_ROOT="${REPO_ROOT:-/scratch/pawsey1357/jthen/Code2Video}"
+if [ ! -f "$REPO_ROOT/src/main.py" ]; then
+  echo "MAS launcher could not find the Pawsey Code2Video repository: $REPO_ROOT" >&2
+  exit 1
 fi
 
 cd "$REPO_ROOT"
@@ -31,7 +30,7 @@ if [ -n "$CONTAINER_IMAGE" ]; then
     exit 1
   fi
   module load singularity/4.1.0-nompi psc-texlive-2025
-  SINGULARITY_JOB_TMP="${TMPDIR:-/tmp}/${USER}-code2video-${SLURM_JOB_ID:-$$}"
+  SINGULARITY_JOB_TMP="${SINGULARITY_JOB_TMP:-${SLURM_TMPDIR:-/tmp}/code2video-${SLURM_JOB_ID:-manual}}"
   export SINGULARITY_CACHEDIR="$SINGULARITY_JOB_TMP/cache"
   export SINGULARITY_TMPDIR="$SINGULARITY_JOB_TMP/tmp"
   RUNTIME_BIN="$SINGULARITY_JOB_TMP/runtime-bin"
@@ -54,6 +53,8 @@ export SINGULARITYENV_PATH="${RUNTIME_BIN:+$RUNTIME_BIN:}${TEXLIVE_BIN:+$TEXLIVE
 if [ -n "$CONTAINER_IMAGE" ]; then
   FFMPEG_BIN=$("${PYTHON_CMD[@]}" -c 'from imageio_ffmpeg import get_ffmpeg_exe; print(get_ffmpeg_exe())')
   ln -sf "$FFMPEG_BIN" "$RUNTIME_BIN/ffmpeg"
+  "${PYTHON_CMD[@]}" -c 'import agent, eval_AES, eval_TQ, eval_video, gpt_request, main, mas, mas_interactions; print("Code2Video import preflight passed.")'
+  "${PYTHON_CMD[@]}" -c 'import importlib.metadata as m; from mas_interactions import default_client; version=m.version("google-genai"); client=default_client(); assert hasattr(client, "interactions"), f"google-genai {version} has no Interactions API"; print(f"Gemini preflight passed: google-genai {version}, Interactions API available.")'
   (
     cd "$SINGULARITY_JOB_TMP"
     "${PYTHON_CMD[@]}" -c 'import os, shutil; from imageio_ffmpeg import get_ffmpeg_exe; from manim import MathTex; required=("latex", "dvisvgm"); missing=[name for name in required if not shutil.which(name)]; assert not missing, f"Missing render tools: {missing}"; ffmpeg=shutil.which("ffmpeg") or get_ffmpeg_exe(); assert ffmpeg and os.access(ffmpeg, os.X_OK), "No usable ffmpeg executable"; MathTex(r"x^2 + y^2"); print("MAS render preflight passed: LaTeX, dvisvgm, and ffmpeg are available.")'

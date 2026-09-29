@@ -114,3 +114,4 @@ The previous attempts failed to run correctly. Please:
 2. Avoid complex animations that might cause errors
 3. Use simple, reliable Manim patterns
 """
+

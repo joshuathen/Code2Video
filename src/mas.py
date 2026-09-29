@@ -4686,3 +4686,5 @@ if __name__ == "__main__":
     else:
         print("\nAll knowledge points failed, cannot calculate average.")
     print(_format_token_usage_summary(final_video_state.token_usage))
+
+

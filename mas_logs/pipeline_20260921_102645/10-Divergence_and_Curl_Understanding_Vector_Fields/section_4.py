@@ -1,0 +1,95 @@
+from manim import *
+import numpy as np
+
+class TeachingScene(Scene):
+    def setup_layout(self, title_text, lecture_lines):
+        # BASE
+        self.camera.background_color = "#000000"
+        self.title = Text(title_text, font_size=28, color=WHITE).to_edge(UP)
+        self.add(self.title)
+
+        # Left-side lecture content (bullets with "-")
+        lecture_texts = [Text(line, font_size=22, color=WHITE) for line in lecture_lines]
+        self.lecture = VGroup(*lecture_texts).arrange(DOWN, aligned_edge=LEFT).scale(0.8)
+        self.lecture.to_edge(LEFT, buff=0.2)
+        self.add(self.lecture)
+
+        # Define fine-grained animation grid (4x4 grid on right side)
+        self.grid = {}
+        rows = ["A", "B", "C", "D", "E", "F"]  # Top to bottom
+        cols = ["1", "2", "3", "4", "5", "6"]  # Left to right
+
+        for i, row in enumerate(rows):
+            for j, col in enumerate(cols):
+                x = 0.5 + j * 1
+                y = 2.2 - i * 1
+                self.grid[f"{row}{col}"] = np.array([x, y, 0])
+
+    def place_at_grid(self, mobject, grid_pos, scale_factor=1.0):
+        mobject.scale(scale_factor)
+        mobject.move_to(self.grid[grid_pos])
+        return mobject
+
+    def place_in_area(self, mobject, top_left, bottom_right, scale_factor=1.0):
+        tl_pos = self.grid[top_left]
+        br_pos = self.grid[bottom_right]
+        
+        # Calculate center of the area
+        center_x = (tl_pos[0] + br_pos[0]) / 2
+        center_y = (tl_pos[1] + br_pos[1]) / 2
+        center = np.array([center_x, center_y, 0])
+        
+        mobject.scale(scale_factor)
+        mobject.move_to(center)
+        return mobject
+
+class Section4Scene(TeachingScene):
+    def construct(self):
+        self.setup_layout("Synthesizing Concepts: The Field Summary", [
+            "Analyze complex fields with a dashboard.",
+            "Color-code sources and vortices clearly.",
+            "Pilots navigate areas of high curl."
+        ])
+        
+        # Define the complex field
+        def field_func(pos):
+            x, y = pos[0], pos[1]
+            curl = np.array([-y, x])
+            div = np.array([x-2, y])
+            return curl + div
+
+        vector_field = ArrowVectorField(field_func, x_range=[-3, 3, 0.5], y_range=[-2.5, 2.5, 0.5], colors=[WHITE])
+        self.place_in_area(vector_field, 'B3', 'F6', scale_factor=0.6)
+        
+        # Asset: Dashboard
+        dashboard = SVGMobject("/scratch/pawsey1357/jthen/Code2Video/assets/icon/dashboard.svg")
+        self.place_at_grid(dashboard, 'A4', scale_factor=0.5)
+
+        # === Animation for Lecture Line 1 ===
+        self.play(FadeIn(vector_field), FadeIn(dashboard), run_time=2)
+        self.lecture[0].set_color("#ffffff")
+
+        # === Animation for Lecture Line 2 ===
+        # Circular markers
+        yellow_circle = Circle(radius=1, color=YELLOW, fill_opacity=0.3)
+        green_circle = Circle(radius=1, color=GREEN, fill_opacity=0.3)
+        
+        self.place_at_grid(yellow_circle, 'A5', scale_factor=0.5)
+        self.place_at_grid(green_circle, 'A3', scale_factor=0.5)
+        
+        self.play(FadeIn(yellow_circle), FadeIn(green_circle), run_time=2)
+        self.lecture[1].set_color("#ffff00")
+
+        # === Animation for Lecture Line 3 ===
+        # Pilot/drone dots
+        drone_1 = Dot(color=RED)
+        drone_2 = Dot(color=RED)
+        self.place_at_grid(drone_1, 'C1', scale_factor=0.4)
+        self.place_at_grid(drone_2, 'C2', scale_factor=0.4)
+        
+        # Path for drone
+        path = VMobject().set_points_smoothly([self.grid["C1"], self.grid["D3"], self.grid["B5"]])
+        
+        self.play(FadeIn(drone_1), FadeIn(drone_2), MoveAlongPath(drone_1, path), run_time=3)
+        self.lecture[2].set_color("#00ff00")
+        self.wait(1)

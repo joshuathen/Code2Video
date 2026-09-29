@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="${REPO_ROOT:-${SLURM_SUBMIT_DIR:-}}"
+REPO_ROOT="${REPO_ROOT:-/scratch/pawsey1357/jthen/Code2Video}"
 if [ -z "$REPO_ROOT" ] || [ ! -f "$REPO_ROOT/src/mas_belief_three_stage.py" ]; then
   echo "Submit from the Code2Video repository root or export REPO_ROOT." >&2
   exit 1
@@ -44,10 +44,17 @@ if [ ! -d "$BELIEF_EMBEDDING_MODEL" ]; then
 fi
 
 module load singularity/4.1.0-nompi
+SINGULARITY_JOB_TMP="${SINGULARITY_JOB_TMP:-${SLURM_TMPDIR:-/tmp}/code2video-beliefs-${SLURM_JOB_ID:-manual}}"
+export SINGULARITY_CACHEDIR="$SINGULARITY_JOB_TMP/cache"
+export SINGULARITY_TMPDIR="$SINGULARITY_JOB_TMP/tmp"
+mkdir -p "$SINGULARITY_CACHEDIR" "$SINGULARITY_TMPDIR"
 export HF_HOME
 export SINGULARITYENV_HF_HOME="$HF_HOME"
 export PYTHONPATH="$REPO_ROOT:$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 export SINGULARITYENV_PYTHONPATH="$PYTHONPATH"
+
+singularity exec "$CONTAINER_IMAGE" "$PYTHON_BIN" -c 'import belief_bbn, mas_belief_reflection, mas_belief_three_stage, mas_interactions; print("Belief pipeline import preflight passed.")'
+singularity exec "$CONTAINER_IMAGE" "$PYTHON_BIN" -c 'import importlib.metadata as m; from mas_interactions import default_client; version=m.version("google-genai"); client=default_client(); assert hasattr(client, "interactions"), f"google-genai {version} has no Interactions API"; print(f"Gemini preflight passed: google-genai {version}, Interactions API available.")'
 
 CMD=(
   singularity exec

@@ -25,6 +25,7 @@ AGENT_API_CHOICES = ["gpt-41", "claude", "gpt-5", "gpt-4o", "gpt-o4mini", "Gemin
 # Shared launcher defaults, kept explicit here so the single entrypoint stays
 # readable and the agent/MAS runners can inherit the same baseline behavior.
 DEFAULT_API = "Gemini"
+DEFAULT_AGENT_MODEL = os.getenv("AGENT_MODEL") or os.getenv("GEMINI_MODEL")
 DEFAULT_USE_FEEDBACK = False
 DEFAULT_USE_ASSETS = False
 DEFAULT_MAX_CODE_TOKEN_LENGTH = 10000
@@ -483,7 +484,7 @@ def _write_batch_pipeline_summary(runner_name: str, results: List[Dict[str, Any]
 def _build_agent_generation_result(args: argparse.Namespace, idx: int) -> Dict[str, Any]:
     from agent import RunConfig, TeachingVideoAgent, get_api_and_output
 
-    api, _ = get_api_and_output(args.API)
+    api, _ = get_api_and_output(args.API, model_name=args.agent_model)
     folder = _resolve_agent_output_root(args)
 
     cfg = RunConfig(
@@ -497,6 +498,7 @@ def _build_agent_generation_result(args: argparse.Namespace, idx: int) -> Dict[s
         max_feedback_gen_code_tries=args.max_feedback_gen_code_tries,
         max_mllm_fix_bugs_tries=args.max_mllm_fix_bugs_tries,
         feedback_rounds=args.feedback_rounds,
+        generation_model=args.agent_model,
     )
 
     print(f"Running agent flow for knowledge topic: {args.knowledge_point}")
@@ -696,7 +698,10 @@ def _run_single_topic_pipeline(
                 topic=knowledge_point,
                 questions_json=questions_json,
                 per_question_workers=per_question_workers,
-                use_interactions=(runner_name == "mas"),
+                use_interactions=(
+                    runner_name == "mas"
+                    or os.getenv("USE_GEMINI_INTERACTIONS", "0") == "1"
+                ),
             )
             evaluation_result["duration_minutes"] = (
                 time.time() - evaluation_started_at
@@ -802,6 +807,7 @@ def run_agent_generation_and_evaluation_pipeline(
     per_question_workers: int = DEFAULT_PER_QUESTION_WORKERS,
     folder_prefix: str = "TEST",
     api_name: str = DEFAULT_API,
+    agent_model: Optional[str] = DEFAULT_AGENT_MODEL,
     use_feedback: bool = DEFAULT_USE_FEEDBACK,
     use_assets: bool = DEFAULT_USE_ASSETS,
     max_code_token_length: int = DEFAULT_MAX_CODE_TOKEN_LENGTH,
@@ -818,6 +824,7 @@ def run_agent_generation_and_evaluation_pipeline(
 
     base_args = argparse.Namespace(
         API=api_name,
+        agent_model=agent_model,
         folder_prefix=folder_prefix,
         max_code_token_length=max_code_token_length,
         use_feedback=use_feedback,
@@ -930,6 +937,7 @@ def _run_pipeline_from_cli(args: argparse.Namespace) -> int:
             per_question_workers=args.per_question_workers,
             folder_prefix=args.folder_prefix,
             api_name=args.API,
+            agent_model=args.agent_model,
             use_feedback=args.use_feedback,
             use_assets=args.use_assets,
             max_code_token_length=args.max_code_token_length,
@@ -1039,6 +1047,15 @@ def build_and_parse_args() -> argparse.Namespace:
 
     # Agent runner options.
     parser.add_argument("--API", type=str, choices=AGENT_API_CHOICES, default=DEFAULT_API)
+    parser.add_argument(
+        "--agent_model",
+        type=str,
+        default=DEFAULT_AGENT_MODEL,
+        help=(
+            "Explicit generation/repair/feedback model for the classic agent runner. "
+            "For Gemini this overrides gemini.model without affecting EVAL_MODEL."
+        ),
+    )
     _add_bool_flag(parser, "use_feedback", DEFAULT_USE_FEEDBACK)
     _add_bool_flag(parser, "use_assets", DEFAULT_USE_ASSETS)
     parser.add_argument("--max_fix_bug_tries", type=int, default=DEFAULT_MAX_FIX_BUG_TRIES)

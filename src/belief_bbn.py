@@ -978,3 +978,5 @@ def format_selected_beliefs(selected: Sequence[Dict[str, Any]]) -> str:
             f"{item['instruction']}"
         )
     return "\n".join(lines)
+
+

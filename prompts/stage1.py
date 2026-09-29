@@ -47,3 +47,4 @@ def get_prompt1_outline(knowledge_point, duration=5, reference_image_path=None):
     """
 
     return base_prompt
+
