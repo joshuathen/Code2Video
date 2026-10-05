@@ -121,6 +121,30 @@ if (memoryComparison && !prefersReducedMotion) {
   }
 }
 
+// Start the approach walkthrough only while its stages occupy the central
+// viewport. Leaving resets it; returning starts a fresh timeline at Observe.
+const approachSection = document.querySelector('#approach');
+const approachPipeline = approachSection?.querySelector('.pipeline');
+
+if (approachSection && approachPipeline && !prefersReducedMotion) {
+  const startApproachAnimation = () => {
+    approachSection.classList.remove('approach-animating');
+    void approachPipeline.offsetWidth;
+    approachSection.classList.add('approach-animating');
+  };
+  const resetApproachAnimation = () => approachSection.classList.remove('approach-animating');
+
+  if ('IntersectionObserver' in window) {
+    const approachObserver = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) startApproachAnimation();
+      else resetApproachAnimation();
+    }, { rootMargin: '-20% 0px -20% 0px', threshold: 0 });
+    approachObserver.observe(approachPipeline);
+  } else {
+    startApproachAnimation();
+  }
+}
+
 // Cursor-following explanations for the compact belief-learning loop.
 const tooltipTargets = document.querySelectorAll('[data-tooltip-title]');
 
@@ -227,7 +251,7 @@ const workedStages = {
     title: 'The generated program fails at runtime',
     description: 'A coder tries to pass the result of <code>set_color()</code> directly into <code>Scene.play()</code>. Manim expects an animation, so rendering stops with a concrete diagnostic.',
     takeawayTitle: 'Why retain this?', takeaway: 'The error identifies both the failed operation and the animation framework involved. This context helps evaluate the later repair.',
-    visual: `<div class="failure-visual"><div class="code-lines"><span><i>214</i><code>self.play(</code></span><span class="fault-line"><i>215</i><code>self.lecture[0].set_color(WHITE)</code></span><span><i>216</i><code>)</code></span></div><div class="runtime-error"><span>TypeError</span><p>Passing Mobject to <code>Scene.play()</code> is not supported.</p></div></div>`
+    visual: `<div class="failure-visual"><div class="code-lines"><span><i>214</i><code>self.play(</code></span><span class="fault-line"><i>215</i><code class="code-indent">self.lecture[0].set_color(WHITE)</code></span><span><i>216</i><code>)</code></span></div><div class="runtime-error"><span>TypeError</span><p>Passing Mobject to <code>Scene.play()</code> is not supported.</p></div></div>`
   },
   context: {
     file: 'execution_trace.json', badge: 'Context retained', badgeClass: 'info', kicker: 'Structured execution trace',
@@ -260,12 +284,26 @@ const workedStages = {
 };
 
 const workedButtons = [...document.querySelectorAll('[data-worked-stage]')];
-const workedStageDuration = 6500;
+const workedToggle = document.querySelector('[data-worked-toggle]');
+const workedStageStatus = document.querySelector('#worked-stage-status');
+const workedStageDuration = 20000;
 const workedContentFadeOutDuration = 320;
 let workedStageTimer;
 let workedTransitionTimer;
 let workedHeightTimer;
 let workedExampleRunning = false;
+let workedExampleManuallyPaused = false;
+
+const updateWorkedControls = () => {
+  const activeIndex = Math.max(0, workedButtons.findIndex((button) => button.classList.contains('active')));
+  if (workedStageStatus) workedStageStatus.textContent = `Stage ${activeIndex + 1} of ${workedButtons.length}`;
+  if (!workedToggle) return;
+  const icon = workedToggle.querySelector('span');
+  const label = workedToggle.querySelector('b');
+  if (icon) icon.textContent = workedExampleRunning ? 'Ⅱ' : '▶';
+  if (label) label.textContent = workedExampleRunning ? 'Pause walkthrough' : 'Play walkthrough';
+  workedToggle.setAttribute('aria-label', workedExampleRunning ? 'Pause worked-example walkthrough' : 'Play worked-example walkthrough');
+};
 
 const showWorkedStage = (button, restartProgress = true) => {
   const stage = workedStages[button.dataset.workedStage];
@@ -275,6 +313,7 @@ const showWorkedStage = (button, restartProgress = true) => {
   });
   button.classList.add('active');
   button.setAttribute('aria-pressed', 'true');
+  updateWorkedControls();
 
   const workedDisplay = document.querySelector('.worked-display');
   const updateWorkedContent = () => {
@@ -336,9 +375,18 @@ const scheduleNextWorkedStage = () => {
 const startWorkedExample = (restartAtBeginning = false) => {
   if (!workedButtons.length || prefersReducedMotion) return;
   workedExampleRunning = true;
+  workedExampleManuallyPaused = false;
   const selectedButton = restartAtBeginning ? workedButtons[0] : workedButtons.find((button) => button.classList.contains('active')) || workedButtons[0];
   showWorkedStage(selectedButton);
   scheduleNextWorkedStage();
+  updateWorkedControls();
+};
+
+const pauseWorkedExample = () => {
+  workedExampleRunning = false;
+  clearTimeout(workedStageTimer);
+  workedButtons.forEach((button) => button.classList.remove('timer-running'));
+  updateWorkedControls();
 };
 
 const stopWorkedExample = () => {
@@ -350,21 +398,38 @@ const stopWorkedExample = () => {
   workedDisplay?.classList.remove('stage-changing');
   if (workedDisplay) workedDisplay.style.height = 'auto';
   workedButtons.forEach((button) => button.classList.remove('timer-running'));
+  updateWorkedControls();
 };
 
 workedButtons.forEach((button) => button.addEventListener('click', () => {
   workedExampleRunning = !prefersReducedMotion;
+  workedExampleManuallyPaused = false;
   showWorkedStage(button);
   scheduleNextWorkedStage();
+  updateWorkedControls();
 }));
+
+workedToggle?.addEventListener('click', () => {
+  if (workedExampleRunning) {
+    workedExampleManuallyPaused = true;
+    pauseWorkedExample();
+  } else {
+    startWorkedExample(false);
+  }
+});
+
+updateWorkedControls();
 
 const workedExampleSection = document.querySelector('.worked-example-section');
 if (workedButtons.length && workedExampleSection && !prefersReducedMotion) {
   if ('IntersectionObserver' in window) {
     const workedObserver = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
-        if (entry.isIntersecting && entry.intersectionRatio >= .2 && !workedExampleRunning) startWorkedExample(true);
-        else if (!entry.isIntersecting || entry.intersectionRatio < .05) stopWorkedExample();
+        if (entry.isIntersecting && entry.intersectionRatio >= .2 && !workedExampleRunning && !workedExampleManuallyPaused) startWorkedExample(true);
+        else if (!entry.isIntersecting || entry.intersectionRatio < .05) {
+          workedExampleManuallyPaused = false;
+          stopWorkedExample();
+        }
       });
     }, { threshold: [0, .05, .2] });
     workedObserver.observe(workedExampleSection);
